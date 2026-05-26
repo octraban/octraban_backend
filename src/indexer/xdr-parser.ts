@@ -130,13 +130,20 @@ export function scValToJson(val: xdr.ScVal): { type: string; value: unknown } {
 
 // ── Auth entries ─────────────────────────────────────────────────────────────
 
-function parseSubInvocation(invocation: xdr.AuthorizedInvocation): ParsedSubInvocation {
+function scAddressToString(addr: xdr.ScAddress): string {
+  if (addr.switch().name === 'scAddressTypeAccount') {
+    return StrKey.encodeEd25519PublicKey(addr.accountId().ed25519());
+  }
+  return StrKey.encodeContract(addr.contractId());
+}
+
+function parseSubInvocation(invocation: xdr.SorobanAuthorizedInvocation): ParsedSubInvocation {
   const fn = invocation.function();
   const contractFn = fn.contractFn();
   return {
     contractId: StrKey.encodeContract(contractFn.contractAddress().contractId()),
     functionName: contractFn.functionName().toString(),
-    args: contractFn.args().map((a, i) => ({ index: i, ...scValToJson(a) })),
+    args: contractFn.args().map((a: xdr.ScVal, i: number) => ({ index: i, ...scValToJson(a) })),
   };
 }
 
@@ -144,25 +151,21 @@ function parseAuthEntry(entry: xdr.SorobanAuthorizationEntry): ParsedAuth {
   const credentials = entry.credentials();
   const switchName = credentials.switch().name;
 
-  let type: 'account' | 'contract';
-  let address: string;
+  let type: 'account' | 'contract' = 'account';
+  let address = 'source';
   let nonce: string | null = null;
 
-  if (switchName === 'sorobanCredentialsAccount') {
-    type = 'account';
-    const acct = credentials.address();
-    address = StrKey.encodeEd25519PublicKey(acct.address().accountId().ed25519());
-    nonce = acct.nonce().toString();
-  } else {
-    // sorobanCredentialsSourceAccount
-    type = 'account';
-    address = 'source';
+  if (switchName === 'sorobanCredentialsAddress') {
+    const addrCreds = credentials.address();
+    const scAddr = addrCreds.address();
+    address = scAddressToString(scAddr);
+    nonce = addrCreds.nonce().toString();
+    type = scAddr.switch().name === 'scAddressTypeContract' ? 'contract' : 'account';
   }
 
   const rootInvocation = entry.rootInvocation();
   const rootFn = rootInvocation.function();
 
-  // The root invocation may itself be a contract call
   if (rootFn.switch().name === 'sorobanAuthorizedFunctionTypeContractFn') {
     const contractFn = rootFn.contractFn();
     type = 'contract';
@@ -208,7 +211,7 @@ export function parseInvokeHostFunction(envelopeXdr: string): ParsedInvokeHostFu
   const invokeArgs = hostFn.invokeContract();
   const contractId = StrKey.encodeContract(invokeArgs.contractAddress().contractId());
   const functionName = invokeArgs.functionName().toString();
-  const args: ParsedArg[] = invokeArgs.args().map((a, i) => ({ index: i, ...scValToJson(a) }));
+  const args: ParsedArg[] = invokeArgs.args().map((a: xdr.ScVal, i: number) => ({ index: i, ...scValToJson(a) }));
   const auth: ParsedAuth[] = opBody.auth().map(parseAuthEntry);
 
   return { contractId, functionName, args, auth };
@@ -226,7 +229,7 @@ export function parseInvokeResult(resultXdr: string): ParsedResult | null {
     return null;
   }
 
-  const results = txResult.result().results?.() ?? [];
+  const results: xdr.OperationResult[] = txResult.result().results() ?? [];
   const invokeResult = results.find(
     (r: xdr.OperationResult) => r.tr?.()?.switch().name === 'invokeHostFunction',
   );
@@ -235,6 +238,6 @@ export function parseInvokeResult(resultXdr: string): ParsedResult | null {
   const invokeHostFnResult = invokeResult.tr().invokeHostFunctionResult();
   if (invokeHostFnResult.switch().name !== 'invokeHostFunctionSuccess') return null;
 
-  const scVal = invokeHostFnResult.success();
+  const scVal = xdr.ScVal.fromXDR(invokeHostFnResult.success());
   return scValToJson(scVal);
 }

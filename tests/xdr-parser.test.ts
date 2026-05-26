@@ -82,7 +82,7 @@ describe('scValToJson', () => {
   });
 
   it('converts bytes to hex', () => {
-    const val = nativeToScVal(Buffer.from('deadbeef', 'hex'), { type: 'bytes' });
+    const val = xdr.ScVal.scvBytes(Buffer.from('deadbeef', 'hex'));
     expect(scValToJson(val)).toEqual({ type: 'bytes', value: 'deadbeef' });
   });
 
