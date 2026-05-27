@@ -35,6 +35,10 @@ model Contract {
   tokenSymbol   String?
   tokenName     String?
   tokenDecimals Int?
+  wasmHash    String?  // fuzzy hash of compiled Wasm bytecode for similarity detection
+  isVerified  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
