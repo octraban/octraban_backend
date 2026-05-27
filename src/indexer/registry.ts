@@ -1,6 +1,7 @@
 import { xdr } from '@stellar/stellar-sdk';
 import { prisma } from '../db';
 import { decodeTypedArgs, formatAmount } from './args-decoder';
+import { renderTemplate } from './template-engine';
 
 export interface ContractAbi {
   functions: AbiFunction[];
@@ -100,7 +101,7 @@ export function decodeArgs(
 
 /**
  * Render a human-readable string from decoded args and a template.
- * Expects args values to be DecodedArg objects (with .formatted) or plain strings.
+ * Delegates to the standalone template engine.
  */
 export function renderHuman(
   fnName: string,
@@ -111,20 +112,5 @@ export function renderHuman(
 ): string {
   const fn = abi.functions.find((f) => f.name === fnName);
   if (!fn?.humanTemplate) return `Called ${fnName} on ${contractName ?? 'contract'}`;
-
-  let text = fn.humanTemplate;
-  for (const [key, val] of Object.entries(args)) {
-    // DecodedArg shape from typed decoder
-    let display: string;
-    if (val && typeof val === 'object' && 'formatted' in (val as object)) {
-      display = (val as { formatted: string }).formatted;
-    } else if (typeof val === 'bigint') {
-      display = formatAmount(val, decimals ?? 7);
-    } else {
-      display = String(val);
-    }
-    text = text.replace(new RegExp(`\\{${key}\\}`, 'g'), display);
-  }
-  if (contractName) text += ` on ${contractName}`;
-  return text;
+  return renderTemplate(fn.humanTemplate, { args, decimals, contractName: contractName ?? undefined });
 }
