@@ -39,8 +39,6 @@ model Contract {
   isVerified  Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
 
   transactions Transaction[]
   events       Event[]
@@ -200,4 +198,83 @@ model FailedItem {
 
   @@index([itemType, dead])
   @@index([ledger])
+}
+
+// State contention: tracks write conflicts on contract state keys within a ledger
+model StateContention {
+  id              String   @id @default(cuid())
+  ledgerSequence  Int
+  contractAddress String
+  stateKey        String   // the ledger key that was contended
+  txHashes        Json     // array of tx hashes that touched this key
+  conflictCount   Int      // number of transactions competing for this key
+  delayMs         Float    // estimated delay in milliseconds
+  delayLabel      String   // human-readable: "Delayed 0.4ms due to high traffic on pool state"
+  createdAt       DateTime @default(now())
+
+  @@index([ledgerSequence])
+  @@index([contractAddress])
+  @@index([ledgerSequence, contractAddress])
+}
+
+// API keys for developer dashboard access
+model ApiKey {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  owner       String
+  tier        String   @default("developer") // "developer" | "premium"
+  active      Boolean  @default(true)
+  lastUsedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([key])
+  @@index([owner])
+}
+
+// Secp256r1 / passkey signature inspection results
+model SignatureInspection {
+  id              String   @id @default(cuid())
+  transactionHash String   @unique
+  ledgerSequence  Int
+  curveType       String   // "secp256r1" | "ed25519"
+  isPasskey       Boolean  @default(false)
+  pubKeyX         String?  // hex-encoded X coordinate (secp256r1 only)
+  pubKeyY         String?  // hex-encoded Y coordinate (secp256r1 only)
+  label           String?  // "Signed via Apple iCloud Keychain / Google Passkey"
+  createdAt       DateTime @default(now())
+
+  @@index([transactionHash])
+  @@index([ledgerSequence])
+  @@index([curveType])
+}
+
+// Pre-computed fee analytics — hourly buckets
+model FeeAnalyticsHourly {
+  id          String   @id @default(cuid())
+  bucketTime  DateTime // truncated to the hour
+  avgFee      Float
+  medianFee   Float
+  peakFee     Float
+  txCount     Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([bucketTime])
+  @@index([bucketTime])
+}
+
+// Pre-computed fee analytics — daily buckets
+model FeeAnalyticsDaily {
+  id          String   @id @default(cuid())
+  bucketDate  DateTime // truncated to the day (UTC midnight)
+  avgFee      Float
+  medianFee   Float
+  peakFee     Float
+  txCount     Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([bucketDate])
+  @@index([bucketDate])
 }
