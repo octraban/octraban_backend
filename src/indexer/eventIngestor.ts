@@ -2,6 +2,7 @@ import { xdr } from '@stellar/stellar-sdk';
 import { prismaWrite as prisma } from '../db';
 import { decodeEvent } from './decoder';
 import { fetchEvents, LedgerEvent } from './rpc';
+import { broadcastEvent } from '../ws/eventBroadcaster';
 
 /**
  * Parse DiagnosticEvents from a raw TransactionMeta XDR (base64).
@@ -125,6 +126,16 @@ async function storeEvent(event: LedgerEvent): Promise<number> {
       ledgerSequence: event.ledgerSequence,
       ledgerCloseTime: event.ledgerCloseTime,
     },
+  });
+
+  broadcastEvent({
+    id,
+    contractAddress: event.contractId,
+    eventType,
+    decoded,
+    ledger: event.ledger,
+    ledgerCloseTime: event.ledgerCloseTime,
+    transactionHash: event.transactionHash,
   });
 
   return 1;

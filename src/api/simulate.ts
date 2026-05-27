@@ -1,4 +1,13 @@
 import { Router, Request, Response } from 'express';
+import { xdr, Transaction, FeeBumpTransaction, SorobanRpc } from '@stellar/stellar-sdk';
+import { rpc } from '../indexer/rpc';
+import { config } from '../config';
+import { parseInvokeHostFunction } from '../indexer/xdr-parser';
+import { getContractAbi } from '../indexer/registry';
+import { decodeScVal } from '../indexer/args-decoder';
+import { formatFootprint } from '../indexer/footprint-formatter';
+import { generateAuthSnapshots } from '../indexer/auth-snippet-gen';
+import { parseCallTrace } from '../indexer/call-trace';
 import { xdr } from '@stellar/stellar-sdk';
 import { rpc } from '../indexer/rpc';
 import { parseInvokeHostFunction } from '../indexer/xdr-parser';
@@ -8,6 +17,33 @@ import { prisma } from '../db';
 
 export const simulateRouter = Router();
 
+// ── Param diagnostics ─────────────────────────────────────────────────────────
+
+interface ParamDiagnostic {
+  index: number; name: string; expectedType: string;
+  providedType: string; value: unknown; issue: string;
+}
+
+const XDR_TYPE_MAP: Record<string, string[]> = {
+  address: ['scvAddress'], bool: ['scvBool'],
+  i128: ['scvI128'], u128: ['scvU128'], i64: ['scvI64'], u64: ['scvU64'],
+  i32: ['scvI32'], u32: ['scvU32'], string: ['scvString'],
+  symbol: ['scvSymbol'], bytes: ['scvBytes'], void: ['scvVoid'],
+};
+
+function detectTypeMismatch(abiType: string, xdrType: string, value: unknown): string | null {
+  const allowed = XDR_TYPE_MAP[abiType.toLowerCase()];
+  if (!allowed) return null;
+  if (!allowed.includes(xdrType))
+    return `Type mismatch: expected ${abiType} (${allowed.join('|')}) but got ${xdrType}`;
+  if (['u32','u64','u128'].includes(abiType) && typeof value === 'bigint' && value < 0n)
+    return `Value ${value} is negative but ${abiType} must be ≥ 0`;
+  return null;
+}
+
+function diagnoseArgs(
+  fnName: string, rawArgs: xdr.ScVal[],
+  abi: Awaited<ReturnType<typeof getContractAbi>>, decimals?: number,
 interface ParamDiagnostic {
   index: number;
   name: string;
@@ -15,6 +51,25 @@ interface ParamDiagnostic {
   providedType: string;
   value: unknown;
   issue: string;
+}
+
+const XDR_TYPE_MAP: Record<string, string[]> = {
+  address: ['scvAddress'], bool: ['scvBool'],
+  i128: ['scvI128'], u128: ['scvU128'],
+  i64: ['scvI64'],   u64: ['scvU64'],
+  i32: ['scvI32'],   u32: ['scvU32'],
+  string: ['scvString'], symbol: ['scvSymbol'],
+  bytes: ['scvBytes'],   void: ['scvVoid'],
+};
+
+function detectTypeMismatch(abiType: string, xdrType: string, value: unknown): string | null {
+  const allowed = XDR_TYPE_MAP[abiType.toLowerCase()];
+  if (!allowed) return null;
+  if (!allowed.includes(xdrType))
+    return `Type mismatch: expected ${abiType} (${allowed.join('|')}) but got ${xdrType}`;
+  if (['u32','u64','u128'].includes(abiType) && typeof value === 'bigint' && value < 0n)
+    return `Value ${value} is negative but ${abiType} must be ≥ 0`;
+  return null;
 }
 
 /**
@@ -25,11 +80,36 @@ function diagnoseArgs(
   fnName: string,
   rawArgs: xdr.ScVal[],
   abi: Awaited<ReturnType<typeof getContractAbi>>,
+  decimals?: number,
   decimals?: number
 ): ParamDiagnostic[] {
   if (!abi) return [];
   const fn = abi.functions.find((f) => f.name === fnName);
   if (!fn) return [];
+  const issues: ParamDiagnostic[] = [];
+  for (let i = 0; i < fn.inputs.length; i++) {
+    const param = fn.inputs[i];
+    const val = rawArgs[i];
+    if (!val) {
+      issues.push({ index: i, name: param.name, expectedType: param.type,
+        providedType: 'missing', value: undefined,
+        issue: `Missing required argument "${param.name}" (expected ${param.type})` });
+      continue;
+    }
+    const decoded = decodeScVal(val, param, decimals);
+    const mismatch = detectTypeMismatch(param.type, val.switch().name, decoded.raw);
+    if (mismatch)
+      issues.push({ index: i, name: param.name, expectedType: param.type,
+        providedType: val.switch().name, value: decoded.formatted, issue: mismatch });
+  }
+  if (rawArgs.length > fn.inputs.length)
+    issues.push({ index: fn.inputs.length, name: '(extra)', expectedType: 'none',
+      providedType: 'extra', value: null,
+      issue: `${rawArgs.length - fn.inputs.length} unexpected extra argument(s) passed to "${fnName}"` });
+  return issues;
+}
+
+// ── Route ─────────────────────────────────────────────────────────────────────
 
   const issues: ParamDiagnostic[] = [];
 
@@ -129,6 +209,74 @@ function detectTypeMismatch(
  * POST /api/v1/simulate
  * Body: { transaction: "<base64 XDR>" }
  *
+ * Proxies to Soroban RPC simulateTransaction and overlays:
+ *   - Resource footprint with % of protocol limits
+ *   - Chronological call-stack trace with per-event resource deltas
+ *   - Recording-mode auth snapshots with JS/Rust signing snippets
+ *   - On failure: ABI-aware per-param diagnostics
+ */
+simulateRouter.post('/', async (req: Request, res: Response) => {
+  const { transaction } = req.body as { transaction?: string };
+  if (!transaction || typeof transaction !== 'string')
+    return res.status(400).json({ error: 'Body must include a base64 XDR "transaction" field.' });
+
+  const parsed = parseInvokeHostFunction(transaction);
+
+  let txObj: Transaction | FeeBumpTransaction;
+  try {
+    try { txObj = new Transaction(transaction, config.networkPassphrase); }
+    catch { txObj = new FeeBumpTransaction(transaction, config.networkPassphrase); }
+  } catch (err) {
+    return res.status(400).json({ error: 'Invalid transaction XDR', detail: String(err) });
+  }
+
+  let rpcResult: SorobanRpc.Api.SimulateTransactionResponse;
+  try {
+    rpcResult = await rpc.simulateTransaction(txObj);
+  } catch (err) {
+    return res.status(502).json({ error: 'RPC request failed', detail: String(err) });
+  }
+
+  // ── Success ───────────────────────────────────────────────────────────────
+  if (SorobanRpc.Api.isSimulationSuccess(rpcResult) || SorobanRpc.Api.isSimulationRestore(rpcResult)) {
+    const footprint = formatFootprint(rpcResult);
+    const authSnapshots = rpcResult.result?.auth
+      ? generateAuthSnapshots(rpcResult.result.auth) : [];
+
+    // Build call trace from diagnostic events
+    const cpuInsns = Number((rpcResult.cost as SorobanRpc.Api.Cost)?.cpuInsns ?? 0);
+    const memBytes = Number((rpcResult.cost as SorobanRpc.Api.Cost)?.memBytes ?? 0);
+    const callTrace = parseCallTrace(
+      rpcResult.events as xdr.DiagnosticEvent[],
+      cpuInsns || undefined,
+      memBytes || undefined,
+    );
+
+    return res.json({ status: 'success', simulation: rpcResult, footprint, callTrace, authSnapshots, parsed });
+  }
+
+  // ── Failure — diagnostic overlay ──────────────────────────────────────────
+  const rpcError = (rpcResult as SorobanRpc.Api.SimulateTransactionErrorResponse).error;
+
+  // Still parse call trace from diagnostic events on failure (partial trace)
+  const callTrace = parseCallTrace(
+    (rpcResult as SorobanRpc.Api.SimulateTransactionErrorResponse).events as xdr.DiagnosticEvent[],
+  );
+
+  let paramIssues: ParamDiagnostic[] = [];
+  let humanSummary = rpcError;
+
+  if (parsed) {
+    const { contractId, functionName } = parsed;
+    let rawArgs: xdr.ScVal[] = [];
+    try {
+      const envelope = xdr.TransactionEnvelope.fromXDR(transaction, 'base64');
+      const ops = envelope.switch().name === 'envelopeTypeTx'
+        ? envelope.v1().tx().operations() : envelope.v0().tx().operations();
+      const invokeOp = ops.find((op) => op.body().switch().name === 'invokeHostFunction');
+      if (invokeOp)
+        rawArgs = invokeOp.body().invokeHostFunctionOp().hostFunction().invokeContract().args();
+    } catch { /* leave empty */ }
  * Proxies to Soroban RPC simulateTransaction. On failure, overlays
  * ABI-aware diagnostics explaining which parameters are breaking the call.
  */
@@ -212,6 +360,22 @@ simulateRouter.post('/', async (req: Request, res: Response) => {
       prisma.contract.findUnique({ where: { address: contractId } }),
     ]);
 
+    paramIssues = diagnoseArgs(functionName, rawArgs, abi, contract?.tokenDecimals ?? undefined);
+    humanSummary = paramIssues.length > 0
+      ? `Call to "${functionName}" on ${contract?.name ?? contractId} will fail:\n` +
+        paramIssues.map((p) => `  • [arg ${p.index}] ${p.name}: ${p.issue}`).join('\n')
+      : abi
+        ? `Simulation failed for "${functionName}" on ${contract?.name ?? contractId}. ` +
+          `Arguments look structurally valid — likely a contract assertion or missing auth. RPC: ${rpcError}`
+        : rpcError;
+  }
+
+  return res.status(422).json({
+    status: 'failed',
+    callTrace,
+    diagnostics: { rpcError, contract: parsed?.contractId ?? null,
+      function: parsed?.functionName ?? null, paramIssues, humanSummary },
+  });
     const paramIssues = diagnoseArgs(functionName, rawArgs, abi, contract?.tokenDecimals ?? undefined);
     diagnostics.paramIssues = paramIssues;
 

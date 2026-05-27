@@ -1,5 +1,12 @@
 import { SorobanDataBuilder, SorobanRpc } from '@stellar/stellar-sdk';
 
+const LIMITS = {
+  cpuInstructions: 100_000_000,
+  memBytes: 40 * 1024 * 1024,
+  ledgerReadBytes: 200 * 1024,
+  ledgerWriteBytes: 66 * 1024,
+  ledgerReadEntries: 40,
+  ledgerWriteEntries: 25,
 /**
  * Soroban protocol-level per-transaction limits (as of Protocol 21 / mainnet).
  * @see https://developers.stellar.org/docs/networks/resource-limits-fees
@@ -18,6 +25,8 @@ export interface ResourceMetric {
   value: number;
   limit: number;
   unit: string;
+  pct: number;
+  human: string;
   pct: number;           // 0–100
   human: string;         // e.g. "Uses 42% of maximum block CPU capacity"
 }
@@ -25,11 +34,29 @@ export interface ResourceMetric {
 export interface FormattedFootprint {
   minResourceFee: string;
   metrics: ResourceMetric[];
+  summary: string;
+}
+
+function fmtBytes(n: number): string {
+  if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+  if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${n} B`;
   summary: string;       // one-line worst-case description
 }
 
 function metric(label: string, value: number, limit: number, unit: string): ResourceMetric {
   const pct = limit > 0 ? Math.min(100, Math.round((value / limit) * 100)) : 0;
+  const fmt = unit === 'bytes' ? fmtBytes : (n: number) => n.toLocaleString();
+  return {
+    label, value, limit, unit, pct,
+    human: `Uses ${pct}% of maximum ${label.toLowerCase()} (${fmt(value)} / ${fmt(limit)})`,
+  };
+}
+
+export function formatFootprint(
+  sim: SorobanRpc.Api.SimulateTransactionSuccessResponse,
+): FormattedFootprint {
+  const resources = (sim.transactionData as SorobanDataBuilder).build().resources();
   const display = unit === 'bytes' ? fmtBytes(value) : value.toLocaleString();
   const limitDisplay = unit === 'bytes' ? fmtBytes(limit) : limit.toLocaleString();
   return {
@@ -58,6 +85,9 @@ export function formatFootprint(sim: SorobanRpc.Api.SimulateTransactionSuccessRe
   const memBytes = Number((sim.cost as SorobanRpc.Api.Cost).memBytes);
   const readBytes = Number(resources.readBytes());
   const writeBytes = Number(resources.writeBytes());
+  const readEntries =
+    (sim.transactionData as SorobanDataBuilder).getReadOnly().length +
+    (sim.transactionData as SorobanDataBuilder).getReadWrite().length;
   const readEntries = (sim.transactionData as SorobanDataBuilder).getReadOnly().length +
                       (sim.transactionData as SorobanDataBuilder).getReadWrite().length;
   const writeEntries = (sim.transactionData as SorobanDataBuilder).getReadWrite().length;

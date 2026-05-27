@@ -1,4 +1,5 @@
 import express from 'express';
+import { createServer } from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -26,8 +27,12 @@ async function main() {
   await prisma.$connect();
   startIndexerService().catch((err) => console.error('Indexer service failed:', err));
 
-  app.listen(config.port, () => {
+  const httpServer = createServer(app);
+  attachWebSocketServer(httpServer);
+
+  httpServer.listen(config.port, () => {
     console.log(`🚀 Soroban Explorer API running on port ${config.port}`);
+    console.log(`🔌 WebSocket event stream available at ws://localhost:${config.port}/ws/events`);
   });
 }
 

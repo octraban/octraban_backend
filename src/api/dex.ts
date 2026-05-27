@@ -4,6 +4,7 @@ import { analyzeTransaction, analyzeRange } from '../indexer/dex-analyzer';
 
 export const dexRouter = Router();
 
+// GET /dex/analyze/:hash — analyze a single transaction
 // GET /dex/analyze/:hash
 // Analyze a single transaction for flash loans, arbitrage, and multi-hop routes.
 dexRouter.get('/analyze/:hash', async (req: Request, res: Response) => {
@@ -22,6 +23,7 @@ const rangeSchema = z.object({
   limit:     z.coerce.number().int().min(1).max(500).default(100),
 });
 
+// GET /dex/analyze?ledgerMin=&ledgerMax=&limit= — analyze a ledger range
 // GET /dex/analyze?ledgerMin=&ledgerMax=&limit=
 // Analyze all transactions in a ledger range.
 dexRouter.get('/analyze', async (req: Request, res: Response) => {

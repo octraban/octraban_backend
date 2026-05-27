@@ -35,6 +35,10 @@ model Contract {
   tokenSymbol   String?
   tokenName     String?
   tokenDecimals Int?
+  wasmHash    String?  // fuzzy hash of compiled Wasm bytecode for similarity detection
+  isVerified  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -100,10 +104,86 @@ model Event {
   @@index([contractAddress, ledgerSequence])
 }
 
+// Custom event symbol → template bindings submitted by verified project creators
+model EventDefinition {
+  id              String   @id @default(cuid())
+  contractAddress String
+  // The event topic symbol this binding applies to, e.g. "mint_pass"
+  topicSymbol     String
+  // Mustache-style template, e.g. "Minted pass #{{data.id}} to {{data.owner}}"
+  humanTemplate   String
+  // Who submitted this definition (API key or creator identifier)
+  submittedBy     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([contractAddress, topicSymbol])
+  @@index([contractAddress])
+}
+
 model IndexerState {
   id         String   @id @default("singleton")
   lastLedger Int      @default(0)
   updatedAt  DateTime @updatedAt
+}
+
+// Bidirectional mapping: classic Stellar asset ↔ SAC contract address
+model SacMapping {
+  id           String   @id @default(cuid())
+  // Classic asset fields
+  assetCode    String   // e.g. "USDC"
+  assetIssuer  String?  // null for XLM (native)
+  assetType    String   // "native" | "credit_alphanum4" | "credit_alphanum12"
+  // Soroban side
+  sacAddress   String   @unique  // derived C-address of the SAC contract
+  // Metadata
+  firstSeenLedger Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ammPools     AmmPool[]
+
+  @@unique([assetCode, assetIssuer])
+  @@index([sacAddress])
+  @@index([assetCode])
+}
+
+// AMM pool that uses one or more SAC-wrapped assets
+model AmmPool {
+  id              String   @id @default(cuid())
+  poolAddress     String   @unique  // Soroban contract address of the pool
+  poolType        String   @default("constant_product")  // constant_product | stable
+  // The two assets in the pool (at least one is a SAC)
+  assetAAddress   String   // SAC address or native token address
+  assetBAddress   String
+  // Reverse links to SacMapping (nullable — one side may be a non-SAC token)
+  sacMappingAId   String?
+  sacMappingBId   String?
+  sacMappingA     SacMapping? @relation(fields: [sacMappingAId], references: [id])
+  firstSeenLedger Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([assetAAddress])
+  @@index([assetBAddress])
+}
+
+model VerificationJob {
+  id              String   @id @default(cuid())
+  contractAddress String?  // on-chain address to compare against
+  toolchain       String   @default("soroban-cli@0.9.4") // pinned toolchain version
+  status          String   @default("pending") // pending | compiling | verified | failed
+  uploadedHash    String?  // SHA-256 of uploaded archive
+  onChainWasmHash String?  // hash fetched from RPC
+  compiledWasmHash String? // hash of compiled output
+  matched         Boolean?
+  errorMsg        String?
+  logs            String?  // compiler stdout/stderr
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([contractAddress])
+  @@index([status])
 }
 
 model FailedItem {
