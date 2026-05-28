@@ -4,6 +4,7 @@ import { runIndexer } from './indexer';
 import { scheduleReconciliation } from './reconciliation';
 import { startProtocolMonitor } from './protocol-guard';
 import { schedulePruner } from './dataPruner';
+import { initWhaleWatcher } from './whaleWatcher';
 
 async function main() {
   await prisma.$connect();
@@ -16,6 +17,9 @@ async function main() {
 
   // #135: Schedule transient state data pruner
   schedulePruner();
+
+  // #136: Initialize whale transaction watcher
+  initWhaleWatcher();
 
   await runIndexer();
 }
