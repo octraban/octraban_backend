@@ -1,6 +1,8 @@
 import WebSocket from 'ws';
 import { prismaWrite as prisma } from '../db';
 import { config } from '../config';
+import { fetchEvents, getLatestLedger, getRpcWebsocketUrl, getTransaction, type LedgerEvent } from './rpc';
+import { decodeTransaction, decodeEvent } from './decoder';
 import { getLatestLedger, getRpcWebsocketUrl } from './rpc';
 import { processLedgerRange } from './ledgerProcessor';
 
@@ -24,6 +26,68 @@ async function setLastIndexedLedger(ledger: number): Promise<void> {
   await prisma.indexerState.update({ where: { id: 'singleton' }, data: { lastLedger: ledger } });
 }
 
+async function processLedgerRange(start: number, end: number) {
+  console.log(`Indexing ledgers ${start} → ${end}`);
+  const events = await fetchEvents(start, end);
+
+  for (const event of events) {
+    await prisma.contract.upsert({
+      where: { address: event.contractId },
+      update: {},
+      create: { address: event.contractId },
+    });
+
+    const existingTx = await prisma.transaction.findUnique({ where: { hash: event.transactionHash } });
+    if (!existingTx) {
+      const txResult = await getTransaction(event.transactionHash).catch(() => null);
+      const rawXdr = (txResult as any)?.envelopeXdr?.toXDR('base64') ?? '';
+      const decoded = rawXdr
+        ? await decodeTransaction(rawXdr)
+        : {
+            contractAddress: event.contractId,
+            functionName: null,
+            functionArgs: null,
+            humanReadable: null,
+          };
+
+      await prisma.transaction.upsert({
+        where: { hash: event.transactionHash },
+        update: {},
+        create: {
+          hash: event.transactionHash,
+          ledger: event.ledger,
+          ledgerCloseTime: event.ledgerCloseTime,
+          sourceAccount: (txResult as any)?.sourceAccount ?? 'unknown',
+          contractAddress: decoded.contractAddress,
+          functionName: decoded.functionName,
+          functionArgs: decoded.functionArgs as object ?? undefined,
+          rawXdr,
+          status: (txResult as any)?.status === 'SUCCESS' ? 'success' : 'failed',
+          humanReadable: decoded.humanReadable,
+          feeCharged: String((txResult as any)?.feeCharged ?? ''),
+        },
+      });
+    }
+
+    const { eventType, decoded } = decodeEvent(event.topics, event.data);
+    const eventId = `${event.transactionHash}-${event.topics[0] ?? '0'}`;
+    await prisma.event.upsert({
+      where: { id: eventId },
+      update: {},
+      create: {
+        id: eventId,
+        transactionHash: event.transactionHash,
+        contractAddress: event.contractId,
+        eventType,
+        topics: event.topics,
+        data: { raw: event.data },
+        decoded: decoded as object,
+        ledger: event.ledger,
+        ledgerCloseTime: event.ledgerCloseTime,
+      },
+    });
+
+    await processSessionAuthorization(event, eventType, decoded, eventId);
 // ---------------------------------------------------------------------------
 // Parallel catch-up
 // ---------------------------------------------------------------------------
@@ -58,6 +122,135 @@ async function catchUp(from: number, to: number): Promise<void> {
   console.log(`[catch-up] done — cursor advanced to ${to}`);
 }
 
+async function processSessionAuthorization(
+  event: LedgerEvent,
+  eventType: string,
+  decoded: Record<string, unknown>,
+  eventId: string,
+) {
+  const knownAuthEvents = new Set([
+    'session_authorization',
+    'authorize_session',
+    'hot_signer_authorized',
+    'ephemeral_key_auth',
+    'authorization_window',
+  ]);
+  if (!knownAuthEvents.has(eventType)) {
+    return;
+  }
+
+  const hotSigner = extractHotSigner(decoded, event.topics);
+  const startLedger = extractStartLedger(decoded, event.ledger);
+  const expiryLedger = extractExpiryLedger(decoded, startLedger);
+  if (!hotSigner || expiryLedger === undefined || expiryLedger <= startLedger) {
+    return;
+  }
+
+  const allocatedBlocks = Math.max(0, expiryLedger - startLedger);
+
+  await prisma.sessionAuthorization.upsert({
+    where: { eventId },
+    update: {
+      hotSigner,
+      authorizationType: eventType,
+      startLedger,
+      expiryLedger,
+      allocatedBlocks,
+      contractAddress: event.contractId,
+    },
+    create: {
+      eventId,
+      contractAddress: event.contractId,
+      hotSigner,
+      authorizationType: eventType,
+      startLedger,
+      expiryLedger,
+      allocatedBlocks,
+    },
+  });
+}
+
+function extractHotSigner(decoded: Record<string, unknown>, topics: string[]) {
+  if (decoded?.hotSigner) {
+    return String(decoded.hotSigner);
+  }
+  if (decoded?.authorizedSigner) {
+    return String(decoded.authorizedSigner);
+  }
+  if (decoded?.data && typeof decoded.data === 'object' && decoded.data !== null) {
+    const candidate = getNumericOrStringField(decoded.data as Record<string, unknown>, [
+      'hotSigner',
+      'authorizedSigner',
+      'signer',
+      'address',
+    ]);
+    if (candidate) {
+      return String(candidate);
+    }
+  }
+  if (Array.isArray(decoded.topics) && decoded.topics[1] != null) {
+    return String(decoded.topics[1]);
+  }
+  if (topics[1]) {
+    return topics[1];
+  }
+  return undefined;
+}
+
+function extractStartLedger(decoded: Record<string, unknown>, defaultLedger: number) {
+  const rawStart = decoded?.data && typeof decoded.data === 'object'
+    ? getNumericOrStringField(decoded.data as Record<string, unknown>, ['startLedger', 'start_block', 'fromLedger'])
+    : undefined;
+  const parsed = rawStart !== undefined ? Number(rawStart) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultLedger;
+}
+
+function extractExpiryLedger(decoded: Record<string, unknown>, startLedger: number) {
+  const data = decoded?.data;
+  const rawExpiry = typeof data === 'object' && data !== null
+    ? getNumericOrStringField(data as Record<string, unknown>, [
+        'expiryLedger',
+        'expiresAtLedger',
+        'expires_at_ledger',
+        'expirationLedger',
+        'validUntilLedger',
+        'expiresAtBlock',
+        'expiryBlock',
+      ])
+    : undefined;
+
+  if (rawExpiry !== undefined) {
+    const expiry = Number(rawExpiry);
+    if (Number.isFinite(expiry) && expiry > 0) {
+      return expiry;
+    }
+  }
+
+  const duration = typeof data === 'object' && data !== null
+    ? getNumericOrStringField(data as Record<string, unknown>, [
+        'durationBlocks',
+        'allocatedBlocks',
+        'windowBlocks',
+        'expiresInBlocks',
+      ])
+    : undefined;
+  const parsedDuration = duration !== undefined ? Number(duration) : NaN;
+  if (Number.isFinite(parsedDuration) && parsedDuration > 0) {
+    return startLedger + parsedDuration;
+  }
+
+  return undefined;
+}
+
+function getNumericOrStringField(source: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = source[key];
+    if (value !== undefined && value !== null) {
+      return value;
+    }
+  }
+  return undefined;
+}
 // ---------------------------------------------------------------------------
 // Worker class (live tail + catch-up orchestration)
 // ---------------------------------------------------------------------------
