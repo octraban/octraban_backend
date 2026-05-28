@@ -357,4 +357,45 @@ model ComplianceFlag {
   @@index([severity])
 }
 
+// Tax lot for cost-basis tracking (IRS Form 8949)
+model TaxLot {
+  id              String   @id @default(cuid())
+  walletAddress   String
+  assetSymbol     String   // e.g., "USDC", "XLM"
+  quantity        String   // decimal string
+  costBasisPerUnit String  // in USD or reference currency
+  totalCostBasis  String   // quantity * costBasisPerUnit
+  acquisitionDate DateTime
+  disposalDate    DateTime?
+  disposalPrice   String?  // price per unit at disposal
+  gainLoss        String?  // (disposalPrice - costBasisPerUnit) * quantity
+  transactionHash String?  // link to original tx
+  createdAt       DateTime @default(now())
+
+  @@index([walletAddress])
+  @@index([assetSymbol])
+  @@index([acquisitionDate])
+  @@index([disposalDate])
+}
+
+// Tax export job for Form 8949 CSV generation
+model TaxExportJob {
+  id              String   @id @default(cuid())
+  walletAddress   String
+  taxYear         Int
+  status          String   @default("pending")  // pending | processing | completed | failed
+  filePath        String?  // path to generated CSV
+  totalLots       Int?
+  totalGain       String?  // sum of all gains
+  totalLoss       String?  // sum of all losses
+  errorMsg        String?
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
+
+  @@index([walletAddress])
+  @@index([taxYear])
+  @@index([status])
+}
+
+
 
