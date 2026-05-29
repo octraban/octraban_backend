@@ -1,5 +1,6 @@
 import { xdr, scValToNative, StrKey } from "@stellar/stellar-sdk";
 import { db } from "./db.js";
+import { sacLabel, detectSac } from "./sac.js";
 
 /**
  * Decode a raw Soroban RPC event into a human-readable record.
@@ -19,9 +20,14 @@ export async function decode(ev) {
   const meta = await db.getContractMeta(contractId).catch(() => null);
   const fnAbi = meta?.functions?.find(f => f.name === fnName);
 
+  const { isSac, assetCode } = detectSac(contractId);
+  const contractLabel = isSac
+    ? `${assetCode} (SAC:${contractId.slice(0, 8)}…)`
+    : (meta?.name ?? contractId);
+
   const description = fnAbi
-    ? buildDescription(fnName, topics.slice(1), data, meta.name)
-    : genericDescription(fnName, topics.slice(1), data, contractId);
+    ? buildDescription(fnName, topics.slice(1), data, contractLabel)
+    : genericDescription(fnName, topics.slice(1), data, contractLabel);
 
   return {
     contract_id: contractId,
@@ -31,6 +37,7 @@ export async function decode(ev) {
     description,
     raw_topics:  topics.map(String),
     raw_data:    JSON.stringify(data),
+    ...(isSac && { sac_asset: assetCode }),
   };
 }
 
