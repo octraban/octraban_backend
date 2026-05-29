@@ -1,7 +1,9 @@
 import express from "express";
 import { db } from "./db.js";
+import { verifyAbi } from "./verify_abi.js";
 
 const PORT = process.env.PORT || 3001;
+const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
 
 export function startApi() {
   const app = express();
@@ -40,8 +42,58 @@ export function startApi() {
   // POST /api/contracts  — register ABI metadata
   app.post("/api/contracts", async (req, res) => {
     try {
+      const { id, functions } = req.body;
+
+      if (!id || !functions) {
+        return res.status(400).json({ error: "Missing id or functions" });
+      }
+
+      // Verify ABI against on-chain spec if enabled
+      if (VERIFY_ON_UPLOAD) {
+        const verification = await verifyAbi(id, functions);
+
+        if (!verification.valid) {
+          return res.status(400).json({
+            error: "ABI verification failed",
+            details: verification,
+          });
+        }
+
+        console.log(`ABI verified for contract ${id}:`, {
+          functionsVerified: functions.length,
+          missing: verification.missingFunctions.length,
+          mismatches: verification.argMismatch.length,
+        });
+      }
+
       await db.upsertContractMeta(req.body);
       res.status(201).json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/verify — verify ABI without registering
+  app.post("/api/verify", async (req, res) => {
+    try {
+      const { contractId, functions } = req.body;
+
+      if (!contractId || !functions) {
+        return res.status(400).json({ error: "Missing contractId or functions" });
+      }
+
+      const verification = await verifyAbi(contractId, functions);
+      res.json(verification);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/spec/:id — fetch on-chain spec for a contract
+  app.get("/api/spec/:id", async (req, res) => {
+    try {
+      const { fetchContractSpec } = await import("./verify_abi.js");
+      const spec = await fetchContractSpec(req.params.id);
+      if (spec === null) {
+        return res.status(404).json({ error: "Contract not found or has no spec" });
+      }
+      res.json(spec);
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
