@@ -105,7 +105,7 @@ virtualListRouter.get('/transactions', async (req: Request, res: Response) => {
         status: true,
         ledgerSequence: true,
         ledgerCloseTime: true,
-        decodedDescription: true,
+        humanReadable: true,
       },
       orderBy: { ledgerCloseTime: 'desc' },
       skip: offset,
@@ -122,7 +122,7 @@ virtualListRouter.get('/transactions', async (req: Request, res: Response) => {
     ledger: tx.ledgerSequence,
     timestamp: tx.ledgerCloseTime.getTime(),
     rowHeight: ESTIMATED_ROW_HEIGHT,
-    decoded: tx.decodedDescription || undefined,
+    decoded: tx.humanReadable || undefined,
   }));
 
   const payload: VirtualListPayload = {
