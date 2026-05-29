@@ -1,9 +1,10 @@
 import { xdr, scValToNative, StrKey } from "@stellar/stellar-sdk";
 import { db } from "./db.js";
+import { renderTemplate } from "./templateRenderer.js";
 
 /**
  * Decode a raw Soroban RPC event into a human-readable record.
- * Falls back to a generic description when no ABI is registered.
+ * Uses the ABI template when available; falls back to a generic description.
  */
 export async function decode(ev) {
   const contractId = ev.contractId;
@@ -15,13 +16,13 @@ export async function decode(ev) {
     ? String(topics[0])
     : "unknown";
 
-  // Look up registered ABI for richer description
-  const meta = await db.getContractMeta(contractId).catch(() => null);
+  const meta  = await db.getContractMeta(contractId).catch(() => null);
   const fnAbi = meta?.functions?.find(f => f.name === fnName);
 
-  const description = fnAbi
-    ? buildDescription(fnName, topics.slice(1), data, meta.name)
-    : genericDescription(fnName, topics.slice(1), data, contractId);
+  const description = fnAbi?.template
+    ? renderTemplate(fnAbi.template, fnAbi.params ?? [], topics.slice(1),
+        { contractName: meta.name, fnName })
+    : genericDescription(fnName, topics.slice(1), contractId);
 
   return {
     contract_id: contractId,
@@ -34,35 +35,6 @@ export async function decode(ev) {
   };
 }
 
-function buildDescription(fn, args, data, contractName) {
-  switch (fn) {
-    case "swap": {
-      const [from, amtIn, tokenIn, amtOut, tokenOut] = args;
-      return `Address ${fmt(from)} swapped ${amtIn} ${tokenIn} → ${amtOut} ${tokenOut} on ${contractName}`;
-    }
-    case "transfer": {
-      const [from, to, amount, token] = args;
-      return `Address ${fmt(from)} transferred ${amount} ${token ?? ""} to ${fmt(to)} on ${contractName}`;
-    }
-    case "mint": {
-      const [to, amount, token] = args;
-      return `${amount} ${token ?? ""} minted to ${fmt(to)} on ${contractName}`;
-    }
-    case "burn": {
-      const [from, amount, token] = args;
-      return `${amount} ${token ?? ""} burned from ${fmt(from)} on ${contractName}`;
-    }
-    default:
-      return genericDescription(fn, args, data, contractName);
-  }
-}
-
-function genericDescription(fn, args, data, contractId) {
-  const argStr = args.map(String).join(", ");
-  return `${fn}(${argStr}) called on ${contractId}`;
-}
-
-function fmt(addr) {
-  if (typeof addr !== "string" || addr.length < 10) return String(addr);
-  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+function genericDescription(fn, args, contractId) {
+  return `${fn}(${args.map(String).join(", ")}) called on ${contractId}`;
 }
