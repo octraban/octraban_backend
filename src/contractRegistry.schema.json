@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://soroban-smart-block-explorer.github.io/schemas/contractRegistry.schema.json",
+  "title": "Community Contract Registry Entry",
+  "description": "Schema for manually submitted Soroban contract metadata and custom ABI interpretations.",
+  "type": "object",
+  "required": ["contractId", "name"],
+  "additionalProperties": false,
+  "properties": {
+    "contractId": {
+      "type": "string",
+      "description": "Stellar contract address (C... strkey, 56 chars)",
+      "pattern": "^C[A-Z2-7]{55}$"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable contract name",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "description": {
+      "type": "string",
+      "description": "Short description of what the contract does",
+      "maxLength": 500
+    },
+    "links": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "homepage": { "type": "string", "format": "uri" },
+        "source":   { "type": "string", "format": "uri" },
+        "logo":     { "type": "string", "format": "uri" }
+      }
+    },
+    "functions": {
+      "type": "array",
+      "description": "Optional custom ABI function descriptions",
+      "items": {
+        "type": "object",
+        "required": ["name", "template"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Function name as it appears in the contract",
+            "minLength": 1
+          },
+          "template": {
+            "type": "string",
+            "description": "Human-readable template string with {param} placeholders",
+            "minLength": 1
+          },
+          "params": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "type"],
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string", "minLength": 1 },
+                "type": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
