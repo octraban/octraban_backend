@@ -66,6 +66,8 @@ export const db = {
       ALTER TABLE events ADD COLUMN IF NOT EXISTS upgrade_info JSONB;
       -- Issue #52: storage tier breakdown
       ALTER TABLE events ADD COLUMN IF NOT EXISTS storage_tiers JSONB;
+      -- Issue #85: multi-file source code matching
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS source_files JSONB;
     `);
   },
 
@@ -266,11 +268,33 @@ export const db = {
 
   async upsertContractMeta(meta) {
     await pool.query(
-      `INSERT INTO contracts (id, name, description, functions, registered_by)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (id) DO UPDATE SET name=$2, description=$3, functions=$4`,
-      [meta.id, meta.name, meta.description, JSON.stringify(meta.functions), meta.registered_by]
+      `INSERT INTO contracts (id, name, description, functions, registered_by, source_files)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (id) DO UPDATE SET name=$2, description=$3, functions=$4, source_files=$6`,
+      [
+        meta.id, meta.name, meta.description, JSON.stringify(meta.functions), meta.registered_by,
+        meta.source_files ? JSON.stringify(meta.source_files) : null,
+      ]
     );
+  },
+
+  async getMigrationStatus(contractId) {
+    const { rows } = await pool.query(
+      `SELECT
+         MAX(CASE WHEN upgrade_info IS NOT NULL THEN ledger END) AS last_upgrade_ledger,
+         MAX(CASE WHEN function = 'migrate' THEN ledger END)     AS last_migrate_ledger
+       FROM events WHERE contract_id = $1`,
+      [contractId]
+    );
+    const { last_upgrade_ledger, last_migrate_ledger } = rows[0];
+    const pending =
+      last_upgrade_ledger != null &&
+      (last_migrate_ledger == null || Number(last_upgrade_ledger) > Number(last_migrate_ledger));
+    return {
+      pending,
+      upgradedAtLedger: last_upgrade_ledger ? Number(last_upgrade_ledger) : null,
+      migratedAtLedger: last_migrate_ledger ? Number(last_migrate_ledger) : null,
+    };
   },
 
   // ── Vault indexer methods ──────────────────────────────────────────────────────

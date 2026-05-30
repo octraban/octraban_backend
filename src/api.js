@@ -231,6 +231,14 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── GET /api/contracts/:id/migration-status — Issue #84: SEP-49 migration tracker
+  app.get("/api/contracts/:id/migration-status", async (req, res) => {
+    try {
+      const status = await db.getMigrationStatus(req.params.id);
+      res.json(status);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── POST /api/auth-tree — parse multi-sig ContractAuth trees ───────────────
   // Body: { auth: string[] }  — array of base64 SorobanAuthorizationEntry XDRs
   // Returns: ordered array of { signer, invocations: [{ depth, scope }] }
