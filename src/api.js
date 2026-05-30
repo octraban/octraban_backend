@@ -1,6 +1,10 @@
 import express from "express";
 import { db } from "./db.js";
 import { fetchTokenMetadata } from "./sep41Metadata.js";
+import { SorobanRpc, TransactionBuilder } from "@stellar/stellar-sdk";
+
+const RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
+const _rpc = new SorobanRpc.Server(RPC_URL, { allowHttp: true });
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
@@ -8,6 +12,53 @@ const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
 export function startApi() {
   const app = express();
   app.use(express.json());
+
+  // GET /api/account/:address — fetch account for transaction building
+  app.get("/api/account/:address", async (req, res) => {
+    try {
+      const account = await _rpc.getAccount(req.params.address);
+      res.json({ id: account.accountId(), sequence: account.sequenceNumber() });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/submit — broadcast a signed transaction XDR
+  app.post("/api/submit", async (req, res) => {
+    try {
+      const { xdr: txXdr } = req.body;
+      if (!txXdr) return res.status(400).json({ error: "Missing xdr" });
+      const network = await _rpc.getNetwork();
+      const tx = TransactionBuilder.fromXDR(txXdr, network.passphrase);
+      const result = await _rpc.sendTransaction(tx);
+      res.json({ hash: result.hash, status: result.status });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/health
+  app.get("/api/health", async (_req, res) => {
+    try {
+      const [latestLedger, dbMaxLedger] = await Promise.all([
+        _rpc.getLatestLedger().then(r => r.sequence),
+        db.getMaxLedger(),
+      ]);
+      const lag = latestLedger - dbMaxLedger;
+      const syncPct = latestLedger > 0
+        ? Math.min(100, Math.round((dbMaxLedger / latestLedger) * 10000) / 100)
+        : 0;
+      const mem = process.memoryUsage();
+      res.json({
+        status: lag < 100 ? "ok" : "lagging",
+        sync_pct: syncPct,
+        lag_ledgers: lag,
+        network_ledger: latestLedger,
+        indexed_ledger: dbMaxLedger,
+        memory: {
+          rss_mb:       Math.round(mem.rss / 1024 / 1024 * 100) / 100,
+          heap_used_mb: Math.round(mem.heapUsed / 1024 / 1024 * 100) / 100,
+          heap_total_mb:Math.round(mem.heapTotal / 1024 / 1024 * 100) / 100,
+        },
+      });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
 
   // GET /api/events?contract=&fn=&page=
   app.get("/api/events", async (req, res) => {
