@@ -205,6 +205,26 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── GET /api/contracts/:id/upgrades — contract WASM upgrade lineage ────────
+  app.get("/api/contracts/:id/upgrades", async (req, res) => {
+    try {
+      const rows = await db.getUpgradeHistory(req.params.id);
+      res.json(rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── POST /api/auth-tree — parse multi-sig ContractAuth trees ───────────────
+  // Body: { auth: string[] }  — array of base64 SorobanAuthorizationEntry XDRs
+  // Returns: ordered array of { signer, invocations: [{ depth, scope }] }
+  app.post("/api/auth-tree", async (req, res) => {
+    try {
+      const { auth } = req.body;
+      if (!Array.isArray(auth)) return res.status(400).json({ error: "auth must be an array" });
+      const { parseAuthTree } = await import("./authTreeParser.js");
+      res.json(parseAuthTree(auth));
+    } catch (e) { res.status(400).json({ error: e.message }); }
+  });
+
   // ── Start HTTP + WebSocket server ───────────────────────────────────────────
   const server = http.createServer(app);
   attachWebSocketServer(server);                // Issue #39

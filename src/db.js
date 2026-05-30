@@ -18,6 +18,12 @@ export const db = {
         cpu_instructions BIGINT,
         mem_bytes        BIGINT,
         fee_charged      BIGINT,
+        -- Issue #50: state-bloat DoS risk flag
+        is_high_bloat_risk BOOLEAN NOT NULL DEFAULT FALSE,
+        -- Issue #51: contract upgrade lineage
+        upgrade_info     JSONB,
+        -- Issue #52: storage tier breakdown
+        storage_tiers    JSONB,
         created_at       TIMESTAMPTZ DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_events_contract ON events(contract_id);
@@ -39,6 +45,13 @@ export const db = {
         hash       TEXT   NOT NULL,
         indexed_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      -- Issue #50: add column to existing deployments
+      ALTER TABLE events ADD COLUMN IF NOT EXISTS is_high_bloat_risk BOOLEAN NOT NULL DEFAULT FALSE;
+      -- Issue #51: contract upgrade lineage
+      ALTER TABLE events ADD COLUMN IF NOT EXISTS upgrade_info JSONB;
+      -- Issue #52: storage tier breakdown
+      ALTER TABLE events ADD COLUMN IF NOT EXISTS storage_tiers JSONB;
     `);
   },
 
@@ -51,13 +64,16 @@ export const db = {
     await pool.query(
       `INSERT INTO events
          (contract_id, function, ledger, tx_hash, description, raw_topics, raw_data,
-          cpu_instructions, mem_bytes, fee_charged)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+          cpu_instructions, mem_bytes, fee_charged, is_high_bloat_risk, upgrade_info, storage_tiers)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        ON CONFLICT DO NOTHING`,
       [
         ev.contract_id, ev.function, ev.ledger, ev.tx_hash,
         ev.description, JSON.stringify(ev.raw_topics), ev.raw_data,
         ev.cpu_instructions ?? null, ev.mem_bytes ?? null, ev.fee_charged ?? null,
+        ev.is_high_bloat_risk ?? false,
+        ev.upgrade ? JSON.stringify(ev.upgrade) : null,
+        ev.storage_tiers ? JSON.stringify(ev.storage_tiers) : null,
       ]
     );
   },
@@ -163,6 +179,18 @@ export const db = {
     const fraction = rawBig % divisor;
     const volume_scaled = `${whole}.${fraction.toString().padStart(decimals, "0")}`;
     return { volume_raw: raw, volume_scaled, decimals };
+  },
+
+  /** Return all upgrade events for a contract in ledger order. */
+  async getUpgradeHistory(contractId) {
+    const { rows } = await pool.query(
+      `SELECT seq, ledger, tx_hash, upgrade_info, created_at
+       FROM events
+       WHERE contract_id = $1 AND upgrade_info IS NOT NULL
+       ORDER BY ledger ASC`,
+      [contractId]
+    );
+    return rows;
   },
 
   async upsertContractMeta(meta) {
