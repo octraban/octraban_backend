@@ -4,6 +4,7 @@ import { db } from "./db.js";
 import { fetchTokenMetadata } from "./sep41Metadata.js";
 import { attachWebSocketServer } from "./wsEvents.js";
 import { bootstrapVault, refreshVaultRatio } from "./vaultIndexer.js";
+import { getBurnAlerts } from "./burnDetector.js";
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
@@ -225,6 +226,15 @@ export function startApi() {
       const { parseAuthTree } = await import("./authTreeParser.js");
       res.json(parseAuthTree(auth));
     } catch (e) { res.status(400).json({ error: e.message }); }
+  });
+
+  // ── GET /api/burn-alerts?contract= — suspicious burn sequence alerts ────────
+  // Returns alerts flagged by burnDetector for rapid supply contraction.
+  app.get("/api/burn-alerts", (req, res) => {
+    try {
+      const alerts = getBurnAlerts(req.query.contract || undefined);
+      res.json(alerts);
+    } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // ── Start HTTP + WebSocket server ───────────────────────────────────────────

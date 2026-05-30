@@ -8,6 +8,7 @@ import { withRetry } from "./rpcRetry.js";
 import { isHighBloatRisk } from "./bloatDetector.js";
 import { detectUpgrade } from "./upgradeDetector.js";
 import { classifyStorageWrites } from "./storageTierClassifier.js";
+import { startBurnDetector } from "./burnDetector.js";
 
 const RPC_URL    = process.env.SOROBAN_RPC_URL    || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
@@ -56,6 +57,7 @@ async function run() {
   await db.init();
   startApi();
   startAbiSync();
+  startBurnDetector();
 
   // Bootstrap vault indexer: initial ratio snapshot for all registered vaults
   refreshAllVaults().catch(() => {});

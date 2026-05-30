@@ -267,4 +267,9 @@ export const db = {
     );
     return rows;
   },
+
+  /** Raw query passthrough for internal workers. */
+  _query(sql, params) {
+    return pool.query(sql, params);
+  },
 };
