@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { i18nRouter } from './i18n';
 import { transactionRouter } from './transactions';
 import { eventRouter } from './events';
 import { contractRouter } from './contracts';
