@@ -52,6 +52,19 @@ export const db = {
       ALTER TABLE events ADD COLUMN IF NOT EXISTS upgrade_info JSONB;
       -- Issue #52: storage tier breakdown
       ALTER TABLE events ADD COLUMN IF NOT EXISTS storage_tiers JSONB;
+
+      -- Privileged roles: track admin/manager/minter assignments per contract
+      CREATE TABLE IF NOT EXISTS privileged_roles (
+        id          BIGSERIAL PRIMARY KEY,
+        contract_id TEXT    NOT NULL,
+        role        TEXT    NOT NULL,
+        address     TEXT    NOT NULL,
+        revoked     BOOLEAN NOT NULL DEFAULT FALSE,
+        ledger      BIGINT,
+        updated_at  TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (contract_id, role, address)
+      );
+      CREATE INDEX IF NOT EXISTS idx_roles_contract ON privileged_roles(contract_id);
     `);
   },
 
@@ -264,6 +277,31 @@ export const db = {
        WHERE contract_id = $1
        ORDER BY ledger DESC LIMIT $2`,
       [contractId, limit]
+    );
+    return rows;
+  },
+
+  // ── Privileged roles ───────────────────────────────────────────────────────
+
+  /** Upsert a role assignment (or revocation) for a contract. */
+  async upsertRole({ contract_id, role, address, revoked = false, ledger = null }) {
+    await pool.query(
+      `INSERT INTO privileged_roles (contract_id, role, address, revoked, ledger, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (contract_id, role, address)
+       DO UPDATE SET revoked = $4, ledger = $5, updated_at = NOW()`,
+      [contract_id, role, address, revoked, ledger]
+    );
+  },
+
+  /** Return all active (non-revoked) role holders for a contract. */
+  async getRoles(contractId) {
+    const { rows } = await pool.query(
+      `SELECT role, address, ledger, updated_at
+       FROM privileged_roles
+       WHERE contract_id = $1 AND revoked = FALSE
+       ORDER BY role, updated_at DESC`,
+      [contractId]
     );
     return rows;
   },

@@ -48,6 +48,7 @@ function extractGasCosts(ev) {
 }
 import { db } from "./db.js";
 import { sacLabel, detectSac } from "./sac.js";
+import { extractRoleAssignment } from "./roleTracker.js";
 
 // Native XLM Stellar Asset Contract IDs (testnet + mainnet)
 const NATIVE_SAC_IDS = new Set([
@@ -106,7 +107,7 @@ export async function decode(ev) {
       ? buildDescription(fnName, topics.slice(1), data, contractLabel)
       : genericDescription(fnName, topics.slice(1), data, contractLabel);
 
-  return {
+  const decoded = {
     contract_id: contractId,
     function:    fnName,
     ledger:      ev.ledger,
@@ -117,6 +118,15 @@ export async function decode(ev) {
     ...(isSac && { sac_asset: assetCode }),
     ...extractGasCosts(ev),
   };
+
+  // Persist role assignment if this event carries one
+  const roleAssignment = extractRoleAssignment(decoded);
+  if (roleAssignment) {
+    db.upsertRole({ contract_id: contractId, ledger: ev.ledger, ...roleAssignment })
+      .catch(err => console.error("[roleTracker] upsertRole failed:", err.message));
+  }
+
+  return decoded;
   };
 }
 
