@@ -39,6 +39,32 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // GET /api/contracts/:id/abi — download standardized ABI JSON
+  app.get("/api/contracts/:id/abi", async (req, res) => {
+    try {
+      const { fetchContractSpec } = await import("./verify_abi.js");
+      const meta = await db.getContractMeta(req.params.id);
+      const spec = await fetchContractSpec(req.params.id);
+      const abi = {
+        contractId: req.params.id,
+        name: meta?.name || "",
+        description: meta?.description || "",
+        functions: (spec || []).map(fn => {
+          const registered = meta?.functions?.find(f => f.name === fn.name);
+          return {
+            name: fn.name,
+            description: registered?.description || "",
+            args: fn.args.map(a => ({ name: a.name, type: a.type })),
+          };
+        }),
+      };
+      res.setHeader("Content-Disposition", `attachment; filename="${req.params.id}.abi.json"`);
+      res.json(abi);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // POST /api/contracts  — register ABI metadata
   app.post("/api/contracts", async (req, res) => {
     try {
