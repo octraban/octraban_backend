@@ -8,6 +8,7 @@ import { withRetry } from "./rpcRetry.js";
 import { isHighBloatRisk } from "./bloatDetector.js";
 import { detectUpgrade } from "./upgradeDetector.js";
 import { classifyStorageWrites } from "./storageTierClassifier.js";
+import { parseFeeBump } from "./feeBumpParser.js";
 
 const RPC_URL    = process.env.SOROBAN_RPC_URL    || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
@@ -29,6 +30,10 @@ async function indexLedger(ledger) {
     limit: 200,
   }));
 
+  // Cache envelopes keyed by txHash to avoid redundant getTransaction calls
+  // when multiple events share the same transaction.
+  const envelopeCache = new Map();
+
   for (const ev of res.events) {
     const decoded = await decode(ev);
     decoded.is_high_bloat_risk = isHighBloatRisk(ev, ev.contractId);
@@ -38,6 +43,21 @@ async function indexLedger(ledger) {
       decoded.upgrade = upgrade;
     }
     decoded.storage_tiers = classifyStorageWrites(ev);
+
+    // Detect Fee-Bump sponsorship on the outer transaction envelope.
+    if (ev.txHash) {
+      if (!envelopeCache.has(ev.txHash)) {
+        try {
+          const txInfo = await rpc.getTransaction(ev.txHash);
+          envelopeCache.set(ev.txHash, txInfo.envelopeXdr ?? null);
+        } catch {
+          envelopeCache.set(ev.txHash, null);
+        }
+      }
+      const envelope = envelopeCache.get(ev.txHash);
+      if (envelope) decoded.fee_bump = parseFeeBump(envelope);
+    }
+
     await db.upsertEvent(decoded);
     publish(decoded);                          // Issue #39 — push to WS clients
     handleVaultEvent(decoded);                 // vault ratio update (async, non-blocking)
