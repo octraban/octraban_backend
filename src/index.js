@@ -4,8 +4,7 @@ import { startApi } from "./api.js";
 import { db } from "./db.js";
 import { decode } from "./decoder.js";
 import { startAbiSync } from "./githubAbiSync.js";
-import { startReorgWorker, recordLedgerHash } from "./reorgWorker.js";
-import { publish } from "./wsEvents.js";
+import { withRetry } from "./rpcRetry.js";
 
 const RPC_URL    = process.env.SOROBAN_RPC_URL    || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
@@ -21,12 +20,11 @@ const cursorRef = {
 };
 
 async function indexLedger(ledger) {
-  // getEvents supports cursor-based pagination; we use ledger range here
-  const res = await rpc.getEvents({
+  const res = await withRetry(() => rpc.getEvents({
     startLedger: ledger,
     filters: [{ type: "contract" }],
     limit: 200,
-  });
+  }));
 
   for (const ev of res.events) {
     const decoded = await decode(ev);
@@ -48,10 +46,7 @@ async function run() {
   startApi();
   startAbiSync();
 
-  cursor = START_LEDGER || (await rpc.getLatestLedger()).sequence - 100;
-
-  // Issue #37 — start re-org detection worker
-  startReorgWorker(rpc, cursorRef);
+  let cursor = START_LEDGER || (await withRetry(() => rpc.getLatestLedger())).sequence - 100;
 
   while (true) {
     try {

@@ -20,6 +20,7 @@ export function startApi() {
         contract: req.query.contract,
         fn:       req.query.fn,
         page:     Number(req.query.page) || 1,
+        type:     req.query.type,
       });
       res.json(events);
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -41,6 +42,32 @@ export function startApi() {
       if (!meta) return res.status(404).json({ error: "Not found" });
       res.json(meta);
     } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/contracts/:id/abi — download standardized ABI JSON
+  app.get("/api/contracts/:id/abi", async (req, res) => {
+    try {
+      const { fetchContractSpec } = await import("./verify_abi.js");
+      const meta = await db.getContractMeta(req.params.id);
+      const spec = await fetchContractSpec(req.params.id);
+      const abi = {
+        contractId: req.params.id,
+        name: meta?.name || "",
+        description: meta?.description || "",
+        functions: (spec || []).map(fn => {
+          const registered = meta?.functions?.find(f => f.name === fn.name);
+          return {
+            name: fn.name,
+            description: registered?.description || "",
+            args: fn.args.map(a => ({ name: a.name, type: a.type })),
+          };
+        }),
+      };
+      res.setHeader("Content-Disposition", `attachment; filename="${req.params.id}.abi.json"`);
+      res.json(abi);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // POST /api/contracts  — register ABI metadata
@@ -99,6 +126,43 @@ export function startApi() {
       }
       res.json(spec);
     } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/simulate — issue #46: simulate a contract call via RPC
+  app.post("/api/simulate", async (req, res) => {
+    try {
+      const { contractId, fn, args = [] } = req.body;
+      if (!contractId || !fn) return res.status(400).json({ error: "Missing contractId or fn" });
+
+      const { SorobanRpc, Contract, nativeToScVal, xdr } = await import("@stellar/stellar-sdk");
+      const rpcUrl = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
+      const server = new SorobanRpc.Server(rpcUrl);
+
+      const contract = new Contract(contractId);
+      const scArgs = args.map(a => nativeToScVal(a));
+      const op = contract.call(fn, ...scArgs);
+
+      const account = await server.getAccount(process.env.SIMULATE_SOURCE || "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN");
+      const { TransactionBuilder, Networks, BASE_FEE } = await import("@stellar/stellar-sdk");
+      const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: Networks.TESTNET })
+        .addOperation(op)
+        .setTimeout(30)
+        .build();
+
+      const sim = await server.simulateTransaction(tx);
+
+      if (SorobanRpc.Api.isSimulationError(sim)) {
+        return res.json({ success: false, error: sim.error });
+      }
+
+      const cost = sim.cost ?? {};
+      const retVal = sim.result?.retval;
+      res.json({
+        success: true,
+        returnValue: retVal ? retVal.toXDR("base64") : undefined,
+        cost: { cpuInsns: String(cost.cpuInsns ?? 0), memBytes: String(cost.memBytes ?? 0) },
+      });
+    } catch (e) { res.status(500).json({ success: false, error: e.message }); }
   });
 
   // GET /api/wallet/:address
