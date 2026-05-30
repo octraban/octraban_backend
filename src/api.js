@@ -191,6 +191,22 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── Issue #34: cursor-based pagination endpoint ────────────────────────────
+  // GET /api/v1/events?contract=&fn=&type=&after=&limit=
+  // `after` is the opaque seq cursor returned as `next_cursor` in the previous page.
+  app.get("/api/v1/events", async (req, res) => {
+    try {
+      const result = await db.getEventsCursor({
+        contract:  req.query.contract  || undefined,
+        fn:        req.query.fn        || undefined,
+        type:      req.query.type      || undefined,
+        after_seq: req.query.after     ? Number(req.query.after) : 0,
+        limit:     req.query.limit     ? Math.min(Number(req.query.limit), 200) : 25,
+      });
+      res.json(result);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── Issue #38: Contract transaction history ─────────────────────────────────
   // GET /api/v1/contracts/:id/transactions?function_name=&start_ledger=&end_ledger=&page=&limit=
   app.get("/api/v1/contracts/:id/transactions", async (req, res) => {
