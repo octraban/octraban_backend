@@ -24,11 +24,21 @@ export const db = {
         upgrade_info     JSONB,
         -- Issue #52: storage tier breakdown
         storage_tiers    JSONB,
+        -- Issue #74: clawback compliance flag
+        is_clawback      BOOLEAN NOT NULL DEFAULT FALSE,
         created_at       TIMESTAMPTZ DEFAULT NOW()
       );
+      -- Issue #35: explicit index mappings on high-frequency lookup columns
       CREATE INDEX IF NOT EXISTS idx_events_contract ON events(contract_id);
       CREATE INDEX IF NOT EXISTS idx_events_function ON events(function);
       CREATE INDEX IF NOT EXISTS idx_events_ledger   ON events(ledger);
+      CREATE INDEX IF NOT EXISTS idx_events_tx_hash  ON events(tx_hash);
+      -- topic_0 is the first element of raw_topics JSON array (most-queried topic)
+      CREATE INDEX IF NOT EXISTS idx_events_topic0
+        ON events USING btree ((raw_topics->0));
+      -- composite index for the most common query pattern: contract + ledger range
+      CREATE INDEX IF NOT EXISTS idx_events_contract_ledger
+        ON events(contract_id, ledger DESC);
 
       CREATE TABLE IF NOT EXISTS contracts (
         id          TEXT PRIMARY KEY,
@@ -46,12 +56,20 @@ export const db = {
         indexed_at TIMESTAMPTZ DEFAULT NOW()
       );
 
+      -- Issue #33: daemon cursor persistence — survives restarts
+      CREATE TABLE IF NOT EXISTS daemon_state (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+
       -- Issue #50: add column to existing deployments
       ALTER TABLE events ADD COLUMN IF NOT EXISTS is_high_bloat_risk BOOLEAN NOT NULL DEFAULT FALSE;
       -- Issue #51: contract upgrade lineage
       ALTER TABLE events ADD COLUMN IF NOT EXISTS upgrade_info JSONB;
       -- Issue #52: storage tier breakdown
       ALTER TABLE events ADD COLUMN IF NOT EXISTS storage_tiers JSONB;
+      -- Issue #85: multi-file source code matching
+      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS source_files JSONB;
     `);
   },
 
@@ -60,12 +78,69 @@ export const db = {
     return Number(rows[0].max_ledger);
   },
 
+  // ── Issue #33: daemon cursor persistence ──────────────────────────────────
+  async saveCursor(ledger) {
+    await pool.query(
+      `INSERT INTO daemon_state (key, value) VALUES ('cursor', $1)
+       ON CONFLICT (key) DO UPDATE SET value = $1`,
+      [String(ledger)]
+    );
+  },
+
+  async loadCursor() {
+    const { rows } = await pool.query(
+      "SELECT value FROM daemon_state WHERE key = 'cursor'"
+    );
+    return rows[0] ? Number(rows[0].value) : null;
+  },
+
+  // ── Issue #34: cursor-based pagination ────────────────────────────────────
+  /**
+   * Return a page of events using keyset (cursor-based) pagination.
+   * Avoids OFFSET degradation on large tables.
+   *
+   * @param {{ contract?: string, fn?: string, type?: string,
+   *           after_seq?: number, limit?: number }} opts
+   *   after_seq — the `seq` of the last event on the previous page (opaque cursor).
+   *               Omit (or pass 0) for the first page.
+   * @returns {{ data: object[], next_cursor: number|null }}
+   */
+  async getEventsCursor({ contract, fn, type, after_seq = 0, limit = 25 } = {}) {
+    const conditions = [];
+    const params = [];
+
+    if (contract) { params.push(contract); conditions.push(`contract_id = $${params.length}`); }
+    if (fn)       { params.push(fn);       conditions.push(`function = $${params.length}`); }
+    if (type === "soroban") { conditions.push(`contract_id IS NOT NULL AND contract_id <> ''`); }
+    if (type === "classic") { conditions.push(`(contract_id IS NULL OR contract_id = '')`); }
+
+    // Keyset: fetch rows with seq < after_seq (descending) or all rows for first page
+    if (after_seq > 0) {
+      params.push(after_seq);
+      conditions.push(`seq < $${params.length}`);
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+    params.push(limit + 1); // fetch one extra to detect next page
+
+    const { rows } = await pool.query(
+      `SELECT * FROM events ${where} ORDER BY seq DESC LIMIT $${params.length}`,
+      params
+    );
+
+    const hasMore = rows.length > limit;
+    const data = hasMore ? rows.slice(0, limit) : rows;
+    const next_cursor = hasMore ? data[data.length - 1].seq : null;
+
+    return { data, next_cursor };
+  },
+
   async upsertEvent(ev) {
     await pool.query(
       `INSERT INTO events
          (contract_id, function, ledger, tx_hash, description, raw_topics, raw_data,
-          cpu_instructions, mem_bytes, fee_charged, is_high_bloat_risk, upgrade_info, storage_tiers)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          cpu_instructions, mem_bytes, fee_charged, is_high_bloat_risk, upgrade_info, storage_tiers, is_clawback)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        ON CONFLICT DO NOTHING`,
       [
         ev.contract_id, ev.function, ev.ledger, ev.tx_hash,
@@ -74,6 +149,7 @@ export const db = {
         ev.is_high_bloat_risk ?? false,
         ev.upgrade ? JSON.stringify(ev.upgrade) : null,
         ev.storage_tiers ? JSON.stringify(ev.storage_tiers) : null,
+        ev.is_clawback ?? false,
       ]
     );
   },
@@ -195,11 +271,33 @@ export const db = {
 
   async upsertContractMeta(meta) {
     await pool.query(
-      `INSERT INTO contracts (id, name, description, functions, registered_by)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (id) DO UPDATE SET name=$2, description=$3, functions=$4`,
-      [meta.id, meta.name, meta.description, JSON.stringify(meta.functions), meta.registered_by]
+      `INSERT INTO contracts (id, name, description, functions, registered_by, source_files)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (id) DO UPDATE SET name=$2, description=$3, functions=$4, source_files=$6`,
+      [
+        meta.id, meta.name, meta.description, JSON.stringify(meta.functions), meta.registered_by,
+        meta.source_files ? JSON.stringify(meta.source_files) : null,
+      ]
     );
+  },
+
+  async getMigrationStatus(contractId) {
+    const { rows } = await pool.query(
+      `SELECT
+         MAX(CASE WHEN upgrade_info IS NOT NULL THEN ledger END) AS last_upgrade_ledger,
+         MAX(CASE WHEN function = 'migrate' THEN ledger END)     AS last_migrate_ledger
+       FROM events WHERE contract_id = $1`,
+      [contractId]
+    );
+    const { last_upgrade_ledger, last_migrate_ledger } = rows[0];
+    const pending =
+      last_upgrade_ledger != null &&
+      (last_migrate_ledger == null || Number(last_upgrade_ledger) > Number(last_migrate_ledger));
+    return {
+      pending,
+      upgradedAtLedger: last_upgrade_ledger ? Number(last_upgrade_ledger) : null,
+      migratedAtLedger: last_migrate_ledger ? Number(last_migrate_ledger) : null,
+    };
   },
 
   // ── Vault indexer methods ──────────────────────────────────────────────────────
@@ -268,8 +366,28 @@ export const db = {
     return rows;
   },
 
-  /** Raw query passthrough for internal workers. */
-  _query(sql, params) {
-    return pool.query(sql, params);
+  // ── Privileged roles ───────────────────────────────────────────────────────
+
+  /** Upsert a role assignment (or revocation) for a contract. */
+  async upsertRole({ contract_id, role, address, revoked = false, ledger = null }) {
+    await pool.query(
+      `INSERT INTO privileged_roles (contract_id, role, address, revoked, ledger, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (contract_id, role, address)
+       DO UPDATE SET revoked = $4, ledger = $5, updated_at = NOW()`,
+      [contract_id, role, address, revoked, ledger]
+    );
+  },
+
+  /** Return all active (non-revoked) role holders for a contract. */
+  async getRoles(contractId) {
+    const { rows } = await pool.query(
+      `SELECT role, address, ledger, updated_at
+       FROM privileged_roles
+       WHERE contract_id = $1 AND revoked = FALSE
+       ORDER BY role, updated_at DESC`,
+      [contractId]
+    );
+    return rows;
   },
 };
