@@ -5,7 +5,9 @@ import { db } from "./db.js";
 import { decode } from "./decoder.js";
 import { startAbiSync } from "./githubAbiSync.js";
 import { withRetry } from "./rpcRetry.js";
-import { handleVaultEvent, refreshAllVaults } from "./vaultIndexer.js";
+import { isHighBloatRisk } from "./bloatDetector.js";
+import { detectUpgrade } from "./upgradeDetector.js";
+import { classifyStorageWrites } from "./storageTierClassifier.js";
 
 const RPC_URL    = process.env.SOROBAN_RPC_URL    || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
@@ -29,6 +31,13 @@ async function indexLedger(ledger) {
 
   for (const ev of res.events) {
     const decoded = await decode(ev);
+    decoded.is_high_bloat_risk = isHighBloatRisk(ev, ev.contractId);
+    const upgrade = detectUpgrade(ev);
+    if (upgrade) {
+      console.log(`[${ev.ledger}] CONTRACT UPGRADE ${ev.contractId}: ${upgrade.oldHash} → ${upgrade.newHash}`);
+      decoded.upgrade = upgrade;
+    }
+    decoded.storage_tiers = classifyStorageWrites(ev);
     await db.upsertEvent(decoded);
     publish(decoded);                          // Issue #39 — push to WS clients
     handleVaultEvent(decoded);                 // vault ratio update (async, non-blocking)

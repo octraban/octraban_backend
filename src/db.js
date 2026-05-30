@@ -18,6 +18,12 @@ export const db = {
         cpu_instructions BIGINT,
         mem_bytes        BIGINT,
         fee_charged      BIGINT,
+        -- Issue #50: state-bloat DoS risk flag
+        is_high_bloat_risk BOOLEAN NOT NULL DEFAULT FALSE,
+        -- Issue #51: contract upgrade lineage
+        upgrade_info     JSONB,
+        -- Issue #52: storage tier breakdown
+        storage_tiers    JSONB,
         created_at       TIMESTAMPTZ DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_events_contract ON events(contract_id);
@@ -40,29 +46,12 @@ export const db = {
         indexed_at TIMESTAMPTZ DEFAULT NOW()
       );
 
-      -- Vault indexer: yield vault / tokenized treasury registry
-      CREATE TABLE IF NOT EXISTS vaults (
-        contract_id      TEXT PRIMARY KEY,
-        name             TEXT,
-        underlying_asset TEXT,
-        decimals         INT DEFAULT 7,
-        active           BOOLEAN DEFAULT TRUE,
-        created_at       TIMESTAMPTZ DEFAULT NOW(),
-        updated_at       TIMESTAMPTZ DEFAULT NOW()
-      );
-
-      -- Vault snapshots: periodic state captures for ratio computation
-      CREATE TABLE IF NOT EXISTS vault_snapshots (
-        id            BIGSERIAL PRIMARY KEY,
-        contract_id   TEXT NOT NULL REFERENCES vaults(contract_id) ON DELETE CASCADE,
-        ledger        BIGINT NOT NULL,
-        total_assets  TEXT NOT NULL,
-        total_supply  TEXT NOT NULL,
-        ratio         NUMERIC(40,20),
-        timestamp     TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_vault_snapshots_contract ON vault_snapshots(contract_id);
-      CREATE INDEX IF NOT EXISTS idx_vault_snapshots_ledger   ON vault_snapshots(ledger);
+      -- Issue #50: add column to existing deployments
+      ALTER TABLE events ADD COLUMN IF NOT EXISTS is_high_bloat_risk BOOLEAN NOT NULL DEFAULT FALSE;
+      -- Issue #51: contract upgrade lineage
+      ALTER TABLE events ADD COLUMN IF NOT EXISTS upgrade_info JSONB;
+      -- Issue #52: storage tier breakdown
+      ALTER TABLE events ADD COLUMN IF NOT EXISTS storage_tiers JSONB;
     `);
   },
 
@@ -75,13 +64,16 @@ export const db = {
     await pool.query(
       `INSERT INTO events
          (contract_id, function, ledger, tx_hash, description, raw_topics, raw_data,
-          cpu_instructions, mem_bytes, fee_charged)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+          cpu_instructions, mem_bytes, fee_charged, is_high_bloat_risk, upgrade_info, storage_tiers)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        ON CONFLICT DO NOTHING`,
       [
         ev.contract_id, ev.function, ev.ledger, ev.tx_hash,
         ev.description, JSON.stringify(ev.raw_topics), ev.raw_data,
         ev.cpu_instructions ?? null, ev.mem_bytes ?? null, ev.fee_charged ?? null,
+        ev.is_high_bloat_risk ?? false,
+        ev.upgrade ? JSON.stringify(ev.upgrade) : null,
+        ev.storage_tiers ? JSON.stringify(ev.storage_tiers) : null,
       ]
     );
   },
@@ -187,6 +179,18 @@ export const db = {
     const fraction = rawBig % divisor;
     const volume_scaled = `${whole}.${fraction.toString().padStart(decimals, "0")}`;
     return { volume_raw: raw, volume_scaled, decimals };
+  },
+
+  /** Return all upgrade events for a contract in ledger order. */
+  async getUpgradeHistory(contractId) {
+    const { rows } = await pool.query(
+      `SELECT seq, ledger, tx_hash, upgrade_info, created_at
+       FROM events
+       WHERE contract_id = $1 AND upgrade_info IS NOT NULL
+       ORDER BY ledger ASC`,
+      [contractId]
+    );
+    return rows;
   },
 
   async upsertContractMeta(meta) {

@@ -207,75 +207,24 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // ── Vault indexer endpoints ─────────────────────────────────────────────────
-
-  // POST /api/vaults — register a vault to monitor
-  app.post("/api/vaults", async (req, res) => {
+  // ── GET /api/contracts/:id/upgrades — contract WASM upgrade lineage ────────
+  app.get("/api/contracts/:id/upgrades", async (req, res) => {
     try {
-      const { contract_id, name, decimals } = req.body;
-      if (!contract_id) return res.status(400).json({ error: "Missing contract_id" });
-
-      await db.registerVault({ contract_id, name: name ?? null, decimals: decimals ?? 7 });
-
-      // Bootstrap: discover underlying asset, take initial snapshot
-      bootstrapVault(contract_id).catch(err =>
-        console.error(`[vault] Bootstrap error for ${contract_id}: ${err.message}`)
-      );
-
-      res.status(201).json({ ok: true, contract_id });
+      const rows = await db.getUpgradeHistory(req.params.id);
+      res.json(rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // GET /api/vaults — list all monitored vaults
-  app.get("/api/vaults", async (req, res) => {
+  // ── POST /api/auth-tree — parse multi-sig ContractAuth trees ───────────────
+  // Body: { auth: string[] }  — array of base64 SorobanAuthorizationEntry XDRs
+  // Returns: ordered array of { signer, invocations: [{ depth, scope }] }
+  app.post("/api/auth-tree", async (req, res) => {
     try {
-      const vaults = await db.getVaults();
-      res.json(vaults);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-  });
-
-  // GET /api/vaults/:id — vault detail with latest conversion ratio
-  app.get("/api/vaults/:id", async (req, res) => {
-    try {
-      const vault = await db.getVault(req.params.id);
-      if (!vault) return res.status(404).json({ error: "Vault not found" });
-      res.json(vault);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-  });
-
-  // GET /api/vaults/:id/history — historical ratio snapshots
-  app.get("/api/vaults/:id/history", async (req, res) => {
-    try {
-      const { limit } = req.query;
-      const history = await db.getVaultHistory(req.params.id, {
-        limit: limit ? Math.min(Number(limit), 1000) : 100,
-      });
-      res.json(history);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-  });
-
-  // POST /api/vaults/:id/refresh — trigger an immediate ratio refresh
-  app.post("/api/vaults/:id/refresh", async (req, res) => {
-    try {
-      const vault = await db.getVault(req.params.id);
-      if (!vault) return res.status(404).json({ error: "Vault not found" });
-
-      const { SorobanRpc } = await import("@stellar/stellar-sdk");
-      const server = new SorobanRpc.Server(RPC_URL, { allowHttp: true });
-      const ledger = (await server.getLatestLedger()).sequence;
-
-      await refreshVaultRatio(req.params.id, ledger);
-      const updated = await db.getVault(req.params.id);
-      res.json(updated);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-  });
-
-  // DELETE /api/vaults/:id — unregister a vault
-  app.delete("/api/vaults/:id", async (req, res) => {
-    try {
-      await db.unregisterVault(req.params.id);
-      res.json({ ok: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+      const { auth } = req.body;
+      if (!Array.isArray(auth)) return res.status(400).json({ error: "auth must be an array" });
+      const { parseAuthTree } = await import("./authTreeParser.js");
+      res.json(parseAuthTree(auth));
+    } catch (e) { res.status(400).json({ error: e.message }); }
   });
 
   // ── Start HTTP + WebSocket server ───────────────────────────────────────────
