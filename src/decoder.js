@@ -115,6 +115,7 @@ export async function decode(ev) {
     raw_topics:  topics.map(String),
     raw_data:    JSON.stringify(data),
     ...(isSac && { sac_asset: assetCode }),
+    is_clawback: fnName === "clawback",
     ...extractGasCosts(ev),
   };
   };
@@ -184,6 +185,10 @@ function buildDescription(fn, args, data, contractName) {
     case "burn": {
       const [from, amount, token] = args;
       return `${amount} ${token ?? ""} burned from ${fmt(from)} on ${contractName}`;
+    }
+    case "clawback": {
+      const [admin, from, amount, token] = args;
+      return `CLAWBACK: ${amount} ${token ?? ""} recovered from ${fmt(from)} by authority ${fmt(admin)} on ${contractName}`;
     }
     default:
       return genericDescription(fn, args, data, contractName);
