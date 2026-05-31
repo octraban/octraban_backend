@@ -12,6 +12,7 @@ import { startBurnDetector } from "./burnDetector.js";
 import { multiNodeRpc } from "./rpcMultiNode.js";
 import { startMetricsCollector } from "./rpcMetrics.js";
 import { startPruner } from "./pruner.js";
+import { scanFootprintContention } from "./footprintContentionScanner.js";
 
 const RPC_URL      = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
@@ -51,9 +52,13 @@ async function indexLedger(ledger) {
     const res = await withRetry(() => rpc.getEvents(req));
     latestLedger = res.latestLedger ?? latestLedger;
 
+    // Flag footprint contention across transactions in this page's events
+    scanFootprintContention(res.events);
+
     for (const ev of res.events) {
       const decoded = await decode(ev);
       decoded.is_high_bloat_risk = isHighBloatRisk(ev, ev.contractId);
+      decoded.footprint_contention = ev.footprint_contention ?? false;
 
       const upgrade = detectUpgrade(ev);
       if (upgrade) {
