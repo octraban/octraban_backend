@@ -5,6 +5,8 @@ import { fetchTokenMetadata } from "./sep41Metadata.js";
 import { attachWebSocketServer } from "./wsEvents.js";
 import { bootstrapVault, refreshVaultRatio } from "./vaultIndexer.js";
 import { verifyAbi } from "./verify_abi.js";
+import { getMetrics } from "./rpcMetrics.js";
+import { getRpcNodeStatus } from "./rpcMultiNode.js";
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
@@ -258,6 +260,21 @@ export function startApi() {
     try {
       const alerts = getBurnAlerts(req.query.contract || undefined);
       res.json(alerts);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Issue #115: RPC node performance metrics ────────────────────────────────
+  // GET /api/rpc-metrics — latency history, uptime, error rate per node
+  app.get("/api/rpc-metrics", (_req, res) => {
+    try {
+      res.json(getMetrics());
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/rpc-nodes — live health status from multi-node client (#113)
+  app.get("/api/rpc-nodes", (_req, res) => {
+    try {
+      res.json(getRpcNodeStatus());
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
