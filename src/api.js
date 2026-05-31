@@ -1,10 +1,13 @@
 import express from "express";
 import http from "http";
 import { db } from "./db.js";
+import { analyzeSourceDependencies } from "./dependencyScanner.js";
 import { fetchTokenMetadata } from "./sep41Metadata.js";
 import { attachWebSocketServer } from "./wsEvents.js";
 import { bootstrapVault, refreshVaultRatio } from "./vaultIndexer.js";
-import { formatAmount } from "./formatAmount.js";
+import { verifyAbi } from "./verify_abi.js";
+import { getMetrics } from "./rpcMetrics.js";
+import { getRpcNodeStatus } from "./rpcMultiNode.js";
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
@@ -43,7 +46,13 @@ export function startApi() {
     try {
       const meta = await db.getContractMeta(req.params.id);
       if (!meta) return res.status(404).json({ error: "Not found" });
-      res.json(meta);
+
+      const sourceFiles = Array.isArray(meta.source_files)
+        ? meta.source_files
+        : meta.source_files ? JSON.parse(meta.source_files) : [];
+
+      const advisory = await analyzeSourceDependencies(sourceFiles);
+      res.json({ ...meta, dependency_advisory: advisory });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
@@ -119,13 +128,27 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // GET /api/spec/:id — fetch on-chain spec for a contract
+  // GET /api/spec/:id — fetch on-chain spec for a contract (functions only, legacy)
   app.get("/api/spec/:id", async (req, res) => {
     try {
       const { fetchContractSpec } = await import("./verify_abi.js");
       const spec = await fetchContractSpec(req.params.id);
       if (spec === null) {
         return res.status(404).json({ error: "Contract not found or has no spec" });
+      }
+      res.json(spec);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/spec/:id/full — fetch full on-chain spec including custom types
+  // Returns { functions: [...], types: [...] } where types includes structs,
+  // enums, unions, and error_enums parsed from the contract WASM binary.
+  app.get("/api/spec/:id/full", async (req, res) => {
+    try {
+      const { fetchContractSpecFull } = await import("./verify_abi.js");
+      const spec = await fetchContractSpecFull(req.params.id);
+      if (spec === null) {
+        return res.status(404).json({ error: "Contract not found or has no WASM spec" });
       }
       res.json(spec);
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -218,6 +241,22 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── Issue #34: cursor-based pagination endpoint ────────────────────────────
+  // GET /api/v1/events?contract=&fn=&type=&after=&limit=
+  // `after` is the opaque seq cursor returned as `next_cursor` in the previous page.
+  app.get("/api/v1/events", async (req, res) => {
+    try {
+      const result = await db.getEventsCursor({
+        contract:  req.query.contract  || undefined,
+        fn:        req.query.fn        || undefined,
+        type:      req.query.type      || undefined,
+        after_seq: req.query.after     ? Number(req.query.after) : 0,
+        limit:     req.query.limit     ? Math.min(Number(req.query.limit), 200) : 25,
+      });
+      res.json(result);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── Issue #38: Contract transaction history ─────────────────────────────────
   // GET /api/v1/contracts/:id/transactions?function_name=&start_ledger=&end_ledger=&page=&limit=
   app.get("/api/v1/contracts/:id/transactions", async (req, res) => {
@@ -242,6 +281,14 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── GET /api/contracts/:id/migration-status — Issue #84: SEP-49 migration tracker
+  app.get("/api/contracts/:id/migration-status", async (req, res) => {
+    try {
+      const status = await db.getMigrationStatus(req.params.id);
+      res.json(status);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── POST /api/auth-tree — parse multi-sig ContractAuth trees ───────────────
   // Body: { auth: string[] }  — array of base64 SorobanAuthorizationEntry XDRs
   // Returns: ordered array of { signer, invocations: [{ depth, scope }] }
@@ -252,6 +299,30 @@ export function startApi() {
       const { parseAuthTree } = await import("./authTreeParser.js");
       res.json(parseAuthTree(auth));
     } catch (e) { res.status(400).json({ error: e.message }); }
+  });
+
+  // ── GET /api/burn-alerts?contract= — suspicious burn sequence alerts ────────
+  // Returns alerts flagged by burnDetector for rapid supply contraction.
+  app.get("/api/burn-alerts", (req, res) => {
+    try {
+      const alerts = getBurnAlerts(req.query.contract || undefined);
+      res.json(alerts);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Issue #115: RPC node performance metrics ────────────────────────────────
+  // GET /api/rpc-metrics — latency history, uptime, error rate per node
+  app.get("/api/rpc-metrics", (_req, res) => {
+    try {
+      res.json(getMetrics());
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/rpc-nodes — live health status from multi-node client (#113)
+  app.get("/api/rpc-nodes", (_req, res) => {
+    try {
+      res.json(getRpcNodeStatus());
+    } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // ── Start HTTP + WebSocket server ───────────────────────────────────────────

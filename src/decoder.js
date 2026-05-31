@@ -48,6 +48,7 @@ function extractGasCosts(ev) {
 }
 import { db } from "./db.js";
 import { sacLabel, detectSac } from "./sac.js";
+import { extractRoleAssignment } from "./roleTracker.js";
 
 // Native XLM Stellar Asset Contract IDs (testnet + mainnet)
 const NATIVE_SAC_IDS = new Set([
@@ -106,7 +107,7 @@ export async function decode(ev) {
       ? buildDescription(fnName, topics.slice(1), data, contractLabel)
       : genericDescription(fnName, topics.slice(1), data, contractLabel);
 
-  return {
+  const decoded = {
     contract_id: contractId,
     function:    fnName,
     ledger:      ev.ledger,
@@ -115,8 +116,18 @@ export async function decode(ev) {
     raw_topics:  topics.map(String),
     raw_data:    JSON.stringify(data),
     ...(isSac && { sac_asset: assetCode }),
+    is_clawback: fnName === "clawback",
     ...extractGasCosts(ev),
   };
+
+  // Persist role assignment if this event carries one
+  const roleAssignment = extractRoleAssignment(decoded);
+  if (roleAssignment) {
+    db.upsertRole({ contract_id: contractId, ledger: ev.ledger, ...roleAssignment })
+      .catch(err => console.error("[roleTracker] upsertRole failed:", err.message));
+  }
+
+  return decoded;
   };
 }
 
@@ -184,6 +195,10 @@ function buildDescription(fn, args, data, contractName) {
     case "burn": {
       const [from, amount, token] = args;
       return `${amount} ${token ?? ""} burned from ${fmt(from)} on ${contractName}`;
+    }
+    case "clawback": {
+      const [admin, from, amount, token] = args;
+      return `CLAWBACK: ${amount} ${token ?? ""} recovered from ${fmt(from)} by authority ${fmt(admin)} on ${contractName}`;
     }
     default:
       return genericDescription(fn, args, data, contractName);
