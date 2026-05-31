@@ -9,6 +9,9 @@ import { isHighBloatRisk } from "./bloatDetector.js";
 import { detectUpgrade } from "./upgradeDetector.js";
 import { classifyStorageWrites } from "./storageTierClassifier.js";
 import { startBurnDetector } from "./burnDetector.js";
+import { multiNodeRpc } from "./rpcMultiNode.js";
+import { startMetricsCollector } from "./rpcMetrics.js";
+import { startPruner } from "./pruner.js";
 
 const RPC_URL      = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
@@ -82,6 +85,8 @@ async function run() {
   startApi();
   startAbiSync();
   startBurnDetector();
+  startMetricsCollector();  // Issue #115 — RPC latency probes
+  startPruner();            // Issue #116 — daily temporary-storage cleanup
 
   // Bootstrap vault indexer: initial ratio snapshot for all registered vaults
   refreshAllVaults().catch(() => {});
@@ -93,7 +98,7 @@ async function run() {
   const dbMax = await db.getMaxLedger();
   _cursor = dbMax > 0
     ? dbMax + 1
-    : START_LEDGER || (await withRetry(() => rpc.getLatestLedger())).sequence - 100;
+    : START_LEDGER || (await withRetry(() => multiNodeRpc.getLatestLedger())).sequence - 100;
 
   console.log(`[daemon] starting from ledger ${_cursor}`);
 

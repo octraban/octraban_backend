@@ -390,4 +390,9 @@ export const db = {
     );
     return rows;
   },
+
+  /** Raw query passthrough — used by bulkLoader and pruner. */
+  async query(sql, params) {
+    return pool.query(sql, params);
+  },
 };
