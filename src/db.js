@@ -84,6 +84,35 @@ export const db = {
       );
       CREATE INDEX IF NOT EXISTS idx_sub_inv_parent   ON sub_invocations(parent_tx_hash);
       CREATE INDEX IF NOT EXISTS idx_sub_inv_contract ON sub_invocations(contract_id);
+
+      -- Issue #135: multi-signature source code verification
+      CREATE TABLE IF NOT EXISTS source_verifications (
+        id           BIGSERIAL PRIMARY KEY,
+        contract_id  TEXT NOT NULL,
+        wasm_hash    TEXT NOT NULL,
+        signer       TEXT NOT NULL,
+        signature    TEXT NOT NULL,
+        compiler_hash TEXT NOT NULL,
+        submitted_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (contract_id, wasm_hash, signer)
+      );
+      CREATE INDEX IF NOT EXISTS idx_src_ver_contract ON source_verifications(contract_id);
+
+      -- Issue #140: contract storage state-diff timeline
+      CREATE TABLE IF NOT EXISTS storage_state_diffs (
+        id          BIGSERIAL PRIMARY KEY,
+        contract_id TEXT NOT NULL,
+        ledger      BIGINT NOT NULL,
+        tx_hash     TEXT,
+        key         TEXT NOT NULL,
+        tier        TEXT NOT NULL,
+        old_value   TEXT,
+        new_value   TEXT,
+        change_type TEXT NOT NULL,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_state_diff_contract_ledger
+        ON storage_state_diffs(contract_id, ledger ASC);
     `);
   },
 
@@ -408,5 +437,72 @@ export const db = {
   /** Raw query passthrough — used by bulkLoader and pruner. */
   async query(sql, params) {
     return pool.query(sql, params);
+  },
+
+  // ── Issue #135: multi-signature source verification ────────────────────────
+
+  /** Submit a verification signature for a contract's WASM hash. */
+  async addSourceVerification({ contract_id, wasm_hash, signer, signature, compiler_hash }) {
+    await pool.query(
+      `INSERT INTO source_verifications (contract_id, wasm_hash, signer, signature, compiler_hash)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (contract_id, wasm_hash, signer) DO UPDATE
+         SET signature = $4, compiler_hash = $5, submitted_at = NOW()`,
+      [contract_id, wasm_hash, signer, signature, compiler_hash]
+    );
+  },
+
+  /** Return all verification signatures for a contract + wasm_hash pair. */
+  async getSourceVerifications(contract_id, wasm_hash) {
+    const params = [contract_id];
+    const extra = wasm_hash ? ` AND wasm_hash = $2` : "";
+    if (wasm_hash) params.push(wasm_hash);
+    const { rows } = await pool.query(
+      `SELECT signer, signature, compiler_hash, wasm_hash, submitted_at
+       FROM source_verifications
+       WHERE contract_id = $1${extra}
+       ORDER BY submitted_at ASC`,
+      params
+    );
+    return rows;
+  },
+
+  // ── Issue #140: storage state-diff timeline ────────────────────────────────
+
+  /** Persist a batch of storage state diffs for a transaction. */
+  async insertStateDiffs(diffs) {
+    if (!diffs.length) return;
+    const values = diffs.map((_, i) => {
+      const b = i * 8;
+      return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8})`;
+    }).join(",");
+    const params = diffs.flatMap(d => [
+      d.contract_id, d.ledger, d.tx_hash, d.key, d.tier,
+      d.old_value ?? null, d.new_value ?? null, d.change_type,
+    ]);
+    await pool.query(
+      `INSERT INTO storage_state_diffs
+         (contract_id, ledger, tx_hash, key, tier, old_value, new_value, change_type)
+       VALUES ${values}
+       ON CONFLICT DO NOTHING`,
+      params
+    );
+  },
+
+  /** Return chronological state diffs for a contract, optionally filtered by key. */
+  async getStateDiffs(contract_id, { key, limit = 200 } = {}) {
+    const params = [contract_id];
+    const extra = key ? ` AND key = $2` : "";
+    if (key) params.push(key);
+    params.push(limit);
+    const { rows } = await pool.query(
+      `SELECT ledger, tx_hash, key, tier, old_value, new_value, change_type, created_at
+       FROM storage_state_diffs
+       WHERE contract_id = $1${extra}
+       ORDER BY ledger ASC
+       LIMIT $${params.length}`,
+      params
+    );
+    return rows;
   },
 };

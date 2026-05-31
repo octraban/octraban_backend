@@ -12,6 +12,8 @@ import { startBurnDetector } from "./burnDetector.js";
 import { multiNodeRpc } from "./rpcMultiNode.js";
 import { startMetricsCollector } from "./rpcMetrics.js";
 import { startPruner } from "./pruner.js";
+import { extractStateDiffs } from "./stateDiffIndexer.js";
+import { extractStateDiffs } from "./stateDiffIndexer.js"; // Issue #140
 
 const RPC_URL      = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
@@ -63,6 +65,11 @@ async function indexLedger(ledger) {
 
       decoded.storage_tiers = classifyStorageWrites(ev);
       await db.upsertEvent(decoded);
+
+      // Issue #140: persist per-key state diffs for the timeline
+      const diffs = extractStateDiffs(ev, decoded);
+      if (diffs.length) await db.insertStateDiffs(diffs).catch(() => {});
+
       publish(decoded);           // Issue #39 — push to WS clients
       handleVaultEvent(decoded);  // vault ratio update (async, non-blocking)
       console.log(`[${ev.ledger}] ${decoded.function}: ${decoded.description}`);
