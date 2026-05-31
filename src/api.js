@@ -1,6 +1,7 @@
 import express from "express";
 import http from "http";
 import { db } from "./db.js";
+import { analyzeSourceDependencies } from "./dependencyScanner.js";
 import { fetchTokenMetadata } from "./sep41Metadata.js";
 import { attachWebSocketServer } from "./wsEvents.js";
 import { bootstrapVault, refreshVaultRatio } from "./vaultIndexer.js";
@@ -45,7 +46,13 @@ export function startApi() {
     try {
       const meta = await db.getContractMeta(req.params.id);
       if (!meta) return res.status(404).json({ error: "Not found" });
-      res.json(meta);
+
+      const sourceFiles = Array.isArray(meta.source_files)
+        ? meta.source_files
+        : meta.source_files ? JSON.parse(meta.source_files) : [];
+
+      const advisory = await analyzeSourceDependencies(sourceFiles);
+      res.json({ ...meta, dependency_advisory: advisory });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
