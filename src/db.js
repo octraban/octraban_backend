@@ -70,6 +70,20 @@ export const db = {
       ALTER TABLE events ADD COLUMN IF NOT EXISTS storage_tiers JSONB;
       -- Issue #85: multi-file source code matching
       ALTER TABLE contracts ADD COLUMN IF NOT EXISTS source_files JSONB;
+
+      -- Issue #117: sub-invocation indexing
+      CREATE TABLE IF NOT EXISTS sub_invocations (
+        id              BIGSERIAL PRIMARY KEY,
+        parent_tx_hash  TEXT NOT NULL,
+        depth           INT  NOT NULL DEFAULT 1,
+        contract_id     TEXT NOT NULL,
+        function        TEXT NOT NULL,
+        args            JSONB,
+        ledger          BIGINT NOT NULL,
+        created_at      TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_sub_inv_parent   ON sub_invocations(parent_tx_hash);
+      CREATE INDEX IF NOT EXISTS idx_sub_inv_contract ON sub_invocations(contract_id);
     `);
   },
 
@@ -389,5 +403,10 @@ export const db = {
       [contractId]
     );
     return rows;
+  },
+
+  /** Raw query passthrough — used by bulkLoader and pruner. */
+  async query(sql, params) {
+    return pool.query(sql, params);
   },
 };

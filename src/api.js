@@ -5,6 +5,8 @@ import { fetchTokenMetadata } from "./sep41Metadata.js";
 import { attachWebSocketServer } from "./wsEvents.js";
 import { bootstrapVault, refreshVaultRatio } from "./vaultIndexer.js";
 import { verifyAbi } from "./verify_abi.js";
+import { getMetrics } from "./rpcMetrics.js";
+import { getRpcNodeStatus } from "./rpcMultiNode.js";
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
@@ -261,94 +263,18 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // ── Issue #124: Network Comparison Tool ────────────────────────────────────
-  // GET /api/contracts/:id/network-comparison
-  // Checks deployment status across Mainnet, Testnet, and Futurenet.
-  app.get("/api/contracts/:id/network-comparison", async (req, res) => {
-    const contractId = req.params.id;
-    const NETWORKS = {
-      mainnet:   "https://soroban-mainnet.stellar.org",
-      testnet:   "https://soroban-testnet.stellar.org",
-      futurenet: "https://rpc-futurenet.stellar.org",
-    };
-
-    const statuses = await Promise.all(
-      Object.entries(NETWORKS).map(async ([network, rpcUrl]) => {
-        try {
-          const response = await fetch(rpcUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              jsonrpc: "2.0", id: 1, method: "getLedgerEntries",
-              params: { keys: [`${contractId}`] },
-            }),
-            signal: AbortSignal.timeout(5000),
-          });
-          const json = await response.json();
-          const entries = json?.result?.entries ?? [];
-          if (entries.length === 0) return { network, deployed: false };
-          const entry = entries[0];
-          return {
-            network,
-            deployed: true,
-            wasmHash: entry.xdr ? Buffer.from(entry.xdr, "base64").toString("hex").slice(0, 64) : undefined,
-            balance: entry.lastModifiedLedgerSeq ? `Ledger ${entry.lastModifiedLedgerSeq}` : undefined,
-          };
-        } catch (err) {
-          return { network, deployed: false, error: err.message };
-        }
-      })
-    );
-
-    const hashes = statuses.filter(s => s.deployed && s.wasmHash).map(s => s.wasmHash);
-    const hasVersionMismatch = hashes.length > 1 && new Set(hashes).size > 1;
-
-    res.json({ contractId, statuses, hasVersionMismatch });
+  // ── Issue #115: RPC node performance metrics ────────────────────────────────
+  // GET /api/rpc-metrics — latency history, uptime, error rate per node
+  app.get("/api/rpc-metrics", (_req, res) => {
+    try {
+      res.json(getMetrics());
+    } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // ── Issue #126: Address Connection Graph ────────────────────────────────────
-  // GET /api/contracts/:id/address-graph
-  // Returns nodes and edges for the contract's address interaction map.
-  app.get("/api/contracts/:id/address-graph", async (req, res) => {
+  // GET /api/rpc-nodes — live health status from multi-node client (#113)
+  app.get("/api/rpc-nodes", (_req, res) => {
     try {
-      const contractId = req.params.id;
-      const events = await db.getEvents({ contract: contractId, page: 1 });
-
-      const nodeMap = new Map();
-      const edgeMap = new Map();
-
-      // The contract itself is the root node
-      nodeMap.set(contractId, { id: contractId, label: contractId, type: "contract" });
-
-      for (const ev of events) {
-        // Extract addresses from description using a simple regex
-        const addressMatches = ev.description.match(/G[A-Z0-9]{55}/g) ?? [];
-        for (const addr of addressMatches) {
-          if (!nodeMap.has(addr)) {
-            nodeMap.set(addr, { id: addr, label: addr, type: "wallet" });
-          }
-          const edgeKey = `${contractId}->${addr}`;
-          if (!edgeMap.has(edgeKey)) {
-            edgeMap.set(edgeKey, { source: contractId, target: addr, label: ev.function, amount: "" });
-          }
-        }
-
-        // Also link sub-contracts from contract_id field if different
-        if (ev.contract_id && ev.contract_id !== contractId) {
-          if (!nodeMap.has(ev.contract_id)) {
-            nodeMap.set(ev.contract_id, { id: ev.contract_id, label: ev.contract_id, type: "contract" });
-          }
-          const edgeKey = `${contractId}->${ev.contract_id}`;
-          if (!edgeMap.has(edgeKey)) {
-            edgeMap.set(edgeKey, { source: contractId, target: ev.contract_id, label: ev.function });
-          }
-        }
-      }
-
-      res.json({
-        nodes: Array.from(nodeMap.values()),
-        edges: Array.from(edgeMap.values()),
-      });
+      res.json(getRpcNodeStatus());
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
