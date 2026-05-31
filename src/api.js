@@ -119,13 +119,27 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // GET /api/spec/:id — fetch on-chain spec for a contract
+  // GET /api/spec/:id — fetch on-chain spec for a contract (functions only, legacy)
   app.get("/api/spec/:id", async (req, res) => {
     try {
       const { fetchContractSpec } = await import("./verify_abi.js");
       const spec = await fetchContractSpec(req.params.id);
       if (spec === null) {
         return res.status(404).json({ error: "Contract not found or has no spec" });
+      }
+      res.json(spec);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/spec/:id/full — fetch full on-chain spec including custom types
+  // Returns { functions: [...], types: [...] } where types includes structs,
+  // enums, unions, and error_enums parsed from the contract WASM binary.
+  app.get("/api/spec/:id/full", async (req, res) => {
+    try {
+      const { fetchContractSpecFull } = await import("./verify_abi.js");
+      const spec = await fetchContractSpecFull(req.params.id);
+      if (spec === null) {
+        return res.status(404).json({ error: "Contract not found or has no WASM spec" });
       }
       res.json(spec);
     } catch (e) { res.status(500).json({ error: e.message }); }

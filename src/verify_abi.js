@@ -1,50 +1,97 @@
 import { SorobanRpc, xdr, StrKey } from "@stellar/stellar-sdk";
 import { withRetry } from "./rpcRetry.js";
+import { parseContractSpec } from "./wasmContractSpec.js";
 
 const RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const rpc = new SorobanRpc.Server(RPC_URL, { allowHttp: true });
 
 /**
+ * Fetch the raw WASM bytecode for a contract from the ledger.
+ * Returns a Buffer with the WASM bytes, or null if not found.
+ *
+ * @param {string} contractId
+ * @returns {Promise<Buffer|null>}
+ */
+async function fetchContractWasm(contractId) {
+  // Step 1: get the contract instance to find the WASM hash
+  const instanceKey = xdr.LedgerKey.contractData(
+    new xdr.LedgerKeyContractData({
+      contract: new xdr.ScAddress({
+        type: xdr.ScAddressType.scAddressTypeContract(),
+        contractId: StrKey.decodeContract(contractId),
+      }),
+      key: xdr.ScVal.scvLedgerKeyContractInstance(),
+      durability: xdr.ContractDataDurability.persistent(),
+    })
+  );
+
+  const instanceRes = await withRetry(() => rpc.getLedgerEntries([instanceKey]));
+  if (!instanceRes?.entries?.length) return null;
+
+  const instanceEntry = instanceRes.entries[0].val;
+  const contractData = instanceEntry.contractData();
+  const scVal = contractData.val();
+  if (scVal.switch().name !== "scvContractInstance") return null;
+
+  const executable = scVal.contractInstance().executable();
+  if (executable.switch().name !== "contractExecutableWasm") return null;
+
+  const wasmHash = executable.wasmHash();
+
+  // Step 2: fetch the WASM code entry by hash
+  const codeKey = xdr.LedgerKey.contractCode(
+    new xdr.LedgerKeyContractCode({ hash: wasmHash })
+  );
+
+  const codeRes = await withRetry(() => rpc.getLedgerEntries([codeKey]));
+  if (!codeRes?.entries?.length) return null;
+
+  const codeEntry = codeRes.entries[0].val;
+  return Buffer.from(codeEntry.contractCode().code());
+}
+
+/**
+ * Fetch the full on-chain spec for a contract, including custom types
+ * (structs, enums, unions) parsed from the WASM binary.
+ *
+ * Returns { functions, types } where:
+ *   functions: [{ name, doc?, inputs: [{name, type}], outputs: [type] }]
+ *   types:     [{ kind: "struct"|"enum"|"union"|"error_enum", name, fields/cases }]
+ *
+ * Returns null if the contract doesn't exist or has no WASM.
+ *
+ * @param {string} contractId
+ * @returns {Promise<{ functions: object[], types: object[] }|null>}
+ */
+export async function fetchContractSpecFull(contractId) {
+  try {
+    const wasm = await fetchContractWasm(contractId);
+    if (!wasm) return null;
+    return parseContractSpec(wasm);
+  } catch (err) {
+    console.error("Failed to fetch full contract spec:", err.message);
+    return null;
+  }
+}
+
+/**
  * Fetch the on-chain WASM spec for a contract.
  * Returns an array of { name: string, args: { name: string, type: string }[] }
  * or null if the contract doesn't exist.
+ *
+ * NOTE: This legacy function only returns function signatures. Use
+ * fetchContractSpecFull() to also get custom struct/enum/union types.
  */
 export async function fetchContractSpec(contractId) {
   try {
-    const key = xdr.LedgerKey.contractData(
-      xdr.LedgerKeyContractData.withContractId(
-        StrKey.decodeContract(contractId)
-      )
-    );
-    key.ext(xdr.LedgerKeyExtensionV0.withV0({}));
+    const full = await fetchContractSpecFull(contractId);
+    if (full === null) return null;
 
-    const res = await withRetry(() => rpc.getLedgerEntry(key));
-    if (!res?.val) return null;
-
-    const data = res.val;
-    if (data.contractData().ext().v() !== 0) return null;
-
-    const entry = data.contractData().val();
-    if (entry.switch().name !== "scvContractInstance") return null;
-
-    const instance = entry.contractInstance();
-    const spec = instance.spec();
-
-    if (!spec) return [];
-
-    const result = [];
-    for (const entry of spec) {
-      const funcDesc = xdr.ScSpecFunction.fromXDR(entry);
-      result.push({
-        name: funcDesc.name().toString(),
-        args: funcDesc.inputs().map(input => ({
-          name: input.name().toString(),
-          type: input.type().name,
-        })),
-      });
-    }
-
-    return result;
+    // Map to the legacy shape expected by verifyAbi and the /api/spec/:id endpoint
+    return full.functions.map(fn => ({
+      name: fn.name,
+      args: (fn.inputs ?? []).map(i => ({ name: i.name, type: i.type })),
+    }));
   } catch (err) {
     console.error("Failed to fetch contract spec:", err.message);
     return null;
