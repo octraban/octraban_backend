@@ -109,7 +109,17 @@ export function startApi() {
         });
       }
 
-      await db.upsertContractMeta(req.body);
+      // Issue #81: Detect RWA token metadata
+      const { detectRwaFromMetadata } = await import("./rwaDecoder.js");
+      const rwaInfo = detectRwaFromMetadata(req.body);
+      
+      const metaWithRwa = {
+        ...req.body,
+        is_rwa: rwaInfo.is_rwa,
+        rwa_type: rwaInfo.rwa_type,
+      };
+
+      await db.upsertContractMeta(metaWithRwa);
       res.status(201).json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -269,6 +279,21 @@ export function startApi() {
     try {
       const status = await db.getCircuitBreakerStatus(req.params.id);
       res.json(status);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Issue #81: RWA token activity endpoint ──────────────────────────────────
+  // GET /api/contracts/:id/rwa-metadata — get RWA-specific metadata
+  app.get("/api/contracts/:id/rwa-metadata", async (req, res) => {
+    try {
+      const meta = await db.getContractMeta(req.params.id);
+      if (!meta) return res.status(404).json({ error: "Not found" });
+      
+      const rwaInfo = {
+        is_rwa: meta.is_rwa ?? false,
+        rwa_type: meta.rwa_type ?? null,
+      };
+      res.json(rwaInfo);
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

@@ -20,9 +20,19 @@ const RWA_PATTERNS = {
       'mint_shares': decodeMintShares,
       'burn_shares': decodeBurnShares,
       'transfer_shares': decodeTransferShares,
+      'dividend_reinvestment': decodeDividendReinvestment,
+      'redemption': decodeRedemption,
+      'subscription': decodeSubscription,
     },
   },
 };
+
+// RWA-related keywords to detect RWA contracts
+const RWA_KEYWORDS = [
+  'rwa', 'real-world asset', 'benji', 'franklin templeton',
+  'dividend', 'investor', 'redemption', 'subscription',
+  'corporate action', 'share', 'yield', 'institutional',
+];
 
 /**
  * Detect if a contract is an RWA token based on metadata patterns.
@@ -189,6 +199,48 @@ function decodeTransferShares(fnName, args, data) {
 }
 
 /**
+ * Decode dividend reinvestment events.
+ * 
+ * @param {string} fnName - Function name
+ * @param {array} args - Function arguments
+ * @param {any} data - Event data
+ * @returns {string} - Human-readable description
+ */
+function decodeDividendReinvestment(fnName, args, data) {
+  const [investor, dividendAmount, sharesIssued] = args;
+  
+  return `Dividend reinvestment: ${formatAmount(dividendAmount)} USD converted to ${formatAmount(sharesIssued)} shares for ${formatAddress(investor)}`;
+}
+
+/**
+ * Decode redemption events.
+ * 
+ * @param {string} fnName - Function name
+ * @param {array} args - Function arguments
+ * @param {any} data - Event data
+ * @returns {string} - Human-readable description
+ */
+function decodeRedemption(fnName, args, data) {
+  const [investor, sharesRedeemed, amountReceived] = args;
+  
+  return `Redeemed ${formatAmount(sharesRedeemed)} shares for ${formatAmount(amountReceived)} USD from ${formatAddress(investor)}`;
+}
+
+/**
+ * Decode subscription events.
+ * 
+ * @param {string} fnName - Function name
+ * @param {array} args - Function arguments
+ * @param {any} data - Event data
+ * @returns {string} - Human-readable description
+ */
+function decodeSubscription(fnName, args, data) {
+  const [investor, amountInvested, sharesIssued] = args;
+  
+  return `New subscription: ${formatAmount(amountInvested)} USD invested by ${formatAddress(investor)}, ${formatAmount(sharesIssued)} shares issued`;
+}
+
+/**
  * Format an amount for display.
  * 
  * @param {any} amount - Amount to format
@@ -211,6 +263,54 @@ function formatAddress(addr) {
   if (typeof addr !== 'string' || addr.length < 10) return String(addr);
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
+
+/**
+ * Detect if a contract is likely an RWA token based on function names and metadata.
+ * 
+ * @param {object} meta - Contract metadata
+ * @returns {object|null} - { is_rwa: boolean, rwa_type: string|null }
+ */
+export function detectRwaFromMetadata(meta) {
+  if (!meta) return { is_rwa: false, rwa_type: null };
+
+  // Check explicit RWA metadata
+  if (meta.is_rwa || meta.rwa_type) {
+    return {
+      is_rwa: true,
+      rwa_type: meta.rwa_type || 'rwa',
+    };
+  }
+
+  // Check name and description for RWA keywords
+  const text = `${meta.name || ''} ${meta.description || ''}`.toLowerCase();
+  const hasRwaKeyword = RWA_KEYWORDS.some(keyword => text.includes(keyword));
+
+  if (!hasRwaKeyword) {
+    return { is_rwa: false, rwa_type: null };
+  }
+
+  // Determine RWA type from keywords
+  let rwaType = 'rwa';
+  if (text.includes('benji') || text.includes('franklin templeton')) {
+    rwaType = 'benji';
+  }
+
+  // Check function names for RWA-specific patterns
+  const fnNames = (meta.functions || []).map(f => f.name.toLowerCase());
+  const hasRwaFunctions = fnNames.some(fn => 
+    fn.includes('dividend') || 
+    fn.includes('redemption') || 
+    fn.includes('subscription') ||
+    fn.includes('investor') ||
+    fn.includes('corporate_action')
+  );
+
+  return {
+    is_rwa: hasRwaKeyword || hasRwaFunctions,
+    rwa_type: rwaType,
+  };
+}
+
 
 /**
  * Decode an RWA event using registered patterns.
