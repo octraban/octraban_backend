@@ -56,6 +56,14 @@ export const db = {
       ALTER TABLE events ADD COLUMN IF NOT EXISTS storage_tiers JSONB;
       -- Fee-Bump sponsorship
       ALTER TABLE events ADD COLUMN IF NOT EXISTS fee_bump JSONB;
+
+      CREATE TABLE IF NOT EXISTS token_holders (
+        contract_id TEXT    NOT NULL,
+        address     TEXT    NOT NULL,
+        balance     NUMERIC NOT NULL DEFAULT 0,
+        PRIMARY KEY (contract_id, address)
+      );
+      CREATE INDEX IF NOT EXISTS idx_token_holders_contract ON token_holders(contract_id);
     `);
   },
 
@@ -205,6 +213,63 @@ export const db = {
        ON CONFLICT (id) DO UPDATE SET name=$2, description=$3, functions=$4`,
       [meta.id, meta.name, meta.description, JSON.stringify(meta.functions), meta.registered_by]
     );
+  },
+
+  // ── Token holder balance tracking ─────────────────────────────────────────────
+
+  /**
+   * Apply a SEP-41 transfer: decrement sender, increment receiver.
+   * Uses a single CTE upsert so both rows land atomically.
+   */
+  async applyTransfer(contractId, from, to, amount) {
+    await pool.query(
+      `WITH deltas (address, delta) AS (
+         VALUES ($2::TEXT, -($3)::NUMERIC), ($4::TEXT, ($3)::NUMERIC)
+       )
+       INSERT INTO token_holders (contract_id, address, balance)
+         SELECT $1, address, delta FROM deltas
+         ON CONFLICT (contract_id, address)
+         DO UPDATE SET balance = token_holders.balance + EXCLUDED.balance`,
+      [contractId, from, amount, to]
+    );
+  },
+
+  /** Apply a SEP-41 mint: increase receiver balance. */
+  async applyMint(contractId, to, amount) {
+    await pool.query(
+      `INSERT INTO token_holders (contract_id, address, balance)
+         VALUES ($1, $2, ($3)::NUMERIC)
+         ON CONFLICT (contract_id, address)
+         DO UPDATE SET balance = token_holders.balance + EXCLUDED.balance`,
+      [contractId, to, amount]
+    );
+  },
+
+  /** Apply a SEP-41 burn: decrease sender balance. */
+  async applyBurn(contractId, from, amount) {
+    await pool.query(
+      `INSERT INTO token_holders (contract_id, address, balance)
+         VALUES ($1, $2, -($3)::NUMERIC)
+         ON CONFLICT (contract_id, address)
+         DO UPDATE SET balance = token_holders.balance + EXCLUDED.balance`,
+      [contractId, from, amount]
+    );
+  },
+
+  /**
+   * Return all addresses with a positive balance for a token, sorted descending.
+   * @param {string} contractId
+   * @returns {Promise<Array<{ address: string, balance_raw: string }>>}
+   */
+  async getTokenHolders(contractId) {
+    const { rows } = await pool.query(
+      `SELECT address, balance::TEXT AS balance_raw
+       FROM token_holders
+       WHERE contract_id = $1 AND balance > 0
+       ORDER BY balance DESC`,
+      [contractId]
+    );
+    return rows;
   },
 
   // ── Vault indexer methods ──────────────────────────────────────────────────────

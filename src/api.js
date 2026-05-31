@@ -4,6 +4,7 @@ import { db } from "./db.js";
 import { fetchTokenMetadata } from "./sep41Metadata.js";
 import { attachWebSocketServer } from "./wsEvents.js";
 import { bootstrapVault, refreshVaultRatio } from "./vaultIndexer.js";
+import { formatAmount } from "./formatAmount.js";
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
@@ -172,6 +173,32 @@ export function startApi() {
     try {
       const events = await db.getWalletEvents(req.params.address);
       res.json(events);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/tokens/:id/holders — sorted list of addresses and their token balances
+  app.get("/api/tokens/:id/holders", async (req, res) => {
+    try {
+      const contractId = req.params.id;
+      let decimals = 7;
+      try {
+        const meta = await fetchTokenMetadata(contractId);
+        decimals = meta.decimals;
+      } catch { /* use default */ }
+
+      const rows = await db.getTokenHolders(contractId);
+      const holders = rows.map(r => ({
+        address:     r.address,
+        balance_raw: r.balance_raw,
+        balance:     formatAmount(r.balance_raw, decimals),
+      }));
+
+      res.json({
+        contract_id:   contractId,
+        decimals,
+        total_holders: holders.length,
+        holders,
+      });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
