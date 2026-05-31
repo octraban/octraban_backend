@@ -49,6 +49,7 @@ function extractGasCosts(ev) {
 import { db } from "./db.js";
 import { sacLabel, detectSac } from "./sac.js";
 import { extractRoleAssignment } from "./roleTracker.js";
+import { decodeRwaEvent } from "./rwaDecoder.js";
 
 // Native XLM Stellar Asset Contract IDs (testnet + mainnet)
 const NATIVE_SAC_IDS = new Set([
@@ -101,11 +102,26 @@ export async function decode(ev) {
       ? `${assetCode} (SAC:${contractId.slice(0, 8)}…)`
       : (meta?.name ?? contractId);
 
-  const description = vaultMeta
-    ? vaultDescription(fnName, topics.slice(1), data, contractLabel, vaultMeta)
-    : fnAbi
-      ? buildDescription(fnName, topics.slice(1), data, contractLabel)
-      : genericDescription(fnName, topics.slice(1), data, contractLabel);
+  // Issue #81: Try RWA decoder first
+  let description = null;
+  if (meta) {
+    const tempDecoded = {
+      contract_id: contractId,
+      function: fnName,
+      raw_topics: topics.map(String),
+      raw_data: JSON.stringify(data),
+    };
+    description = decodeRwaEvent(tempDecoded, meta);
+  }
+
+  // Fall back to standard decoders
+  if (!description) {
+    description = vaultMeta
+      ? vaultDescription(fnName, topics.slice(1), data, contractLabel, vaultMeta)
+      : fnAbi
+        ? buildDescription(fnName, topics.slice(1), data, contractLabel)
+        : genericDescription(fnName, topics.slice(1), data, contractLabel);
+  }
 
   const decoded = {
     contract_id: contractId,

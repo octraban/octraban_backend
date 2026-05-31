@@ -12,6 +12,7 @@ import { startBurnDetector } from "./burnDetector.js";
 import { multiNodeRpc } from "./rpcMultiNode.js";
 import { startMetricsCollector } from "./rpcMetrics.js";
 import { startPruner } from "./pruner.js";
+import { processCircuitBreakerEvent } from "./circuitBreakerIndexer.js";
 
 const RPC_URL      = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
@@ -65,6 +66,15 @@ async function indexLedger(ledger) {
       await db.upsertEvent(decoded);
       publish(decoded);           // Issue #39 — push to WS clients
       handleVaultEvent(decoded);  // vault ratio update (async, non-blocking)
+      
+      // Issue #86: Process circuit breaker events
+      const meta = await db.getContractMeta(ev.contractId).catch(() => null);
+      if (meta) {
+        processCircuitBreakerEvent(decoded, meta).catch(err => 
+          console.error('[circuitBreakerIndexer] Error:', err.message)
+        );
+      }
+      
       console.log(`[${ev.ledger}] ${decoded.function}: ${decoded.description}`);
     }
 
