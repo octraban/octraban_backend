@@ -5,6 +5,8 @@ import { fetchTokenMetadata } from "./sep41Metadata.js";
 import { attachWebSocketServer } from "./wsEvents.js";
 import { bootstrapVault, refreshVaultRatio } from "./vaultIndexer.js";
 import { verifyAbi } from "./verify_abi.js";
+import { getMetrics } from "./rpcMetrics.js";
+import { getRpcNodeStatus } from "./rpcMultiNode.js";
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
@@ -261,109 +263,18 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // ── Issue #117: sub-invocation endpoints ──────────────────────────────────
-
-  // GET /api/transactions/:hash/sub-invocations
-  app.get("/api/transactions/:hash/sub-invocations", async (req, res) => {
+  // ── Issue #115: RPC node performance metrics ────────────────────────────────
+  // GET /api/rpc-metrics — latency history, uptime, error rate per node
+  app.get("/api/rpc-metrics", (_req, res) => {
     try {
-      const rows = await db.getSubInvocations(req.params.hash);
-      res.json(rows);
+      res.json(getMetrics());
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // GET /api/v1/contracts/:id/events-deep — events where contract appears directly OR as sub-invocation
-  app.get("/api/v1/contracts/:id/events-deep", async (req, res) => {
+  // GET /api/rpc-nodes — live health status from multi-node client (#113)
+  app.get("/api/rpc-nodes", (_req, res) => {
     try {
-      const { page, limit } = req.query;
-      const rows = await db.getEventsByContractIncludingSubInvocations(req.params.id, {
-        page:  page  ? Number(page)  : 1,
-        limit: limit ? Math.min(Number(limit), 100) : 25,
-      });
-      res.json(rows);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-  });
-
-  // ── Issue #118: SSE transaction status monitoring ──────────────────────────
-
-  // In-memory map: txHash → { status, ledger, error }
-  const txStatusMap = new Map();
-  // SSE subscribers: txHash → Set<res>
-  const sseSubscribers = new Map();
-
-  /**
-   * Called by the indexer when a transaction status changes.
-   * Broadcasts the update to all SSE clients watching that tx.
-   */
-  app.locals.notifyTxStatus = (txHash, status, ledger = null, error = null) => {
-    const payload = { tx_hash: txHash, status, ledger, error };
-    txStatusMap.set(txHash, payload);
-    const subs = sseSubscribers.get(txHash);
-    if (subs) {
-      const data = `data: ${JSON.stringify(payload)}\n\n`;
-      for (const res of subs) {
-        try { res.write(data); } catch { /* client disconnected */ }
-      }
-      // Clean up if terminal state
-      if (status === "success" || status === "failed") {
-        for (const res of subs) { try { res.end(); } catch { /* ignore */ } }
-        sseSubscribers.delete(txHash);
-      }
-    }
-  };
-
-  // GET /api/transactions/:hash/status/stream — SSE stream for a single tx
-  app.get("/api/transactions/:hash/status/stream", (req, res) => {
-    const { hash } = req.params;
-
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.flushHeaders();
-
-    // Send current status immediately if known
-    const current = txStatusMap.get(hash);
-    if (current) {
-      res.write(`data: ${JSON.stringify(current)}\n\n`);
-      if (current.status === "success" || current.status === "failed") {
-        res.end();
-        return;
-      }
-    } else {
-      // Send initial pending state
-      res.write(`data: ${JSON.stringify({ tx_hash: hash, status: "pending", ledger: null, error: null })}\n\n`);
-    }
-
-    // Register subscriber
-    if (!sseSubscribers.has(hash)) sseSubscribers.set(hash, new Set());
-    sseSubscribers.get(hash).add(res);
-
-    // Heartbeat every 15 s to keep connection alive
-    const heartbeat = setInterval(() => {
-      try { res.write(": heartbeat\n\n"); } catch { clearInterval(heartbeat); }
-    }, 15_000);
-
-    req.on("close", () => {
-      clearInterval(heartbeat);
-      sseSubscribers.get(hash)?.delete(res);
-    });
-  });
-
-  // GET /api/transactions/:hash/status — simple polling fallback
-  app.get("/api/transactions/:hash/status", async (req, res) => {
-    try {
-      const { hash } = req.params;
-      // Check DB for a matching event (means it was indexed = success)
-      const { rows } = await (db._pool ?? pool ?? (() => { throw new Error("no pool"); })()).query(
-        "SELECT tx_hash, ledger FROM events WHERE tx_hash = $1 LIMIT 1",
-        [hash]
-      ).catch(() => ({ rows: [] }));
-
-      if (rows.length) {
-        res.json({ tx_hash: hash, status: "success", ledger: rows[0].ledger });
-      } else {
-        const cached = txStatusMap.get(hash);
-        res.json(cached ?? { tx_hash: hash, status: "pending", ledger: null });
-      }
+      res.json(getRpcNodeStatus());
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

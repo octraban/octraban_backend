@@ -405,49 +405,8 @@ export const db = {
     return rows;
   },
 
-  // ── Issue #117: sub-invocation indexing ───────────────────────────────────
-
-  /**
-   * Insert a batch of sub-invocation records linked to a parent tx_hash.
-   * @param {Array<{parent_tx_hash, depth, contract_id, function, args, ledger}>} records
-   */
-  async upsertSubInvocations(records) {
-    if (!records.length) return;
-    const values = records.map((r, i) => {
-      const base = i * 6;
-      return `($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6})`;
-    }).join(",");
-    const params = records.flatMap(r => [
-      r.parent_tx_hash, r.depth ?? 1, r.contract_id, r.function,
-      r.args ? JSON.stringify(r.args) : null, r.ledger,
-    ]);
-    await pool.query(
-      `INSERT INTO sub_invocations (parent_tx_hash, depth, contract_id, function, args, ledger)
-       VALUES ${values} ON CONFLICT DO NOTHING`,
-      params
-    );
-  },
-
-  /** Return all sub-invocations for a given parent transaction hash. */
-  async getSubInvocations(parentTxHash) {
-    const { rows } = await pool.query(
-      `SELECT * FROM sub_invocations WHERE parent_tx_hash = $1 ORDER BY depth, id`,
-      [parentTxHash]
-    );
-    return rows;
-  },
-
-  /** Search events by contract_id including sub-invocations (issue #117). */
-  async getEventsByContractIncludingSubInvocations(contractId, { page = 1, limit = 25 } = {}) {
-    const offset = (page - 1) * limit;
-    // Return events where the contract was called directly OR as a sub-invocation
-    const { rows } = await pool.query(
-      `SELECT DISTINCT e.* FROM events e
-       LEFT JOIN sub_invocations s ON e.tx_hash = s.parent_tx_hash
-       WHERE e.contract_id = $1 OR s.contract_id = $1
-       ORDER BY e.ledger DESC LIMIT $2 OFFSET $3`,
-      [contractId, limit, offset]
-    );
-    return rows;
+  /** Raw query passthrough — used by bulkLoader and pruner. */
+  async query(sql, params) {
+    return pool.query(sql, params);
   },
 };
