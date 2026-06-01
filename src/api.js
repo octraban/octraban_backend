@@ -78,6 +78,15 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // GET /api/contracts/:id/build-metadata — WASM build metadata (compiler, SDK, repo link)
+  app.get("/api/contracts/:id/build-metadata", async (req, res) => {
+    try {
+      const meta = await db.getWasmBuildMetadata(req.params.id);
+      if (!meta) return res.status(404).json({ error: "No build metadata found for this contract" });
+      res.json(meta);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // GET /api/contracts/:id/abi — download standardized ABI JSON
   app.get("/api/contracts/:id/abi", async (req, res) => {
     try {

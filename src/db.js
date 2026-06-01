@@ -219,7 +219,7 @@ export const db = {
       `INSERT INTO events
          (contract_id, function, ledger, tx_hash, description, raw_topics, raw_data,
           cpu_instructions, mem_bytes, fee_charged, is_high_bloat_risk, upgrade_info, storage_tiers, is_clawback,
-          footprint_contention, ttl_extension, fee_bump, factory_deployment)
+          footprint_contention, ttl_extension, fee_bump, archival_info)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        ON CONFLICT DO NOTHING`,
       [
@@ -233,7 +233,7 @@ export const db = {
         ev.footprint_contention ?? false,
         ev.ttl_extension ? JSON.stringify(ev.ttl_extension) : null,
         ev.fee_bump ? JSON.stringify(ev.fee_bump) : null,
-        ev.factory_deployment ? JSON.stringify(ev.factory_deployment) : null,
+        ev.archival_info ? JSON.stringify(ev.archival_info) : null,
       ]
     );
   },
@@ -566,6 +566,35 @@ export const db = {
     return rows;
   },
 
+ wasm-build-metadata-indexing
+  // ── WASM build metadata ────────────────────────────────────────────────────
+
+  async upsertWasmBuildMetadata({ wasm_hash, contract_id, sdk_version, compiler, optimizer, repository, commit, producers, ledger, tx_hash }) {
+    await pool.query(
+      `INSERT INTO wasm_build_metadata
+         (wasm_hash, contract_id, sdk_version, compiler, optimizer, repository, commit, producers, ledger, tx_hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT (wasm_hash) DO UPDATE SET
+         contract_id = COALESCE(EXCLUDED.contract_id, wasm_build_metadata.contract_id),
+         sdk_version = COALESCE(EXCLUDED.sdk_version, wasm_build_metadata.sdk_version),
+         compiler    = COALESCE(EXCLUDED.compiler,    wasm_build_metadata.compiler),
+         optimizer   = COALESCE(EXCLUDED.optimizer,   wasm_build_metadata.optimizer),
+         repository  = COALESCE(EXCLUDED.repository,  wasm_build_metadata.repository),
+         commit      = COALESCE(EXCLUDED.commit,      wasm_build_metadata.commit),
+         producers   = COALESCE(EXCLUDED.producers,   wasm_build_metadata.producers)`,
+      [wasm_hash, contract_id ?? null, sdk_version ?? null, compiler ?? null,
+       optimizer ?? null, repository ?? null, commit ?? null,
+       producers ? JSON.stringify(producers) : null, ledger ?? null, tx_hash ?? null]
+    );
+  },
+
+  async getWasmBuildMetadata(contract_id) {
+    const { rows } = await pool.query(
+      `SELECT * FROM wasm_build_metadata WHERE contract_id = $1 ORDER BY ledger DESC LIMIT 1`,
+      [contract_id]
+    );
+    return rows[0] ?? null;
+=======
   /** Issue #117: persist sub-invocation records. */
   async upsertSubInvocations(records) {
     if (!records.length) return;
@@ -597,5 +626,6 @@ export const db = {
       [limit]
     );
     return rows.map(r => ({ caller: r.caller, callee: r.callee, call_count: Number(r.call_count) }));
+ main
   },
 };

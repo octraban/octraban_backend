@@ -14,7 +14,8 @@ import { startMetricsCollector } from "./rpcMetrics.js";
 import { startPruner } from "./pruner.js";
 import { extractStateDiffs } from "./stateDiffIndexer.js";
 import { parseFeeBump } from "./feeBumpParser.js";
-import { detectFactoryDeployment } from "./factoryDeploymentDetector.js";
+import { detectEvictions } from "./archivalEvictionDetector.js";
+import { parseAndDescribeRestore } from "./restoreFootprintParser.js";
 
 const RPC_URL      = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
@@ -80,6 +81,42 @@ const cursorRef = {
 let _cursor = 0;
 
 /**
+ * For each unique tx_hash in the event batch, fetch the transaction and check
+ * whether any operation is an UploadContractWasm.  When found, extract build
+ * metadata from the raw WASM bytes and persist it.
+ *
+ * @param {string[]} txHashes  Deduplicated list of tx hashes from this page
+ * @param {number}   ledger    Current ledger number
+ */
+async function indexWasmUploads(txHashes, ledger) {
+  for (const txHash of txHashes) {
+    try {
+      const tx = await withRetry(() => rpc.getTransaction(txHash));
+      if (!tx?.envelopeXdr) continue;
+
+      const { xdr } = await import("@stellar/stellar-sdk");
+      const envelope = xdr.TransactionEnvelope.fromXDR(tx.envelopeXdr, "base64");
+      const ops = envelope.tx?.().operations?.() ?? envelope.v1?.().tx?.().operations?.() ?? [];
+
+      for (const op of ops) {
+        const body = op.body();
+        if (body.switch().name !== "invokeHostFunction") continue;
+        const hf = body.invokeHostFunctionOp().hostFunction();
+        if (hf.switch().name !== "hostFunctionTypeUploadContractWasm") continue;
+
+        const wasmBytes = hf.wasm();
+        const meta = extractBuildMetadata(wasmBytes);
+        await db.upsertWasmBuildMetadata({ ...meta, ledger, tx_hash: txHash });
+        console.log(`[${ledger}] WASM upload indexed: ${meta.wasm_hash.slice(0, 16)}… compiler=${meta.compiler ?? "unknown"}`);
+      }
+    } catch (err) {
+      // Non-fatal: log and continue
+      console.error(`[wasmUpload] tx ${txHash}: ${err.message}`);
+    }
+  }
+}
+
+/**
  * Fetch and process ALL events for a given startLedger, handling pagination
  * boundaries when a ledger contains more than PAGE_LIMIT events (Issue #33).
  *
@@ -106,26 +143,18 @@ async function indexLedger(ledger) {
     // Issue #169: build a per-page txHash → feeBump cache to avoid redundant
     // getTransaction calls when multiple events share the same transaction.
     const feeBumpCache = new Map();
-    // Issue #177: build a per-page txHash → factoryDeployment cache
-    const factoryDeploymentCache = new Map();
+    const restoreCache = new Map(); // Issue #167: txHash → archival_info
     const uniqueTxHashes = [...new Set(res.events.map(e => e.txHash).filter(Boolean))];
     await Promise.all(uniqueTxHashes.map(async (txHash) => {
       try {
         const txResult = await withRetry(() => rpc.getTransaction(txHash));
         if (txResult?.envelopeXdr) {
           feeBumpCache.set(txHash, parseFeeBump(txResult.envelopeXdr));
-          
-          // Issue #177: detect factory deployments from transaction metadata
-          const factoryDeployment = detectFactoryDeployment({
-            ...res.events.find(e => e.txHash === txHash),
-            envelopeXdr: txResult.envelopeXdr,
-          });
-          if (factoryDeployment) {
-            factoryDeploymentCache.set(txHash, factoryDeployment);
-            console.log(`[${ledger}] FACTORY DEPLOYMENT detected in tx ${txHash}: ${factoryDeployment.deployedContracts.length} contracts`);
-          }
+          // Issue #167: parse RestoreFootprintOp if present
+          const restore = parseAndDescribeRestore(txResult.envelopeXdr, txResult.resultMetaXdr ?? null);
+          if (restore.isRestoreOp) restoreCache.set(txHash, restore);
         }
-      } catch { /* non-critical — skip fee-bump for this tx */ }
+      } catch { /* non-critical — skip fee-bump/restore for this tx */ }
     }));
 
     for (const ev of res.events) {
@@ -141,18 +170,22 @@ async function indexLedger(ledger) {
 
       decoded.storage_tiers = classifyStorageWrites(ev);
       decoded.fee_bump = feeBumpCache.get(ev.txHash) ?? null;
-      
-      // Issue #177: attach factory deployment data if this tx is a factory deployment
-      const factoryDeployment = factoryDeploymentCache.get(ev.txHash);
-      if (factoryDeployment) {
-        decoded.factory_deployment = factoryDeployment.deploymentTree;
-      }
-      
+      // Issue #167: attach restoration info when this tx is a RestoreFootprintOp
+      decoded.archival_info = restoreCache.get(ev.txHash) ?? null;
       await db.upsertEvent(decoded);
 
       // Issue #140: persist per-key state diffs for the timeline
       const diffs = extractStateDiffs(ev, decoded);
       if (diffs.length) await db.insertStateDiffs(diffs).catch(() => {});
+
+      // Issue #167: detect evicted ledger keys (TTL → 0) in this transaction
+      const evictions = detectEvictions(ev, ev.ledger, ev.txHash);
+      if (evictions.length) {
+        await db.insertArchivalEvictions(evictions).catch(err =>
+          console.error("[archivalEviction] insert failed:", err.message)
+        );
+        console.log(`[${ev.ledger}] EVICTED ${evictions.length} key(s) in tx ${ev.txHash}`);
+      }
 
       publish(decoded);           // Issue #39 — push to WS clients
       handleVaultEvent(decoded);  // vault ratio update (async, non-blocking)
@@ -167,6 +200,11 @@ async function indexLedger(ledger) {
       
       console.log(`[${ev.ledger}] ${decoded.function}: ${decoded.description}`);
     }
+
+    // Scan transactions for UploadContractWasm operations (non-blocking)
+    indexWasmUploads(pageTxHashes, ledger).catch(err =>
+      console.error("[wasmUpload] batch error:", err.message)
+    );
 
     // Issue #37 — record the latest ledger hash for re-org detection
     if (res.latestLedger && res.latestLedgerHash) {
