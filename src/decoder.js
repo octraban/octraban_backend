@@ -1,4 +1,5 @@
 import { xdr, scValToNative, StrKey } from "@stellar/stellar-sdk";
+import { parseTTLHostFunction, formatTTLExtension } from "./ttlExtensionParser.js";
 
 // Issue #134 — result codes that indicate block compute capacity was exhausted
 const RESOURCE_LIMIT_CODES = new Set([
@@ -153,6 +154,14 @@ export async function decode(ev) {
     is_resource_limit_exceeded: isResourceLimitExceeded(ev),
     ...extractGasCosts(ev),
   };
+
+  // Protocol 26: detect TTL extension host function calls on this event
+  const ttlExt = parseTTLHostFunction(ev.hostFunction ?? ev.host_function ?? ev.operation ?? null);
+  if (ttlExt) {
+    decoded.ttl_extension = ttlExt;
+    // Enrich description so the ledger history row is self-explanatory
+    decoded.description = formatTTLExtension(ttlExt);
+  }
 
   // Persist role assignment if this event carries one
   const roleAssignment = extractRoleAssignment(decoded);

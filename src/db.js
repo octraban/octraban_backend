@@ -85,6 +85,9 @@ export const db = {
       -- Issue #134: resource-limit-exceeded flag
       ALTER TABLE events ADD COLUMN IF NOT EXISTS is_resource_limit_exceeded BOOLEAN NOT NULL DEFAULT FALSE;
 
+      -- Protocol 26: TTL extension host function data (extend_to, min_extension, max_extension)
+      ALTER TABLE events ADD COLUMN IF NOT EXISTS ttl_extension JSONB;
+
       -- Issue #117: sub-invocation indexing
       CREATE TABLE IF NOT EXISTS sub_invocations (
         id              BIGSERIAL PRIMARY KEY,
@@ -197,8 +200,8 @@ export const db = {
       `INSERT INTO events
          (contract_id, function, ledger, tx_hash, description, raw_topics, raw_data,
           cpu_instructions, mem_bytes, fee_charged, is_high_bloat_risk, upgrade_info, storage_tiers, is_clawback,
-          footprint_contention)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+          footprint_contention, ttl_extension)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        ON CONFLICT DO NOTHING`,
       [
         ev.contract_id, ev.function, ev.ledger, ev.tx_hash,
@@ -209,6 +212,7 @@ export const db = {
         ev.storage_tiers ? JSON.stringify(ev.storage_tiers) : null,
         ev.is_clawback ?? false,
         ev.footprint_contention ?? false,
+        ev.ttl_extension ? JSON.stringify(ev.ttl_extension) : null,
       ]
     );
   },
