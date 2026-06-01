@@ -10,6 +10,10 @@ import { getMetrics } from "./rpcMetrics.js";
 import { getRpcNodeStatus } from "./rpcMultiNode.js";
 import { cacheAside, cacheDel } from "./metadataCache.js";  // Issue #137
 import { attachGraphQL } from "./graphql.js";               // Issue #139
+import { parseExecutionTrace } from "./executionTraceParser.js";     // Issue #174
+import { detectReentrancyFromParsed } from "./reentrancyTrapDetector.js"; // Issue #175
+import { parseDiagnosticEvents } from "./diagnosticParser.js";       // Issue #175
+import { annotateEvictionStates, summariseEvictionStats } from "./storageEvictionTracker.js"; // Issue #176
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
@@ -396,6 +400,50 @@ export function startApi() {
         limit: req.query.limit ? Math.min(Number(req.query.limit), 500) : 200,
       });
       res.json(rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Issue #174: WASM Execution Call Stack ──────────────────────────────────
+  // GET /api/transactions/:hash/execution-trace
+  // Returns a chronological call tree reconstructed from diagnostic events.
+  app.get("/api/transactions/:hash/execution-trace", async (req, res) => {
+    try {
+      const tx = await db.getTransaction(req.params.hash);
+      if (!tx) return res.status(404).json({ error: "Transaction not found" });
+      const diagnosticEventsXdr = tx.diagnostic_events_xdr ?? tx.diagnosticEventsXdr ?? [];
+      const trace = parseExecutionTrace(
+        Array.isArray(diagnosticEventsXdr) ? diagnosticEventsXdr : []
+      );
+      res.json(trace);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Issue #175: Reentrancy & Deep Call-Stack Trap Detection ────────────────
+  // GET /api/transactions/:hash/reentrancy-traps
+  // Returns reentrancy / max call depth findings for a failed transaction.
+  app.get("/api/transactions/:hash/reentrancy-traps", async (req, res) => {
+    try {
+      const tx = await db.getTransaction(req.params.hash);
+      if (!tx) return res.status(404).json({ error: "Transaction not found" });
+      const diagnosticEventsXdr = tx.diagnostic_events_xdr ?? tx.diagnosticEventsXdr ?? [];
+      const parsed = parseDiagnosticEvents(
+        Array.isArray(diagnosticEventsXdr) ? diagnosticEventsXdr : []
+      );
+      const result = detectReentrancyFromParsed(parsed);
+      res.json(result);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Issue #176: Storage Eviction / Archival State ──────────────────────────
+  // GET /api/contracts/:id/evicted-keys?currentLedger=
+  // Returns annotated storage entries with eviction state and restore fee estimates.
+  app.get("/api/contracts/:id/evicted-keys", async (req, res) => {
+    try {
+      const currentLedger = Number(req.query.currentLedger) || 0;
+      const rawEntries = await db.getContractStorageEntries(req.params.id);
+      const annotated = annotateEvictionStates(rawEntries ?? [], currentLedger);
+      const stats = summariseEvictionStats(annotated);
+      res.json({ entries: annotated, stats, currentLedger });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
