@@ -100,6 +100,30 @@ export function parseDiagnosticEvents(diagnosticEventsXdr) {
       // 3. Fall back to data string/symbol
       if (!error) error = extractErrorFromScVal(dataVal);
 
+      // 4. Detect checked 256-bit arithmetic overflows and override
+      // error labels that are actually the arithmetic function name.
+      try {
+        const ARITH_FN_RE = /(i256|u256).*(add|sub|mul|pow)|checked.*(add|sub|mul|pow)|\b(add|sub|mul|pow)\b.*(i256|u256)/i;
+        const hasArithFn = topics.some(t => {
+          try { const s = scValToNative(t); return ARITH_FN_RE.test(String(s)); } catch { return false; }
+        });
+
+        const hasOverflowWord = topics.some(t => {
+          try { const s = scValToNative(t); return /overflow/i.test(String(s)); } catch { return false; }
+        });
+
+        const dataIsVoid = dataVal?.switch?.().name === 'scvVoid';
+        const dataIsOverflowString = dataVal?.switch?.().name === 'scvString' && /overflow/i.test(dataVal.str().toString());
+
+        // Only classify as `Overflow [Void]` when the overflow is coming from
+        // arithmetic host functions that returned Void (checked ops), or when
+        // the topics explicitly include an overflow marker alongside an
+        // arithmetic function name. Do not override plain string messages.
+        if ((hasArithFn && (dataIsVoid || hasOverflowWord))) {
+          error = 'Overflow [Void]';
+        }
+      } catch { /* ignore detection errors */ }
+
       // Last resort: check if data is a native error object
       if (!error) {
         try {

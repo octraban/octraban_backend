@@ -3,15 +3,15 @@
  * Issue #63: Parse and Label StateRent & TTL Modifications
  */
 
-const {
+import {
   parseTTLExtension,
   extractTTLModifications,
   calculateRentPaid,
-} = require("../src/ttlExtensionParser");
+} from "../src/ttlExtensionParser.js";
+import assert from "node:assert/strict";
+import test from "node:test";
 
-describe("TTL Extension Parser", () => {
-  describe("parseTTLExtension", () => {
-    test("parses ExtendCurrentContractInstance operation", () => {
+test("TTL Extension Parser: parseTTLExtension - parses ExtendCurrentContractInstance operation", () => {
       const operation = {
         ext: { v: 1 },
         contractId: "CONTRACT123",
@@ -25,13 +25,13 @@ describe("TTL Extension Parser", () => {
 
       const result = parseTTLExtension(operation);
 
-      expect(result.operationType).toBe("ExtendCurrentContractInstance");
-      expect(result.targetKey).toBe("CONTRACT123");
-      expect(result.extendToLedger).toBe(100000);
-      expect(result.costXlm).toBeCloseTo(0.0015, 5);
+      assert.equal(result.operationType, "ExtendCurrentContractInstance");
+      assert.equal(result.targetKey, "CONTRACT123");
+      assert.equal(result.extendToLedger, 100000);
+      assert.ok(Math.abs(result.costXlm - 0.0015) < 1e-5);
     });
 
-    test("parses ExtendCurrentContractCode operation", () => {
+    test("TTL Extension Parser: parseTTLExtension - parses ExtendCurrentContractCode operation", () => {
       const operation = {
         type: "extendContractCode",
         codeHash: "HASH123",
@@ -40,21 +40,19 @@ describe("TTL Extension Parser", () => {
 
       const result = parseTTLExtension(operation);
 
-      expect(result.operationType).toBe("ExtendCurrentContractCode");
-      expect(result.targetKey).toBe("HASH123");
-      expect(result.extendToLedger).toBe(150000);
+      assert.equal(result.operationType, "ExtendCurrentContractCode");
+      assert.equal(result.targetKey, "HASH123");
+      assert.equal(result.extendToLedger, 150000);
     });
 
-    test("returns empty result for invalid operation", () => {
+    test("TTL Extension Parser: parseTTLExtension - returns empty result for invalid operation", () => {
       const result = parseTTLExtension(null);
 
-      expect(result.operationType).toBeNull();
-      expect(result.targetKey).toBeNull();
+      assert.equal(result.operationType, null);
+      assert.equal(result.targetKey, null);
     });
-  });
 
-  describe("extractTTLModifications", () => {
-    test("extracts all TTL modifications from transaction", () => {
+    test("TTL Extension Parser: extractTTLModifications - extracts all TTL modifications from transaction", () => {
       const transaction = {
         ledger: 50000,
         hash: "TXHASH123",
@@ -75,23 +73,19 @@ describe("TTL Extension Parser", () => {
 
       const result = extractTTLModifications(transaction);
 
-      expect(result).toHaveLength(2);
-      expect(result[0].operationType).toBe("ExtendCurrentContractCode");
-      expect(result[1].operationType).toBe("ExtendCurrentContractInstance");
+      assert.equal(result.length, 2);
+      assert.equal(result[0].operationType, "ExtendCurrentContractCode");
+      assert.equal(result[1].operationType, "ExtendCurrentContractInstance");
     });
-  });
 
-  describe("calculateRentPaid", () => {
-    test("calculates rent paid in stroops", () => {
+    test("TTL Extension Parser: calculateRentPaid - calculates rent paid in stroops", () => {
       const extensionOp = { costXlm: 0.5 };
       const rent = calculateRentPaid(extensionOp);
 
-      expect(rent).toBe(5_000_000);
+      assert.equal(rent, 5_000_000);
     });
 
-    test("returns 0 for missing cost", () => {
+    test("TTL Extension Parser: calculateRentPaid - returns 0 for missing cost", () => {
       const rent = calculateRentPaid({});
-      expect(rent).toBe(0);
+      assert.equal(rent, 0);
     });
-  });
-});

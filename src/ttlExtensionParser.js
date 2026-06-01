@@ -9,7 +9,7 @@
  * @param {Object} operation - The operation object
  * @returns {Object} Parsed TTL extension details
  */
-function parseTTLExtension(operation) {
+export function parseTTLExtension(operation) {
   const result = {
     operationType: null,
     targetKey: null,
@@ -34,6 +34,13 @@ function parseTTLExtension(operation) {
     result.extendToLedger = operation.extendTo || null;
   }
 
+  // Also accept simplified operation shapes used in tests/other callers
+  if (operation.type === "extendContractInstance") {
+    result.operationType = "ExtendCurrentContractInstance";
+    result.targetKey = operation.contractId || null;
+    result.extendToLedger = operation.extendTo || null;
+  }
+
   // Extract cost from transaction metadata
   if (operation.meta && operation.meta.result && operation.meta.result.costOuter) {
     const cost = operation.meta.result.costOuter;
@@ -48,7 +55,7 @@ function parseTTLExtension(operation) {
  * @param {Object} transaction - The transaction object
  * @returns {Array} Array of TTL modification details
  */
-function extractTTLModifications(transaction) {
+export function extractTTLModifications(transaction) {
   const modifications = [];
 
   if (!transaction || !transaction.operations) {
@@ -80,13 +87,9 @@ function extractTTLModifications(transaction) {
  * @param {Object} extensionOp - The parsed extension operation
  * @returns {number} Rent paid in stroops (1 XLM = 10M stroops)
  */
-function calculateRentPaid(extensionOp) {
+export function calculateRentPaid(extensionOp) {
   if (!extensionOp.costXlm) return 0;
   return Math.round(extensionOp.costXlm * 10_000_000);
 }
 
-module.exports = {
-  parseTTLExtension,
-  extractTTLModifications,
-  calculateRentPaid,
-};
+// Named ESM exports above

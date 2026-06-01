@@ -50,6 +50,13 @@ const STRING_DATA_XDR = makeDiagXdr(
   xdr.ScVal.scvString("overflow detected")
 );
 
+// Checked arithmetic overflow: topics name the checked fn and data is Void
+const ARITH_OVERFLOW_XDR = makeDiagXdr(
+  0x34,
+  [xdr.ScVal.scvSymbol("i256_add_checked"), xdr.ScVal.scvSymbol("overflow")],
+  xdr.ScVal.scvVoid()
+);
+
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 describe("parseDiagnosticEvents", () => {
@@ -86,6 +93,11 @@ describe("parseDiagnosticEvents", () => {
     assert.equal(results[0].error, "ContractError(7)");
     assert.equal(results[1].error, "WasmVmError");
     assert.equal(results[2].error, "InsufficientBalance");
+  });
+
+  it("detects checked arithmetic overflow and labels it Overflow [Void]", () => {
+    const [result] = parseDiagnosticEvents([ARITH_OVERFLOW_XDR]);
+    assert.equal(result.error, "Overflow [Void]");
   });
 
   it("skips malformed XDR without throwing", () => {
