@@ -13,7 +13,7 @@ import { multiNodeRpc } from "./rpcMultiNode.js";
 import { startMetricsCollector } from "./rpcMetrics.js";
 import { startPruner } from "./pruner.js";
 import { extractStateDiffs } from "./stateDiffIndexer.js";
-import { extractStateDiffs } from "./stateDiffIndexer.js"; // Issue #140
+import { parseFeeBump } from "./feeBumpParser.js";
 
 const RPC_URL      = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
@@ -102,6 +102,19 @@ async function indexLedger(ledger) {
     // Flag footprint contention across transactions in this page's events
     scanFootprintContention(res.events);
 
+    // Issue #169: build a per-page txHash → feeBump cache to avoid redundant
+    // getTransaction calls when multiple events share the same transaction.
+    const feeBumpCache = new Map();
+    const uniqueTxHashes = [...new Set(res.events.map(e => e.txHash).filter(Boolean))];
+    await Promise.all(uniqueTxHashes.map(async (txHash) => {
+      try {
+        const txResult = await withRetry(() => rpc.getTransaction(txHash));
+        if (txResult?.envelopeXdr) {
+          feeBumpCache.set(txHash, parseFeeBump(txResult.envelopeXdr));
+        }
+      } catch { /* non-critical — skip fee-bump for this tx */ }
+    }));
+
     for (const ev of res.events) {
       const decoded = await decode(ev);
       decoded.is_high_bloat_risk = isHighBloatRisk(ev, ev.contractId);
@@ -114,6 +127,7 @@ async function indexLedger(ledger) {
       }
 
       decoded.storage_tiers = classifyStorageWrites(ev);
+      decoded.fee_bump = feeBumpCache.get(ev.txHash) ?? null;
       await db.upsertEvent(decoded);
 
       // Issue #140: persist per-key state diffs for the timeline

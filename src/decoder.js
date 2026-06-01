@@ -1,5 +1,6 @@
 import { xdr, scValToNative, StrKey } from "@stellar/stellar-sdk";
 import { parseTTLHostFunction, formatTTLExtension } from "./ttlExtensionParser.js";
+import { parseZkHostFunctions, computeZkCostDelta } from "./zkHostFunctions.js";
 
 // Issue #134 — result codes that indicate block compute capacity was exhausted
 const RESOURCE_LIMIT_CODES = new Set([
@@ -165,16 +166,10 @@ export async function decode(ev) {
     decoded.description = formatTTLExtension(ttlExt);
   }
 
-  // SAC side-effect: detect auto-created account entry or implicit trustline open
-  if (isSac && (fnName === "transfer" || fnName === "mint")) {
-    // transfer topics: [fn, from, to] → to is topics[2]
-    // mint topics:     [fn, to]       → to is topics[1]
-    const toAddr = fnName === "transfer" ? topics[2] : topics[1];
-    if (typeof toAddr === "string" && toAddr.startsWith("G")) {
-      classifySacSideEffect(toAddr, assetCode, assetIssuer)
-        .then(kind => { if (kind) decoded.sac_side_effect = kind; })
-        .catch(() => {});
-    }
+  // Issue #164 — Protocol 26: detect CAP-0080 ZK host function calls
+  const zkCalls = parseZkHostFunctions(ev);
+  if (zkCalls) {
+    decoded.zk_host_calls = { calls: zkCalls, delta: computeZkCostDelta(zkCalls) };
   }
 
   // Persist role assignment if this event carries one
