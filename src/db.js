@@ -48,6 +48,13 @@ export const db = {
         description TEXT,
         functions   JSONB,
         registered_by TEXT,
+        -- Issue #86: Circuit breaker status tracking
+        has_circuit_breaker BOOLEAN DEFAULT FALSE,
+        is_paused   BOOLEAN DEFAULT FALSE,
+        pause_status_ledger BIGINT,
+        -- Issue #81: RWA token metadata
+        is_rwa      BOOLEAN DEFAULT FALSE,
+        rwa_type    TEXT,
         created_at  TIMESTAMPTZ DEFAULT NOW()
       );
 
@@ -72,6 +79,8 @@ export const db = {
       ALTER TABLE events ADD COLUMN IF NOT EXISTS storage_tiers JSONB;
       -- Issue #85: multi-file source code matching
       ALTER TABLE contracts ADD COLUMN IF NOT EXISTS source_files JSONB;
+      -- footprint contention: tx writes to same slot as preceding tx in same ledger
+      ALTER TABLE events ADD COLUMN IF NOT EXISTS footprint_contention BOOLEAN NOT NULL DEFAULT FALSE;
 
       -- Issue #134: resource-limit-exceeded flag
       ALTER TABLE events ADD COLUMN IF NOT EXISTS is_resource_limit_exceeded BOOLEAN NOT NULL DEFAULT FALSE;
@@ -89,6 +98,35 @@ export const db = {
       );
       CREATE INDEX IF NOT EXISTS idx_sub_inv_parent   ON sub_invocations(parent_tx_hash);
       CREATE INDEX IF NOT EXISTS idx_sub_inv_contract ON sub_invocations(contract_id);
+
+      -- Issue #135: multi-signature source code verification
+      CREATE TABLE IF NOT EXISTS source_verifications (
+        id           BIGSERIAL PRIMARY KEY,
+        contract_id  TEXT NOT NULL,
+        wasm_hash    TEXT NOT NULL,
+        signer       TEXT NOT NULL,
+        signature    TEXT NOT NULL,
+        compiler_hash TEXT NOT NULL,
+        submitted_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (contract_id, wasm_hash, signer)
+      );
+      CREATE INDEX IF NOT EXISTS idx_src_ver_contract ON source_verifications(contract_id);
+
+      -- Issue #140: contract storage state-diff timeline
+      CREATE TABLE IF NOT EXISTS storage_state_diffs (
+        id          BIGSERIAL PRIMARY KEY,
+        contract_id TEXT NOT NULL,
+        ledger      BIGINT NOT NULL,
+        tx_hash     TEXT,
+        key         TEXT NOT NULL,
+        tier        TEXT NOT NULL,
+        old_value   TEXT,
+        new_value   TEXT,
+        change_type TEXT NOT NULL,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_state_diff_contract_ledger
+        ON storage_state_diffs(contract_id, ledger ASC);
     `);
   },
 
@@ -158,8 +196,8 @@ export const db = {
     await pool.query(
       `INSERT INTO events
          (contract_id, function, ledger, tx_hash, description, raw_topics, raw_data,
-          cpu_instructions, mem_bytes, fee_charged, is_high_bloat_risk, upgrade_info,
-          storage_tiers, is_clawback, is_resource_limit_exceeded)
+          cpu_instructions, mem_bytes, fee_charged, is_high_bloat_risk, upgrade_info, storage_tiers, is_clawback,
+          footprint_contention)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        ON CONFLICT DO NOTHING`,
       [
@@ -170,7 +208,7 @@ export const db = {
         ev.upgrade ? JSON.stringify(ev.upgrade) : null,
         ev.storage_tiers ? JSON.stringify(ev.storage_tiers) : null,
         ev.is_clawback ?? false,
-        ev.is_resource_limit_exceeded ?? false,
+        ev.footprint_contention ?? false,
       ]
     );
   },
@@ -292,14 +330,33 @@ export const db = {
 
   async upsertContractMeta(meta) {
     await pool.query(
-      `INSERT INTO contracts (id, name, description, functions, registered_by, source_files)
-       VALUES ($1,$2,$3,$4,$5,$6)
-       ON CONFLICT (id) DO UPDATE SET name=$2, description=$3, functions=$4, source_files=$6`,
+      `INSERT INTO contracts (id, name, description, functions, registered_by, source_files, has_circuit_breaker, is_rwa, rwa_type)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (id) DO UPDATE SET name=$2, description=$3, functions=$4, source_files=$6, has_circuit_breaker=$7, is_rwa=$8, rwa_type=$9`,
       [
         meta.id, meta.name, meta.description, JSON.stringify(meta.functions), meta.registered_by,
         meta.source_files ? JSON.stringify(meta.source_files) : null,
+        meta.has_circuit_breaker ?? false,
+        meta.is_rwa ?? false,
+        meta.rwa_type ?? null,
       ]
     );
+  },
+
+  // Issue #86: Circuit breaker status tracking
+  async updateCircuitBreakerStatus(contractId, isPaused, ledger) {
+    await pool.query(
+      `UPDATE contracts SET is_paused = $1, pause_status_ledger = $2 WHERE id = $3`,
+      [isPaused, ledger, contractId]
+    );
+  },
+
+  async getCircuitBreakerStatus(contractId) {
+    const { rows } = await pool.query(
+      `SELECT has_circuit_breaker, is_paused, pause_status_ledger FROM contracts WHERE id = $1`,
+      [contractId]
+    );
+    return rows[0] ?? { has_circuit_breaker: false, is_paused: false, pause_status_ledger: null };
   },
 
   async getMigrationStatus(contractId) {
@@ -415,5 +472,72 @@ export const db = {
   /** Raw query passthrough — used by bulkLoader and pruner. */
   async query(sql, params) {
     return pool.query(sql, params);
+  },
+
+  // ── Issue #135: multi-signature source verification ────────────────────────
+
+  /** Submit a verification signature for a contract's WASM hash. */
+  async addSourceVerification({ contract_id, wasm_hash, signer, signature, compiler_hash }) {
+    await pool.query(
+      `INSERT INTO source_verifications (contract_id, wasm_hash, signer, signature, compiler_hash)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (contract_id, wasm_hash, signer) DO UPDATE
+         SET signature = $4, compiler_hash = $5, submitted_at = NOW()`,
+      [contract_id, wasm_hash, signer, signature, compiler_hash]
+    );
+  },
+
+  /** Return all verification signatures for a contract + wasm_hash pair. */
+  async getSourceVerifications(contract_id, wasm_hash) {
+    const params = [contract_id];
+    const extra = wasm_hash ? ` AND wasm_hash = $2` : "";
+    if (wasm_hash) params.push(wasm_hash);
+    const { rows } = await pool.query(
+      `SELECT signer, signature, compiler_hash, wasm_hash, submitted_at
+       FROM source_verifications
+       WHERE contract_id = $1${extra}
+       ORDER BY submitted_at ASC`,
+      params
+    );
+    return rows;
+  },
+
+  // ── Issue #140: storage state-diff timeline ────────────────────────────────
+
+  /** Persist a batch of storage state diffs for a transaction. */
+  async insertStateDiffs(diffs) {
+    if (!diffs.length) return;
+    const values = diffs.map((_, i) => {
+      const b = i * 8;
+      return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8})`;
+    }).join(",");
+    const params = diffs.flatMap(d => [
+      d.contract_id, d.ledger, d.tx_hash, d.key, d.tier,
+      d.old_value ?? null, d.new_value ?? null, d.change_type,
+    ]);
+    await pool.query(
+      `INSERT INTO storage_state_diffs
+         (contract_id, ledger, tx_hash, key, tier, old_value, new_value, change_type)
+       VALUES ${values}
+       ON CONFLICT DO NOTHING`,
+      params
+    );
+  },
+
+  /** Return chronological state diffs for a contract, optionally filtered by key. */
+  async getStateDiffs(contract_id, { key, limit = 200 } = {}) {
+    const params = [contract_id];
+    const extra = key ? ` AND key = $2` : "";
+    if (key) params.push(key);
+    params.push(limit);
+    const { rows } = await pool.query(
+      `SELECT ledger, tx_hash, key, tier, old_value, new_value, change_type, created_at
+       FROM storage_state_diffs
+       WHERE contract_id = $1${extra}
+       ORDER BY ledger ASC
+       LIMIT $${params.length}`,
+      params
+    );
+    return rows;
   },
 };

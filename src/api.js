@@ -8,7 +8,8 @@ import { bootstrapVault, refreshVaultRatio } from "./vaultIndexer.js";
 import { verifyAbi } from "./verify_abi.js";
 import { getMetrics } from "./rpcMetrics.js";
 import { getRpcNodeStatus } from "./rpcMultiNode.js";
-import { getGasGuzzlers } from "./gasGuzzlers.js";
+import { cacheAside, cacheDel } from "./metadataCache.js";  // Issue #137
+import { attachGraphQL } from "./graphql.js";               // Issue #139
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
@@ -45,7 +46,9 @@ export function startApi() {
   // GET /api/contracts/:id
   app.get("/api/contracts/:id", async (req, res) => {
     try {
-      const meta = await db.getContractMeta(req.params.id);
+      // Issue #137: cache contract metadata (Cache-Aside, TTL 60 s)
+      const cacheKey = `contract:meta:${req.params.id}`;
+      const meta = await cacheAside(cacheKey, () => db.getContractMeta(req.params.id));
       if (!meta) return res.status(404).json({ error: "Not found" });
 
       const sourceFiles = Array.isArray(meta.source_files)
@@ -111,6 +114,7 @@ export function startApi() {
       }
 
       await db.upsertContractMeta(req.body);
+      await cacheDel(`contract:meta:${id}`); // Issue #137: bust cache on update
       res.status(201).json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -200,6 +204,32 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // GET /api/tokens/:id/holders — sorted list of addresses and their token balances
+  app.get("/api/tokens/:id/holders", async (req, res) => {
+    try {
+      const contractId = req.params.id;
+      let decimals = 7;
+      try {
+        const meta = await fetchTokenMetadata(contractId);
+        decimals = meta.decimals;
+      } catch { /* use default */ }
+
+      const rows = await db.getTokenHolders(contractId);
+      const holders = rows.map(r => ({
+        address:     r.address,
+        balance_raw: r.balance_raw,
+        balance:     formatAmount(r.balance_raw, decimals),
+      }));
+
+      res.json({
+        contract_id:   contractId,
+        decimals,
+        total_holders: holders.length,
+        holders,
+      });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // GET /api/tokens/:id/volume  — 24-hour rolling transfer volume
   app.get("/api/tokens/:id/volume", async (req, res) => {
     try {
@@ -264,6 +294,30 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── Issue #86: Circuit breaker status endpoint ──────────────────────────────
+  // GET /api/contracts/:id/circuit-breaker — detect and return pause status
+  app.get("/api/contracts/:id/circuit-breaker", async (req, res) => {
+    try {
+      const status = await db.getCircuitBreakerStatus(req.params.id);
+      res.json(status);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Issue #81: RWA token activity endpoint ──────────────────────────────────
+  // GET /api/contracts/:id/rwa-metadata — get RWA-specific metadata
+  app.get("/api/contracts/:id/rwa-metadata", async (req, res) => {
+    try {
+      const meta = await db.getContractMeta(req.params.id);
+      if (!meta) return res.status(404).json({ error: "Not found" });
+      
+      const rwaInfo = {
+        is_rwa: meta.is_rwa ?? false,
+        rwa_type: meta.rwa_type ?? null,
+      };
+      res.json(rwaInfo);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── POST /api/auth-tree — parse multi-sig ContractAuth trees ───────────────
   // Body: { auth: string[] }  — array of base64 SorobanAuthorizationEntry XDRs
   // Returns: ordered array of { signer, invocations: [{ depth, scope }] }
@@ -300,59 +354,53 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // ── Issue #133: Daily gas consumption leaderboard ───────────────────────────
-  // GET /api/v1/analytics/gas-guzzlers
-  // Returns the top 10 contracts by cpu_instructions over the last 24 hours.
-  app.get("/api/v1/analytics/gas-guzzlers", (_req, res) => {
+  // ── Issue #135: Multi-Signature Source Code Verification ───────────────────
+
+  // POST /api/contracts/:id/source-verifications
+  // Body: { wasm_hash, signer, signature, compiler_hash }
+  app.post("/api/contracts/:id/source-verifications", async (req, res) => {
     try {
-      res.json(getGasGuzzlers());
-    } catch (e) { res.status(500).json({ error: e.message }); }
-  });
-
-  // ── Issue #134: Resource-limit-exceeded transactions ────────────────────────
-  // GET /api/v1/transactions/resource-limit-exceeded?page=&limit=
-  // Returns transactions dropped because the block compute capacity was maxed out.
-  app.get("/api/v1/transactions/resource-limit-exceeded", async (req, res) => {
-    try {
-      const page  = Math.max(1, Number(req.query.page)  || 1);
-      const limit = Math.min(100, Number(req.query.limit) || 25);
-      const offset = (page - 1) * limit;
-
-      const [{ rows }, { rows: countRows }] = await Promise.all([
-        db.query(
-          `SELECT seq, contract_id, function, ledger, tx_hash, description, created_at
-           FROM events
-           WHERE is_resource_limit_exceeded = TRUE
-           ORDER BY ledger DESC
-           LIMIT $1 OFFSET $2`,
-          [limit, offset]
-        ),
-        db.query(`SELECT COUNT(*)::INT AS total FROM events WHERE is_resource_limit_exceeded = TRUE`),
-      ]);
-
-      res.json({
-        data: rows,
-        pagination: {
-          page,
-          limit,
-          total: countRows[0].total,
-          total_pages: Math.ceil(countRows[0].total / limit),
-          has_next: page * limit < countRows[0].total,
-        },
+      const { wasm_hash, signer, signature, compiler_hash } = req.body;
+      if (!wasm_hash || !signer || !signature || !compiler_hash) {
+        return res.status(400).json({ error: "Missing wasm_hash, signer, signature, or compiler_hash" });
+      }
+      await db.addSourceVerification({
+        contract_id: req.params.id,
+        wasm_hash,
+        signer,
+        signature,
+        compiler_hash,
       });
+      res.status(201).json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // ── Issue #138: Ledger gap report ───────────────────────────────────────────
-  // GET /api/v1/analytics/ledger-gaps
-  // Returns any missing ledger sequences in the indexed range.
-  app.get("/api/v1/analytics/ledger-gaps", async (_req, res) => {
+  // GET /api/contracts/:id/source-verifications?wasm_hash=
+  app.get("/api/contracts/:id/source-verifications", async (req, res) => {
     try {
-      const { findLedgerGaps } = await import("./gapDetector.js");
-      const gaps = await findLedgerGaps();
-      res.json({ missing_ledgers: gaps, count: gaps.length });
+      const rows = await db.getSourceVerifications(
+        req.params.id,
+        req.query.wasm_hash || undefined
+      );
+      res.json(rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
+
+  // ── Issue #140: Storage State-Diff Timeline ────────────────────────────────
+
+  // GET /api/contracts/:id/state-diffs?key=&limit=
+  app.get("/api/contracts/:id/state-diffs", async (req, res) => {
+    try {
+      const rows = await db.getStateDiffs(req.params.id, {
+        key:   req.query.key   || undefined,
+        limit: req.query.limit ? Math.min(Number(req.query.limit), 500) : 200,
+      });
+      res.json(rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Issue #139: GraphQL endpoint ───────────────────────────────────────────
+  attachGraphQL(app);
 
   // ── Start HTTP + WebSocket server ───────────────────────────────────────────
   const server = http.createServer(app);

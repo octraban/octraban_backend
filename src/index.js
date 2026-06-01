@@ -12,13 +12,60 @@ import { startBurnDetector } from "./burnDetector.js";
 import { multiNodeRpc } from "./rpcMultiNode.js";
 import { startMetricsCollector } from "./rpcMetrics.js";
 import { startPruner } from "./pruner.js";
-import { startGasGuzzlersWorker } from "./gasGuzzlers.js";
+import { extractStateDiffs } from "./stateDiffIndexer.js";
+import { extractStateDiffs } from "./stateDiffIndexer.js"; // Issue #140
 
 const RPC_URL      = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
 const POLL_MS      = Number(process.env.POLL_MS || 5000);
 // Max events per RPC page — Soroban caps at 200
 const PAGE_LIMIT   = 200;
+
+/**
+ * Extract the raw token amount from a decoded event's raw_data string.
+ * Handles two storage formats:
+ *   - plain value:   "15000000"  (i128 serialised as number/string)
+ *   - wrapped object: {"amount":"15000000"}  (used by some SEP-41 contracts)
+ * Returns null when no parseable amount is found.
+ */
+function parseRawAmount(raw_data) {
+  if (!raw_data) return null;
+  try {
+    const val = JSON.parse(raw_data);
+    if (val !== null && typeof val === "object" && !Array.isArray(val) && "amount" in val) {
+      return String(val.amount);
+    }
+    if (typeof val === "number" && Number.isFinite(val)) return String(Math.trunc(val));
+    if (typeof val === "string" && /^-?\d+$/.test(val)) return val;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Update token_holders balances for SEP-41 transfer / mint / burn events.
+ * Non-blocking: errors are logged but never interrupt the indexer loop.
+ */
+async function applyHolderBalance(decoded) {
+  const { function: fn, contract_id, raw_topics, raw_data } = decoded;
+  const amount = parseRawAmount(raw_data);
+  if (!amount || amount === "0") return;
+
+  if (fn === "transfer") {
+    const from = raw_topics[1];
+    const to   = raw_topics[2];
+    if (from && to) await db.applyTransfer(contract_id, from, to, amount);
+  } else if (fn === "mint") {
+    // SEP-41 mint topics: [symbol, admin, to]
+    const to = raw_topics[2];
+    if (to) await db.applyMint(contract_id, to, amount);
+  } else if (fn === "burn") {
+    // SEP-41 burn topics: [symbol, from]
+    const from = raw_topics[1];
+    if (from) await db.applyBurn(contract_id, from, amount);
+  }
+}
 
 const rpc = new SorobanRpc.Server(RPC_URL, { allowHttp: true });
 
@@ -52,9 +99,13 @@ async function indexLedger(ledger) {
     const res = await withRetry(() => rpc.getEvents(req));
     latestLedger = res.latestLedger ?? latestLedger;
 
+    // Flag footprint contention across transactions in this page's events
+    scanFootprintContention(res.events);
+
     for (const ev of res.events) {
       const decoded = await decode(ev);
       decoded.is_high_bloat_risk = isHighBloatRisk(ev, ev.contractId);
+      decoded.footprint_contention = ev.footprint_contention ?? false;
 
       const upgrade = detectUpgrade(ev);
       if (upgrade) {
@@ -64,8 +115,22 @@ async function indexLedger(ledger) {
 
       decoded.storage_tiers = classifyStorageWrites(ev);
       await db.upsertEvent(decoded);
+
+      // Issue #140: persist per-key state diffs for the timeline
+      const diffs = extractStateDiffs(ev, decoded);
+      if (diffs.length) await db.insertStateDiffs(diffs).catch(() => {});
+
       publish(decoded);           // Issue #39 — push to WS clients
       handleVaultEvent(decoded);  // vault ratio update (async, non-blocking)
+      
+      // Issue #86: Process circuit breaker events
+      const meta = await db.getContractMeta(ev.contractId).catch(() => null);
+      if (meta) {
+        processCircuitBreakerEvent(decoded, meta).catch(err => 
+          console.error('[circuitBreakerIndexer] Error:', err.message)
+        );
+      }
+      
       console.log(`[${ev.ledger}] ${decoded.function}: ${decoded.description}`);
     }
 
