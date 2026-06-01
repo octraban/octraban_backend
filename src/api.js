@@ -399,6 +399,19 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── Issue #167: State Archival & Eviction ──────────────────────────────────
+
+  // GET /api/contracts/:id/archival-evictions?limit=
+  // Returns evicted ledger keys for a contract, newest first.
+  app.get("/api/contracts/:id/archival-evictions", async (req, res) => {
+    try {
+      const rows = await db.getArchivalEvictions(req.params.id, {
+        limit: req.query.limit ? Math.min(Number(req.query.limit), 500) : 100,
+      });
+      res.json(rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── Issue #139: GraphQL endpoint ───────────────────────────────────────────
   attachGraphQL(app);
 

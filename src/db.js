@@ -133,6 +133,27 @@ export const db = {
       );
       CREATE INDEX IF NOT EXISTS idx_state_diff_contract_ledger
         ON storage_state_diffs(contract_id, ledger ASC);
+
+      -- Issue #167: archival/eviction event log
+      CREATE TABLE IF NOT EXISTS archival_evictions (
+        id          BIGSERIAL PRIMARY KEY,
+        contract_id TEXT,
+        ledger      BIGINT NOT NULL,
+        tx_hash     TEXT,
+        key_type    TEXT NOT NULL,
+        key_label   TEXT NOT NULL,
+        durability  TEXT,
+        wasm_hash   TEXT,
+        data_key    TEXT,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_archival_contract
+        ON archival_evictions(contract_id);
+      CREATE INDEX IF NOT EXISTS idx_archival_ledger
+        ON archival_evictions(ledger DESC);
+
+      -- Issue #167: restoration info on events (RestoreFootprintOp)
+      ALTER TABLE events ADD COLUMN IF NOT EXISTS archival_info JSONB;
     `);
   },
 
@@ -203,8 +224,8 @@ export const db = {
       `INSERT INTO events
          (contract_id, function, ledger, tx_hash, description, raw_topics, raw_data,
           cpu_instructions, mem_bytes, fee_charged, is_high_bloat_risk, upgrade_info, storage_tiers, is_clawback,
-          footprint_contention, ttl_extension, fee_bump)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+          footprint_contention, ttl_extension, fee_bump, archival_info)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        ON CONFLICT DO NOTHING`,
       [
         ev.contract_id, ev.function, ev.ledger, ev.tx_hash,
@@ -217,6 +238,7 @@ export const db = {
         ev.footprint_contention ?? false,
         ev.ttl_extension ? JSON.stringify(ev.ttl_extension) : null,
         ev.fee_bump ? JSON.stringify(ev.fee_bump) : null,
+        ev.archival_info ? JSON.stringify(ev.archival_info) : null,
       ]
     );
   },
@@ -545,6 +567,39 @@ export const db = {
        ORDER BY ledger ASC
        LIMIT $${params.length}`,
       params
+    );
+    return rows;
+  },
+
+  // ── Issue #167: archival/eviction tracking ────────────────────────────────
+
+  /** Persist a batch of evicted ledger keys detected in a ledger. */
+  async insertArchivalEvictions(evictions) {
+    if (!evictions.length) return;
+    const values = evictions.map((_, i) => {
+      const b = i * 7;
+      return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7})`;
+    }).join(",");
+    const params = evictions.flatMap(e => [
+      e.contract_id ?? null, e.ledger, e.tx_hash ?? null,
+      e.key_type, e.key_label, e.durability ?? null, e.wasm_hash ?? null,
+    ]);
+    await pool.query(
+      `INSERT INTO archival_evictions
+         (contract_id, ledger, tx_hash, key_type, key_label, durability, wasm_hash)
+       VALUES ${values}
+       ON CONFLICT DO NOTHING`,
+      params
+    );
+  },
+
+  /** Return eviction records for a contract, newest first. */
+  async getArchivalEvictions(contract_id, { limit = 100 } = {}) {
+    const { rows } = await pool.query(
+      `SELECT * FROM archival_evictions
+       WHERE contract_id = $1
+       ORDER BY ledger DESC LIMIT $2`,
+      [contract_id, limit]
     );
     return rows;
   },
