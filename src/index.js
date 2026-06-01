@@ -13,7 +13,6 @@ import { multiNodeRpc } from "./rpcMultiNode.js";
 import { startMetricsCollector } from "./rpcMetrics.js";
 import { startPruner } from "./pruner.js";
 import { extractStateDiffs } from "./stateDiffIndexer.js";
-import { extractStateDiffs } from "./stateDiffIndexer.js"; // Issue #140
 
 const RPC_URL      = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
