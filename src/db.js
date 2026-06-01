@@ -544,4 +544,37 @@ export const db = {
     );
     return rows;
   },
+
+  /** Issue #117: persist sub-invocation records. */
+  async upsertSubInvocations(records) {
+    if (!records.length) return;
+    const values = records.map((r, i) => {
+      const base = i * 6;
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`;
+    }).join(", ");
+    const params = records.flatMap(r => [
+      r.parent_tx_hash, r.depth, r.contract_id, r.function,
+      r.args ? JSON.stringify(r.args) : null, r.ledger,
+    ]);
+    await pool.query(
+      `INSERT INTO sub_invocations (parent_tx_hash, depth, contract_id, function, args, ledger)
+       VALUES ${values} ON CONFLICT DO NOTHING`,
+      params
+    );
+  },
+
+  /** Issue #142: aggregate caller→callee edges for the global dependency graph. */
+  async getSubInvocationEdges(limit = 500) {
+    const { rows } = await pool.query(
+      `SELECT e.contract_id AS caller, s.contract_id AS callee, COUNT(*) AS call_count
+       FROM sub_invocations s
+       JOIN events e ON e.tx_hash = s.parent_tx_hash
+       WHERE e.contract_id <> s.contract_id
+       GROUP BY e.contract_id, s.contract_id
+       ORDER BY call_count DESC
+       LIMIT $1`,
+      [limit]
+    );
+    return rows.map(r => ({ caller: r.caller, callee: r.callee, call_count: Number(r.call_count) }));
+  },
 };

@@ -399,6 +399,37 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── Issue #142: Global contract dependency graph ───────────────────────────
+  // GET /api/contract-graph?limit=
+  // Aggregates sub_invocations into a network-wide nodes+edges graph.
+  app.get("/api/contract-graph", async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit) || 500, 2000);
+      const rows = await db.getSubInvocationEdges(limit);
+
+      const nodeMap = new Map();
+      const edgeMap = new Map();
+
+      for (const row of rows) {
+        if (!nodeMap.has(row.caller)) nodeMap.set(row.caller, { id: row.caller, callCount: 0 });
+        if (!nodeMap.has(row.callee)) nodeMap.set(row.callee, { id: row.callee, callCount: 0 });
+
+        const key = `${row.caller}→${row.callee}`;
+        if (edgeMap.has(key)) {
+          edgeMap.get(key).value += row.call_count;
+        } else {
+          edgeMap.set(key, { source: row.caller, target: row.callee, value: row.call_count });
+        }
+        nodeMap.get(row.callee).callCount += row.call_count;
+      }
+
+      res.json({
+        nodes: Array.from(nodeMap.values()),
+        links: Array.from(edgeMap.values()),
+      });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── Issue #139: GraphQL endpoint ───────────────────────────────────────────
   attachGraphQL(app);
 

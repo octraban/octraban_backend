@@ -31,6 +31,14 @@ export function publishVaultRatio(snapshot) {
 }
 
 /**
+ * Issue #142: Publish a new cross-contract call link to all connected clients.
+ * @param {{ caller: string, callee: string, fn: string, ledger: number }} link
+ */
+export function publishContractLink(link) {
+  bus.emit("contract_link", link);
+}
+
+/**
  * Attach a WebSocket server to an existing HTTP server instance.
  *
  * @param {import("http").Server} httpServer
@@ -55,12 +63,21 @@ export function attachWebSocketServer(httpServer) {
       }
     };
 
+    // Forward contract link updates (Issue #142)
+    const linkHandler = (link) => {
+      if (ws.readyState === ws.OPEN) {
+        ws.send(JSON.stringify({ type: "contract_link", data: link }));
+      }
+    };
+
     bus.on("event", handler);
     bus.on("vault_ratio", vaultHandler);
+    bus.on("contract_link", linkHandler);
 
     ws.on("close", () => {
       bus.off("event", handler);
       bus.off("vault_ratio", vaultHandler);
+      bus.off("contract_link", linkHandler);
       console.log("[ws] Client disconnected");
     });
 
@@ -68,6 +85,7 @@ export function attachWebSocketServer(httpServer) {
       console.error("[ws] Socket error:", err.message);
       bus.off("event", handler);
       bus.off("vault_ratio", vaultHandler);
+      bus.off("contract_link", linkHandler);
     });
 
     // Acknowledge connection
