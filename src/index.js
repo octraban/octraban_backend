@@ -14,6 +14,7 @@ import { startMetricsCollector } from "./rpcMetrics.js";
 import { startPruner } from "./pruner.js";
 import { extractStateDiffs } from "./stateDiffIndexer.js";
 import { parseFeeBump } from "./feeBumpParser.js";
+import { detectFactoryDeployment } from "./factoryDeploymentDetector.js";
 
 const RPC_URL      = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
@@ -105,12 +106,24 @@ async function indexLedger(ledger) {
     // Issue #169: build a per-page txHash → feeBump cache to avoid redundant
     // getTransaction calls when multiple events share the same transaction.
     const feeBumpCache = new Map();
+    // Issue #177: build a per-page txHash → factoryDeployment cache
+    const factoryDeploymentCache = new Map();
     const uniqueTxHashes = [...new Set(res.events.map(e => e.txHash).filter(Boolean))];
     await Promise.all(uniqueTxHashes.map(async (txHash) => {
       try {
         const txResult = await withRetry(() => rpc.getTransaction(txHash));
         if (txResult?.envelopeXdr) {
           feeBumpCache.set(txHash, parseFeeBump(txResult.envelopeXdr));
+          
+          // Issue #177: detect factory deployments from transaction metadata
+          const factoryDeployment = detectFactoryDeployment({
+            ...res.events.find(e => e.txHash === txHash),
+            envelopeXdr: txResult.envelopeXdr,
+          });
+          if (factoryDeployment) {
+            factoryDeploymentCache.set(txHash, factoryDeployment);
+            console.log(`[${ledger}] FACTORY DEPLOYMENT detected in tx ${txHash}: ${factoryDeployment.deployedContracts.length} contracts`);
+          }
         }
       } catch { /* non-critical — skip fee-bump for this tx */ }
     }));
@@ -128,6 +141,13 @@ async function indexLedger(ledger) {
 
       decoded.storage_tiers = classifyStorageWrites(ev);
       decoded.fee_bump = feeBumpCache.get(ev.txHash) ?? null;
+      
+      // Issue #177: attach factory deployment data if this tx is a factory deployment
+      const factoryDeployment = factoryDeploymentCache.get(ev.txHash);
+      if (factoryDeployment) {
+        decoded.factory_deployment = factoryDeployment.deploymentTree;
+      }
+      
       await db.upsertEvent(decoded);
 
       // Issue #140: persist per-key state diffs for the timeline

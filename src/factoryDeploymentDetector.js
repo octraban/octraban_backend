@@ -61,6 +61,37 @@ function extractCreatedContracts(sorobanMeta) {
 }
 
 /**
+ * Extract WASM hash or deployment method from CreateContract args.
+ * 
+ * @param {object} createArgs  CreateContractArgs from XDR
+ * @returns {{ wasmHash: string|null, deploymentMethod: string }}
+ */
+function extractDeploymentInfo(createArgs) {
+  try {
+    const executable = createArgs.executable?.();
+    if (!executable) return { wasmHash: null, deploymentMethod: "unknown" };
+
+    const execType = executable.switch().name;
+    
+    if (execType === "contractExecutableWasm") {
+      const hash = executable.wasmHash();
+      return {
+        wasmHash: Buffer.from(hash).toString("hex"),
+        deploymentMethod: "wasm_hash",
+      };
+    }
+    
+    if (execType === "contractExecutableStellarAsset") {
+      return { wasmHash: null, deploymentMethod: "stellar_asset" };
+    }
+    
+    return { wasmHash: null, deploymentMethod: execType };
+  } catch {
+    return { wasmHash: null, deploymentMethod: "unknown" };
+  }
+}
+
+/**
  * Detect a factory deployment pattern in a transaction's metadata.
  *
  * A factory deployment is when a single transaction deploys 2+ contracts,
@@ -70,8 +101,21 @@ function extractCreatedContracts(sorobanMeta) {
  * @returns {{
  *   isFactoryDeployment: boolean,
  *   factoryContractId: string|null,
- *   deployedContracts: string[],
- *   deploymentTree: { factoryContractId: string|null, contracts: string[] }
+ *   deployedContracts: Array<{
+ *     contractId: string,
+ *     wasmHash: string|null,
+ *     deploymentMethod: string,
+ *     index: number
+ *   }>,
+ *   deploymentTree: {
+ *     factoryContractId: string|null,
+ *     contracts: Array<{
+ *       contractId: string,
+ *       wasmHash: string|null,
+ *       deploymentMethod: string,
+ *       index: number
+ *     }>
+ *   }
  * } | null}
  */
 export function detectFactoryDeployment(ev) {
@@ -79,24 +123,65 @@ export function detectFactoryDeployment(ev) {
     const sorobanMeta = ev.txMeta?.v3?.().sorobanMeta?.();
     if (!sorobanMeta) return null;
 
-    const deployedContracts = extractCreatedContracts(sorobanMeta);
-    if (deployedContracts.length < 2) return null;
+    const deployedContractIds = extractCreatedContracts(sorobanMeta);
+    if (deployedContractIds.length < 2) return null;
 
     // Try to identify the factory contract from the invoking contract
     let factoryContractId = null;
     try {
-      const hf = ev.txMeta.v3?.().operations?.()[0]?.changes?.();
       // Best-effort: the factory is the contract that initiated the tx
       factoryContractId = ev.contractId ?? null;
     } catch { /* ignore */ }
 
+    // Extract deployment details from auth entries
+    const deploymentDetails = [];
+    try {
+      const env = xdr.TransactionEnvelope.fromXDR(ev.envelopeXdr || ev.envelope_xdr, "base64");
+      let ops = [];
+      try {
+        ops = env.v1?.().tx().operations() ?? env.tx?.().operations() ?? [];
+      } catch { /* ignore */ }
+
+      for (const op of ops) {
+        try {
+          const body = op.body();
+          if (body.switch().name !== "invokeHostFunction") continue;
+          const ihf = body.invokeHostFunction();
+
+          // Scan auth entries for CreateContract operations
+          for (const authEntry of ihf.auth()) {
+            try {
+              const rootInv = authEntry.rootInvocation();
+              const fn = rootInv.function();
+              const fnType = fn.switch().name;
+              
+              if (fnType === "sorobanAuthorizedFunctionTypeCreateContractV2HostFn" ||
+                  fnType === "sorobanAuthorizedFunctionTypeCreateContractHostFn") {
+                const args = fn.createContractV2HostFn?.() ?? fn.createContractHostFn?.();
+                const deployInfo = extractDeploymentInfo(args);
+                deploymentDetails.push(deployInfo);
+              }
+            } catch { /* skip */ }
+          }
+        } catch { /* skip */ }
+      }
+    } catch { /* ignore envelope parsing errors */ }
+
+    // Merge contract IDs with deployment details
+    const contracts = deployedContractIds.map((contractId, index) => ({
+      contractId,
+      wasmHash: deploymentDetails[index]?.wasmHash ?? null,
+      deploymentMethod: deploymentDetails[index]?.deploymentMethod ?? "unknown",
+      index,
+    }));
+
     return {
       isFactoryDeployment: true,
       factoryContractId,
-      deployedContracts,
+      deployedContracts: contracts,
       deploymentTree: {
         factoryContractId,
-        contracts: deployedContracts,
+        contracts,
       },
     };
   } catch {
