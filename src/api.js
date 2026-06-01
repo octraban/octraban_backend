@@ -10,6 +10,10 @@ import { getMetrics } from "./rpcMetrics.js";
 import { getRpcNodeStatus } from "./rpcMultiNode.js";
 import { cacheAside, cacheDel } from "./metadataCache.js";  // Issue #137
 import { attachGraphQL } from "./graphql.js";               // Issue #139
+import { parseExecutionTrace } from "./executionTraceParser.js";     // Issue #174
+import { detectReentrancyFromParsed } from "./reentrancyTrapDetector.js"; // Issue #175
+import { parseDiagnosticEvents } from "./diagnosticParser.js";       // Issue #175
+import { annotateEvictionStates, summariseEvictionStats } from "./storageEvictionTracker.js"; // Issue #176
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
@@ -40,6 +44,20 @@ export function startApi() {
       const ev = await db.getEvent(Number(req.params.seq));
       if (!ev) return res.status(404).json({ error: "Not found" });
       res.json(ev);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Issue #164 — GET /api/events/:seq/zk-costs
+  // Returns the ZK host function call list and cost delta for a single event.
+  app.get("/api/events/:seq/zk-costs", async (req, res) => {
+    try {
+      const ev = await db.getEvent(Number(req.params.seq));
+      if (!ev) return res.status(404).json({ error: "Not found" });
+      if (!ev.zk_host_calls) return res.json({ calls: [], delta: null });
+      const zk = typeof ev.zk_host_calls === "string"
+        ? JSON.parse(ev.zk_host_calls)
+        : ev.zk_host_calls;
+      res.json(zk);
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
@@ -399,16 +417,63 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // ── Issue #167: State Archival & Eviction ──────────────────────────────────
-
-  // GET /api/contracts/:id/archival-evictions?limit=
-  // Returns evicted ledger keys for a contract, newest first.
-  app.get("/api/contracts/:id/archival-evictions", async (req, res) => {
+  // ── Issue #165: Live TTL status for contract instance, code, and persistent storage ──
+  // GET /api/contracts/:id/ttl
+  // Queries the Soroban RPC getLedgerEntries for the contract's instance and code
+  // ledger keys, then returns expiration ledgers alongside the current ledger height.
+  app.get("/api/contracts/:id/ttl", async (req, res) => {
     try {
-      const rows = await db.getArchivalEvictions(req.params.id, {
-        limit: req.query.limit ? Math.min(Number(req.query.limit), 500) : 100,
+      const contractId = req.params.id;
+      const { SorobanRpc, xdr, Address } = await import("@stellar/stellar-sdk");
+      const server = new SorobanRpc.Server(RPC_URL);
+
+      // Build ledger keys for instance and code entries
+      const contractAddress = Address.fromString(contractId);
+      const instanceKey = xdr.LedgerKey.contractData(
+        new xdr.LedgerKeyContractData({
+          contract: contractAddress.toScAddress(),
+          key: xdr.ScVal.scvLedgerKeyContractInstance(),
+          durability: xdr.ContractDataDurability.persistent(),
+        })
+      );
+      const codeKey = xdr.LedgerKey.contractCode(
+        new xdr.LedgerKeyContractCode({
+          hash: Buffer.alloc(32), // placeholder; resolved below from instance
+        })
+      );
+
+      // Fetch instance entry first to get the WASM hash for the code key
+      const instanceResult = await server.getLedgerEntries(instanceKey);
+      const instanceEntry = instanceResult.entries?.[0] ?? null;
+
+      let instanceTTL = null;
+      let codeTTL = null;
+      let currentLedger = instanceResult.latestLedger ?? 0;
+
+      if (instanceEntry) {
+        instanceTTL = instanceEntry.liveUntilLedgerSeq ?? null;
+
+        // Extract WASM hash from the instance entry to build the code key
+        try {
+          const contractInstance = instanceEntry.val.contractData().val().instance();
+          const wasmHash = contractInstance.executable().wasmHash();
+          const resolvedCodeKey = xdr.LedgerKey.contractCode(
+            new xdr.LedgerKeyContractCode({ hash: wasmHash })
+          );
+          const codeResult = await server.getLedgerEntries(resolvedCodeKey);
+          const codeEntry = codeResult.entries?.[0] ?? null;
+          if (codeEntry) codeTTL = codeEntry.liveUntilLedgerSeq ?? null;
+        } catch {
+          // WASM hash extraction failed — code TTL unavailable
+        }
+      }
+
+      res.json({
+        contract_id: contractId,
+        current_ledger: currentLedger,
+        instance: { live_until_ledger: instanceTTL },
+        code:     { live_until_ledger: codeTTL },
       });
-      res.json(rows);
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

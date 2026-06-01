@@ -8,6 +8,7 @@
  */
 
 import { db } from "./db.js";
+import { publishContractLink } from "./wsEvents.js";
 
 /**
  * Recursively walk a SorobanRpc invocation node tree and collect all
@@ -72,5 +73,9 @@ export async function indexSubInvocations(txHash, ledger, txMeta) {
   const records = collectSubInvocations(root, txHash, ledger, 0);
   if (records.length) {
     await db.upsertSubInvocations(records);
+    // Issue #142: stream each new cross-contract link live
+    for (const r of records) {
+      publishContractLink({ caller: txHash, callee: r.contract_id, fn: r.function, ledger });
+    }
   }
 }

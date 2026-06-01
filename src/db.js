@@ -571,36 +571,36 @@ export const db = {
     return rows;
   },
 
-  // ── Issue #167: archival/eviction tracking ────────────────────────────────
-
-  /** Persist a batch of evicted ledger keys detected in a ledger. */
-  async insertArchivalEvictions(evictions) {
-    if (!evictions.length) return;
-    const values = evictions.map((_, i) => {
-      const b = i * 7;
-      return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7})`;
-    }).join(",");
-    const params = evictions.flatMap(e => [
-      e.contract_id ?? null, e.ledger, e.tx_hash ?? null,
-      e.key_type, e.key_label, e.durability ?? null, e.wasm_hash ?? null,
+  /** Issue #117: persist sub-invocation records. */
+  async upsertSubInvocations(records) {
+    if (!records.length) return;
+    const values = records.map((r, i) => {
+      const base = i * 6;
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`;
+    }).join(", ");
+    const params = records.flatMap(r => [
+      r.parent_tx_hash, r.depth, r.contract_id, r.function,
+      r.args ? JSON.stringify(r.args) : null, r.ledger,
     ]);
     await pool.query(
-      `INSERT INTO archival_evictions
-         (contract_id, ledger, tx_hash, key_type, key_label, durability, wasm_hash)
-       VALUES ${values}
-       ON CONFLICT DO NOTHING`,
+      `INSERT INTO sub_invocations (parent_tx_hash, depth, contract_id, function, args, ledger)
+       VALUES ${values} ON CONFLICT DO NOTHING`,
       params
     );
   },
 
-  /** Return eviction records for a contract, newest first. */
-  async getArchivalEvictions(contract_id, { limit = 100 } = {}) {
+  /** Issue #142: aggregate caller→callee edges for the global dependency graph. */
+  async getSubInvocationEdges(limit = 500) {
     const { rows } = await pool.query(
-      `SELECT * FROM archival_evictions
-       WHERE contract_id = $1
-       ORDER BY ledger DESC LIMIT $2`,
-      [contract_id, limit]
+      `SELECT e.contract_id AS caller, s.contract_id AS callee, COUNT(*) AS call_count
+       FROM sub_invocations s
+       JOIN events e ON e.tx_hash = s.parent_tx_hash
+       WHERE e.contract_id <> s.contract_id
+       GROUP BY e.contract_id, s.contract_id
+       ORDER BY call_count DESC
+       LIMIT $1`,
+      [limit]
     );
-    return rows;
+    return rows.map(r => ({ caller: r.caller, callee: r.callee, call_count: Number(r.call_count) }));
   },
 };

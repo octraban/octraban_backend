@@ -9,9 +9,9 @@ import { Asset, Contract, Networks } from "@stellar/stellar-sdk";
 const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
 
 /**
- * Build a lookup map of SAC contract ID → classic asset code for a list of assets.
+ * Build a lookup map of SAC contract ID → { code, issuer } for a list of assets.
  * @param {Array<{code: string, issuer?: string}>} assets
- * @returns {Map<string, string>}  contractId → "USDC" | "XLM" etc.
+ * @returns {Map<string, {code: string, issuer: string|null}>}
  */
 function buildSacMap(assets) {
   const map = new Map();
@@ -19,7 +19,7 @@ function buildSacMap(assets) {
     try {
       const asset = issuer ? new Asset(code, issuer) : Asset.native();
       const contractId = new Contract(asset.contractId(NETWORK_PASSPHRASE)).contractId();
-      map.set(contractId, issuer ? code : "XLM");
+      map.set(contractId, { code: issuer ? code : "XLM", issuer: issuer ?? null });
     } catch {
       // skip malformed entries
     }
@@ -41,8 +41,22 @@ const _sacMap = buildSacMap(KNOWN_ASSETS);
  * @returns {{ isSac: boolean, assetCode: string|null }}
  */
 export function detectSac(contractId) {
-  const assetCode = _sacMap.get(contractId) ?? null;
-  return { isSac: assetCode !== null, assetCode };
+  const entry = _sacMap.get(contractId) ?? null;
+  return { isSac: entry !== null, assetCode: entry?.code ?? null };
+}
+
+/**
+ * Full asset info for a SAC contract ID.
+ * @param {string} contractId
+ * @returns {{ isSac: boolean, assetCode: string|null, assetIssuer: string|null }}
+ */
+export function detectSacAsset(contractId) {
+  const entry = _sacMap.get(contractId) ?? null;
+  return {
+    isSac: entry !== null,
+    assetCode: entry?.code ?? null,
+    assetIssuer: entry?.issuer ?? null,
+  };
 }
 
 /**
