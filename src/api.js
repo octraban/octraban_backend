@@ -8,6 +8,8 @@ import { bootstrapVault, refreshVaultRatio } from "./vaultIndexer.js";
 import { verifyAbi } from "./verify_abi.js";
 import { getMetrics } from "./rpcMetrics.js";
 import { getRpcNodeStatus } from "./rpcMultiNode.js";
+import { cacheAside, cacheDel } from "./metadataCache.js";  // Issue #137
+import { attachGraphQL } from "./graphql.js";               // Issue #139
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
@@ -44,7 +46,9 @@ export function startApi() {
   // GET /api/contracts/:id
   app.get("/api/contracts/:id", async (req, res) => {
     try {
-      const meta = await db.getContractMeta(req.params.id);
+      // Issue #137: cache contract metadata (Cache-Aside, TTL 60 s)
+      const cacheKey = `contract:meta:${req.params.id}`;
+      const meta = await cacheAside(cacheKey, () => db.getContractMeta(req.params.id));
       if (!meta) return res.status(404).json({ error: "Not found" });
 
       const sourceFiles = Array.isArray(meta.source_files)
@@ -110,6 +114,7 @@ export function startApi() {
       }
 
       await db.upsertContractMeta(req.body);
+      await cacheDel(`contract:meta:${id}`); // Issue #137: bust cache on update
       res.status(201).json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -298,6 +303,54 @@ export function startApi() {
       res.json(getRpcNodeStatus());
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
+
+  // ── Issue #135: Multi-Signature Source Code Verification ───────────────────
+
+  // POST /api/contracts/:id/source-verifications
+  // Body: { wasm_hash, signer, signature, compiler_hash }
+  app.post("/api/contracts/:id/source-verifications", async (req, res) => {
+    try {
+      const { wasm_hash, signer, signature, compiler_hash } = req.body;
+      if (!wasm_hash || !signer || !signature || !compiler_hash) {
+        return res.status(400).json({ error: "Missing wasm_hash, signer, signature, or compiler_hash" });
+      }
+      await db.addSourceVerification({
+        contract_id: req.params.id,
+        wasm_hash,
+        signer,
+        signature,
+        compiler_hash,
+      });
+      res.status(201).json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/contracts/:id/source-verifications?wasm_hash=
+  app.get("/api/contracts/:id/source-verifications", async (req, res) => {
+    try {
+      const rows = await db.getSourceVerifications(
+        req.params.id,
+        req.query.wasm_hash || undefined
+      );
+      res.json(rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Issue #140: Storage State-Diff Timeline ────────────────────────────────
+
+  // GET /api/contracts/:id/state-diffs?key=&limit=
+  app.get("/api/contracts/:id/state-diffs", async (req, res) => {
+    try {
+      const rows = await db.getStateDiffs(req.params.id, {
+        key:   req.query.key   || undefined,
+        limit: req.query.limit ? Math.min(Number(req.query.limit), 500) : 200,
+      });
+      res.json(rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Issue #139: GraphQL endpoint ───────────────────────────────────────────
+  attachGraphQL(app);
 
   // ── Start HTTP + WebSocket server ───────────────────────────────────────────
   const server = http.createServer(app);
