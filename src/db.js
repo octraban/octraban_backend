@@ -88,8 +88,8 @@ export const db = {
       -- Protocol 26: TTL extension host function data (extend_to, min_extension, max_extension)
       ALTER TABLE events ADD COLUMN IF NOT EXISTS ttl_extension JSONB;
 
-      -- Issue #164: CAP-0080 ZK host function calls and cost delta
-      ALTER TABLE events ADD COLUMN IF NOT EXISTS zk_host_calls JSONB;
+      -- Issue #169: fee-bump chain of custody (sponsor, channel account, actual caller)
+      ALTER TABLE events ADD COLUMN IF NOT EXISTS fee_bump JSONB;
 
       -- Issue #117: sub-invocation indexing
       CREATE TABLE IF NOT EXISTS sub_invocations (
@@ -203,7 +203,7 @@ export const db = {
       `INSERT INTO events
          (contract_id, function, ledger, tx_hash, description, raw_topics, raw_data,
           cpu_instructions, mem_bytes, fee_charged, is_high_bloat_risk, upgrade_info, storage_tiers, is_clawback,
-          footprint_contention, ttl_extension, zk_host_calls)
+          footprint_contention, ttl_extension, fee_bump)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        ON CONFLICT DO NOTHING`,
       [
@@ -216,7 +216,7 @@ export const db = {
         ev.is_clawback ?? false,
         ev.footprint_contention ?? false,
         ev.ttl_extension ? JSON.stringify(ev.ttl_extension) : null,
-        ev.zk_host_calls ? JSON.stringify(ev.zk_host_calls) : null,
+        ev.fee_bump ? JSON.stringify(ev.fee_bump) : null,
       ]
     );
   },
