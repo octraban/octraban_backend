@@ -43,6 +43,20 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // Issue #164 — GET /api/events/:seq/zk-costs
+  // Returns the ZK host function call list and cost delta for a single event.
+  app.get("/api/events/:seq/zk-costs", async (req, res) => {
+    try {
+      const ev = await db.getEvent(Number(req.params.seq));
+      if (!ev) return res.status(404).json({ error: "Not found" });
+      if (!ev.zk_host_calls) return res.json({ calls: [], delta: null });
+      const zk = typeof ev.zk_host_calls === "string"
+        ? JSON.parse(ev.zk_host_calls)
+        : ev.zk_host_calls;
+      res.json(zk);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // GET /api/contracts/:id
   app.get("/api/contracts/:id", async (req, res) => {
     try {

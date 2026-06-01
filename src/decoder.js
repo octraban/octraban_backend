@@ -1,5 +1,6 @@
 import { xdr, scValToNative, StrKey } from "@stellar/stellar-sdk";
 import { parseTTLHostFunction, formatTTLExtension } from "./ttlExtensionParser.js";
+import { parseZkHostFunctions, computeZkCostDelta } from "./zkHostFunctions.js";
 
 // Issue #134 — result codes that indicate block compute capacity was exhausted
 const RESOURCE_LIMIT_CODES = new Set([
@@ -161,6 +162,12 @@ export async function decode(ev) {
     decoded.ttl_extension = ttlExt;
     // Enrich description so the ledger history row is self-explanatory
     decoded.description = formatTTLExtension(ttlExt);
+  }
+
+  // Issue #164 — Protocol 26: detect CAP-0080 ZK host function calls
+  const zkCalls = parseZkHostFunctions(ev);
+  if (zkCalls) {
+    decoded.zk_host_calls = { calls: zkCalls, delta: computeZkCostDelta(zkCalls) };
   }
 
   // Persist role assignment if this event carries one
