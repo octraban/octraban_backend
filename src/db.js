@@ -134,21 +134,18 @@ export const db = {
       CREATE INDEX IF NOT EXISTS idx_state_diff_contract_ledger
         ON storage_state_diffs(contract_id, ledger ASC);
 
-      -- WASM build metadata extracted from UploadContractWasm operations
-      CREATE TABLE IF NOT EXISTS wasm_build_metadata (
-        wasm_hash   TEXT PRIMARY KEY,
-        contract_id TEXT,
-        sdk_version TEXT,
-        compiler    TEXT,
-        optimizer   TEXT,
-        repository  TEXT,
-        commit      TEXT,
-        producers   JSONB,
+      -- Issue #172: CAP-0077 quorum freeze events
+      CREATE TABLE IF NOT EXISTS quorum_freezes (
+        id          BIGSERIAL PRIMARY KEY,
+        contract_id TEXT NOT NULL,
+        frozen_ids  JSONB NOT NULL,
         ledger      BIGINT,
         tx_hash     TEXT,
-        indexed_at  TIMESTAMPTZ DEFAULT NOW()
+        is_frozen   BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
       );
-      CREATE INDEX IF NOT EXISTS idx_wasm_meta_contract ON wasm_build_metadata(contract_id);
+      CREATE INDEX IF NOT EXISTS idx_quorum_freezes_contract
+        ON quorum_freezes(contract_id);
     `);
   },
 
@@ -219,8 +216,8 @@ export const db = {
       `INSERT INTO events
          (contract_id, function, ledger, tx_hash, description, raw_topics, raw_data,
           cpu_instructions, mem_bytes, fee_charged, is_high_bloat_risk, upgrade_info, storage_tiers, is_clawback,
-          footprint_contention, ttl_extension, fee_bump)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+          footprint_contention, ttl_extension, fee_bump, archival_info)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        ON CONFLICT DO NOTHING`,
       [
         ev.contract_id, ev.function, ev.ledger, ev.tx_hash,
@@ -233,6 +230,7 @@ export const db = {
         ev.footprint_contention ?? false,
         ev.ttl_extension ? JSON.stringify(ev.ttl_extension) : null,
         ev.fee_bump ? JSON.stringify(ev.fee_bump) : null,
+        ev.archival_info ? JSON.stringify(ev.archival_info) : null,
       ]
     );
   },

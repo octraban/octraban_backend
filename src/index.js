@@ -14,6 +14,8 @@ import { startMetricsCollector } from "./rpcMetrics.js";
 import { startPruner } from "./pruner.js";
 import { extractStateDiffs } from "./stateDiffIndexer.js";
 import { parseFeeBump } from "./feeBumpParser.js";
+import { detectEvictions } from "./archivalEvictionDetector.js";
+import { parseAndDescribeRestore } from "./restoreFootprintParser.js";
 
 const RPC_URL      = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
@@ -141,14 +143,18 @@ async function indexLedger(ledger) {
     // Issue #169: build a per-page txHash → feeBump cache to avoid redundant
     // getTransaction calls when multiple events share the same transaction.
     const feeBumpCache = new Map();
+    const restoreCache = new Map(); // Issue #167: txHash → archival_info
     const uniqueTxHashes = [...new Set(res.events.map(e => e.txHash).filter(Boolean))];
     await Promise.all(uniqueTxHashes.map(async (txHash) => {
       try {
         const txResult = await withRetry(() => rpc.getTransaction(txHash));
         if (txResult?.envelopeXdr) {
           feeBumpCache.set(txHash, parseFeeBump(txResult.envelopeXdr));
+          // Issue #167: parse RestoreFootprintOp if present
+          const restore = parseAndDescribeRestore(txResult.envelopeXdr, txResult.resultMetaXdr ?? null);
+          if (restore.isRestoreOp) restoreCache.set(txHash, restore);
         }
-      } catch { /* non-critical — skip fee-bump for this tx */ }
+      } catch { /* non-critical — skip fee-bump/restore for this tx */ }
     }));
 
     for (const ev of res.events) {
@@ -164,11 +170,22 @@ async function indexLedger(ledger) {
 
       decoded.storage_tiers = classifyStorageWrites(ev);
       decoded.fee_bump = feeBumpCache.get(ev.txHash) ?? null;
+      // Issue #167: attach restoration info when this tx is a RestoreFootprintOp
+      decoded.archival_info = restoreCache.get(ev.txHash) ?? null;
       await db.upsertEvent(decoded);
 
       // Issue #140: persist per-key state diffs for the timeline
       const diffs = extractStateDiffs(ev, decoded);
       if (diffs.length) await db.insertStateDiffs(diffs).catch(() => {});
+
+      // Issue #167: detect evicted ledger keys (TTL → 0) in this transaction
+      const evictions = detectEvictions(ev, ev.ledger, ev.txHash);
+      if (evictions.length) {
+        await db.insertArchivalEvictions(evictions).catch(err =>
+          console.error("[archivalEviction] insert failed:", err.message)
+        );
+        console.log(`[${ev.ledger}] EVICTED ${evictions.length} key(s) in tx ${ev.txHash}`);
+      }
 
       publish(decoded);           // Issue #39 — push to WS clients
       handleVaultEvent(decoded);  // vault ratio update (async, non-blocking)
