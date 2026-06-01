@@ -14,6 +14,23 @@ x-db-healthcheck: &db-healthcheck
 services:
 
   # ═══════════════════════════════════════════════════════════════════════════
+  # REDIS  (optional – enables shared rate-limit store across API instances)
+  # Uncomment this service and set REDIS_URL=redis://redis:6379 in each API
+  # service's environment block to activate the Redis rate-limit store.
+  # ═══════════════════════════════════════════════════════════════════════════
+  # redis:
+  #   image: redis:7-alpine
+  #   ports:
+  #     - '6379:6379'
+  #   volumes:
+  #     - redis-data:/data
+  #   healthcheck:
+  #     test: ['CMD', 'redis-cli', 'ping']
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 5
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # TESTNET
   # ═══════════════════════════════════════════════════════════════════════════
   db-testnet:
@@ -171,3 +188,4 @@ volumes:
   pgdata-testnet:
   pgdata-mainnet:
   pgdata-devnet:
+  # redis-data:  # Uncomment when the redis service above is enabled

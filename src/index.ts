@@ -8,7 +8,7 @@ import { config } from './config';
 import { router } from './api/router';
 import { prismaWrite as prisma } from './db';
 import { startIndexerService } from './indexer/indexer';
-import { tieredRateLimit } from './middleware/rateLimit';
+import { tieredRateLimit, initRateLimitStore } from './middleware/rateLimit';
 import { metricsMiddleware } from './middleware/metricsMiddleware';
 import { sanitizeInputs } from './middleware/sanitize';
 import { i18nMiddleware } from './i18n';
@@ -57,6 +57,7 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', network: config.stell
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 
 async function main() {
+  await initRateLimitStore();
   await cacheConnect();
   await prisma.$connect();
   dbConnectionStatus.set(1);
