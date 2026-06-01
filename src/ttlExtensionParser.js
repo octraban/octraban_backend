@@ -31,24 +31,38 @@ const TTL_HOST_FN_NAMES = new Set([
  * @returns {{ extend_to: number|null, min_extension: number|null, max_extension: number|null, fn_name: string|null } | null}
  *   Returns null when the object is not a TTL extension call.
  */
-function parseTTLHostFunction(hostFn) {
-  if (!hostFn) return null;
+export function parseTTLExtension(operation) {
+  const result = {
+    operationType: null,
+    targetKey: null,
+    extendToLedger: null,
+    costXlm: null,
+    timestamp: null,
+  };
+
+  if (!operation) return result;
+
+  // ExtendCurrentContractInstanceOp
+  if (operation.ext && operation.ext.v === 1) {
+    result.operationType = "ExtendCurrentContractInstance";
+    result.targetKey = operation.contractId || null;
+    result.extendToLedger = operation.extendTo || null;
+  }
 
   const fnName = hostFn.function_name ?? hostFn.fn_name ?? hostFn.type ?? null;
 
-  // Accept both the canonical names and the legacy operation type strings
-  const isExtend =
-    (fnName && TTL_HOST_FN_NAMES.has(fnName)) ||
-    (typeof fnName === "string" && fnName.toLowerCase().includes("extend"));
+  // Also accept simplified operation shapes used in tests/other callers
+  if (operation.type === "extendContractInstance") {
+    result.operationType = "ExtendCurrentContractInstance";
+    result.targetKey = operation.contractId || null;
+    result.extendToLedger = operation.extendTo || null;
+  }
 
-  if (!isExtend) return null;
-
-  // Protocol 26 parameters may appear as direct fields or inside an `args` map
-  const args = hostFn.args ?? hostFn;
-
-  const extend_to     = _num(args.extend_to     ?? args.extendTo     ?? hostFn.extend_to     ?? hostFn.extendTo);
-  const min_extension = _num(args.min_extension ?? args.minExtension ?? hostFn.min_extension ?? hostFn.minExtension);
-  const max_extension = _num(args.max_extension ?? args.maxExtension ?? hostFn.max_extension ?? hostFn.maxExtension);
+  // Extract cost from transaction metadata
+  if (operation.meta && operation.meta.result && operation.meta.result.costOuter) {
+    const cost = operation.meta.result.costOuter;
+    result.costXlm = (cost.cpuInstrs + cost.memBytes) / 1_000_000; // Simple cost estimation
+  }
 
   // Must have at least one Protocol 26 field to be considered a valid record
   if (extend_to === null && min_extension === null && max_extension === null) return null;
@@ -67,8 +81,8 @@ function parseTTLHostFunction(hostFn) {
  * @param {object} transaction  Raw transaction object from the Soroban RPC
  * @returns {Array<{ fn_name: string, extend_to: number|null, min_extension: number|null, max_extension: number|null, ledger: number, tx_hash: string }>}
  */
-function extractTTLExtensions(transaction) {
-  if (!transaction?.operations) return [];
+export function extractTTLModifications(transaction) {
+  const modifications = [];
 
   const results = [];
 
@@ -110,20 +124,9 @@ function extractTTLExtensions(transaction) {
  * @param {{ extend_to: number|null, min_extension: number|null, max_extension: number|null }} ext
  * @returns {string}
  */
-function formatTTLExtension(ext) {
-  const parts = ["Action: TTL Extension"];
-  if (ext.min_extension != null) parts.push(`Requested: +${ext.min_extension} Ledgers`);
-  if (ext.max_extension != null) parts.push(`Enforced Clamp: ${ext.max_extension} Ledgers`);
-  if (ext.extend_to     != null) parts.push(`Extend To: ${ext.extend_to}`);
-  return parts.join(" | ");
+export function calculateRentPaid(extensionOp) {
+  if (!extensionOp.costXlm) return 0;
+  return Math.round(extensionOp.costXlm * 10_000_000);
 }
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-function _num(v) {
-  if (v == null) return null;
-  const n = Number(v);
-  return isNaN(n) ? null : n;
-}
-
-module.exports = { parseTTLHostFunction, extractTTLExtensions, formatTTLExtension };
+// Named ESM exports above

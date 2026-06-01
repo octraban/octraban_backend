@@ -14,6 +14,21 @@ import { scValToJs } from "./scval.js";
 export function parseContractReturnValue(result) {
   if (!result) return null;
 
+  // Heuristic: some host functions (checked i256/u256 ops) return `Void`
+  // and surface overflow as diagnostic text in surrounding result fields.
+  const textCandidates = [];
+  try {
+    if (typeof result.error === 'string') textCandidates.push(result.error);
+    if (typeof result.err === 'string') textCandidates.push(result.err);
+    if (typeof result.message === 'string') textCandidates.push(result.message);
+    if (result.result && typeof result.result.error === 'string') textCandidates.push(result.result.error);
+    if (result.diagnostic && typeof result.diagnostic === 'string') textCandidates.push(result.diagnostic);
+  } catch { /* ignore */ }
+
+  if (textCandidates.some(t => /overflow/i.test(t))) {
+    return { returnValue: 'Overflow [Void]', encoded: false };
+  }
+
   const returnVal = result.returnValue || result.result;
   if (!returnVal) return null;
 
