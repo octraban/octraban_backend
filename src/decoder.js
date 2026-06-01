@@ -65,7 +65,8 @@ function extractGasCosts(ev) {
   return result;
 }
 import { db } from "./db.js";
-import { sacLabel, detectSac } from "./sac.js";
+import { sacLabel, detectSac, detectSacAsset } from "./sac.js";
+import { classifySacSideEffect } from "./sacSideEffect.js";
 import { extractRoleAssignment } from "./roleTracker.js";
 import { decodeRwaEvent } from "./rwaDecoder.js";
 
@@ -114,6 +115,7 @@ export async function decode(ev) {
   const vaultMeta = await db.getVault(contractId).catch(() => null);
 
   const { isSac, assetCode } = detectSac(contractId);
+  const { assetIssuer } = detectSacAsset(contractId);
   const contractLabel = vaultMeta?.name
     ? `${vaultMeta.name} (Vault)`
     : isSac
@@ -161,6 +163,18 @@ export async function decode(ev) {
     decoded.ttl_extension = ttlExt;
     // Enrich description so the ledger history row is self-explanatory
     decoded.description = formatTTLExtension(ttlExt);
+  }
+
+  // SAC side-effect: detect auto-created account entry or implicit trustline open
+  if (isSac && (fnName === "transfer" || fnName === "mint")) {
+    // transfer topics: [fn, from, to] → to is topics[2]
+    // mint topics:     [fn, to]       → to is topics[1]
+    const toAddr = fnName === "transfer" ? topics[2] : topics[1];
+    if (typeof toAddr === "string" && toAddr.startsWith("G")) {
+      classifySacSideEffect(toAddr, assetCode, assetIssuer)
+        .then(kind => { if (kind) decoded.sac_side_effect = kind; })
+        .catch(() => {});
+    }
   }
 
   // Persist role assignment if this event carries one
