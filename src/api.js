@@ -8,6 +8,7 @@ import { bootstrapVault, refreshVaultRatio } from "./vaultIndexer.js";
 import { verifyAbi } from "./verify_abi.js";
 import { getMetrics } from "./rpcMetrics.js";
 import { getRpcNodeStatus } from "./rpcMultiNode.js";
+import { getGasGuzzlers } from "./gasGuzzlers.js";
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
@@ -296,6 +297,60 @@ export function startApi() {
   app.get("/api/rpc-nodes", (_req, res) => {
     try {
       res.json(getRpcNodeStatus());
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Issue #133: Daily gas consumption leaderboard ───────────────────────────
+  // GET /api/v1/analytics/gas-guzzlers
+  // Returns the top 10 contracts by cpu_instructions over the last 24 hours.
+  app.get("/api/v1/analytics/gas-guzzlers", (_req, res) => {
+    try {
+      res.json(getGasGuzzlers());
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Issue #134: Resource-limit-exceeded transactions ────────────────────────
+  // GET /api/v1/transactions/resource-limit-exceeded?page=&limit=
+  // Returns transactions dropped because the block compute capacity was maxed out.
+  app.get("/api/v1/transactions/resource-limit-exceeded", async (req, res) => {
+    try {
+      const page  = Math.max(1, Number(req.query.page)  || 1);
+      const limit = Math.min(100, Number(req.query.limit) || 25);
+      const offset = (page - 1) * limit;
+
+      const [{ rows }, { rows: countRows }] = await Promise.all([
+        db.query(
+          `SELECT seq, contract_id, function, ledger, tx_hash, description, created_at
+           FROM events
+           WHERE is_resource_limit_exceeded = TRUE
+           ORDER BY ledger DESC
+           LIMIT $1 OFFSET $2`,
+          [limit, offset]
+        ),
+        db.query(`SELECT COUNT(*)::INT AS total FROM events WHERE is_resource_limit_exceeded = TRUE`),
+      ]);
+
+      res.json({
+        data: rows,
+        pagination: {
+          page,
+          limit,
+          total: countRows[0].total,
+          total_pages: Math.ceil(countRows[0].total / limit),
+          has_next: page * limit < countRows[0].total,
+        },
+      });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Issue #138: Ledger gap report ───────────────────────────────────────────
+  // GET /api/v1/analytics/ledger-gaps
+  // Returns any missing ledger sequences in the indexed range.
+  app.get("/api/v1/analytics/ledger-gaps", async (_req, res) => {
+    try {
+      const { findLedgerGaps } = await import("./gapDetector.js");
+      const gaps = await findLedgerGaps();
+      res.json({ missing_ledgers: gaps, count: gaps.length });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

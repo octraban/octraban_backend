@@ -26,6 +26,8 @@ export const db = {
         storage_tiers    JSONB,
         -- Issue #74: clawback compliance flag
         is_clawback      BOOLEAN NOT NULL DEFAULT FALSE,
+        -- Issue #134: block compute capacity exceeded flag
+        is_resource_limit_exceeded BOOLEAN NOT NULL DEFAULT FALSE,
         created_at       TIMESTAMPTZ DEFAULT NOW()
       );
       -- Issue #35: explicit index mappings on high-frequency lookup columns
@@ -70,6 +72,9 @@ export const db = {
       ALTER TABLE events ADD COLUMN IF NOT EXISTS storage_tiers JSONB;
       -- Issue #85: multi-file source code matching
       ALTER TABLE contracts ADD COLUMN IF NOT EXISTS source_files JSONB;
+
+      -- Issue #134: resource-limit-exceeded flag
+      ALTER TABLE events ADD COLUMN IF NOT EXISTS is_resource_limit_exceeded BOOLEAN NOT NULL DEFAULT FALSE;
 
       -- Issue #117: sub-invocation indexing
       CREATE TABLE IF NOT EXISTS sub_invocations (
@@ -153,8 +158,9 @@ export const db = {
     await pool.query(
       `INSERT INTO events
          (contract_id, function, ledger, tx_hash, description, raw_topics, raw_data,
-          cpu_instructions, mem_bytes, fee_charged, is_high_bloat_risk, upgrade_info, storage_tiers, is_clawback)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+          cpu_instructions, mem_bytes, fee_charged, is_high_bloat_risk, upgrade_info,
+          storage_tiers, is_clawback, is_resource_limit_exceeded)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        ON CONFLICT DO NOTHING`,
       [
         ev.contract_id, ev.function, ev.ledger, ev.tx_hash,
@@ -164,6 +170,7 @@ export const db = {
         ev.upgrade ? JSON.stringify(ev.upgrade) : null,
         ev.storage_tiers ? JSON.stringify(ev.storage_tiers) : null,
         ev.is_clawback ?? false,
+        ev.is_resource_limit_exceeded ?? false,
       ]
     );
   },

@@ -12,6 +12,7 @@ import { startBurnDetector } from "./burnDetector.js";
 import { multiNodeRpc } from "./rpcMultiNode.js";
 import { startMetricsCollector } from "./rpcMetrics.js";
 import { startPruner } from "./pruner.js";
+import { startGasGuzzlersWorker } from "./gasGuzzlers.js";
 
 const RPC_URL      = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
@@ -87,6 +88,7 @@ async function run() {
   startBurnDetector();
   startMetricsCollector();  // Issue #115 — RPC latency probes
   startPruner();            // Issue #116 — daily temporary-storage cleanup
+  startGasGuzzlersWorker(); // Issue #133 — daily gas consumption leaderboard
 
   // Bootstrap vault indexer: initial ratio snapshot for all registered vaults
   refreshAllVaults().catch(() => {});

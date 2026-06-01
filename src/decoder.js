@@ -1,5 +1,22 @@
 import { xdr, scValToNative, StrKey } from "@stellar/stellar-sdk";
 
+// Issue #134 — result codes that indicate block compute capacity was exhausted
+const RESOURCE_LIMIT_CODES = new Set([
+  "tx_resource_limit_exceeded",
+  "txResourceLimitExceeded",
+  "RESOURCE_LIMIT_EXCEEDED",
+]);
+
+/**
+ * Returns true when the transaction was dropped because the block's total
+ * resource budget was full.
+ * @param {object} ev  Raw Soroban RPC event
+ */
+function isResourceLimitExceeded(ev) {
+  const code = ev.txResultCode ?? ev.resultCode ?? ev.result?.code ?? "";
+  return RESOURCE_LIMIT_CODES.has(String(code));
+}
+
 /**
  * Issue #40 — Extract CPU instructions, memory bytes, and fee charged from
  * the Soroban RPC event's transaction metadata.
@@ -117,6 +134,7 @@ export async function decode(ev) {
     raw_data:    JSON.stringify(data),
     ...(isSac && { sac_asset: assetCode }),
     is_clawback: fnName === "clawback",
+    is_resource_limit_exceeded: isResourceLimitExceeded(ev),
     ...extractGasCosts(ev),
   };
 
