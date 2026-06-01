@@ -12,6 +12,7 @@ const TX_SELECT = {
   sourceAccount: true,
   contractAddress: true,
   functionName: true,
+  functionArgs: true,
   status: true,
   humanReadable: true,
   feeCharged: true,
@@ -104,7 +105,10 @@ transactionRouter.get('/', async (req: Request, res: Response) => {
 transactionRouter.get('/:hash', async (req: Request, res: Response) => {
   const tx = await prisma.transaction.findUnique({
     where: { hash: req.params.hash },
-    include: { events: true },
+    select: {
+      ...TX_SELECT,
+      events: true,
+    },
   });
   if (!tx) return res.status(404).json({ error: 'Transaction not found' });
 
