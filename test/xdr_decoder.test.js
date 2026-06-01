@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { xdr } from "@stellar/stellar-sdk";
+import { xdr, StrKey } from "@stellar/stellar-sdk";
 import { decodeContractEvent } from "../src/xdr_decoder.js";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -75,6 +75,24 @@ describe("decodeContractEvent", () => {
     assert.ok("topics" in result);
     assert.ok("value" in result);
     assert.ok(Array.isArray(result.topics));
+  });
+
+  it("decodes muxed M-address topics to base G-addresses", () => {
+    const ed25519 = Buffer.alloc(32, 1);
+    const muxed = xdr.MuxedAccount.keyTypeMuxedEd25519(
+      new xdr.MuxedAccountMed25519({
+        id: xdr.Uint64.fromString("123"),
+        ed25519,
+      })
+    );
+    const eventXdr = makeEvent(
+      xdr.ContractEventType.contract(),
+      [xdr.ScVal.scvSymbol("transfer"), xdr.ScVal.scvAddress(xdr.ScAddress.scAddressTypeAccount(muxed))],
+      xdr.ScVal.scvVoid()
+    );
+
+    const result = decodeContractEvent(eventXdr);
+    assert.deepEqual(result.topics, ["transfer", StrKey.encodeEd25519PublicKey(ed25519)]);
   });
 
   it("serializes BigInt values as strings", () => {
