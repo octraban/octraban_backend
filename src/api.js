@@ -399,6 +399,29 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── Issue #172: CAP-0077 quorum freeze status ──────────────────────────────
+  // GET /api/contracts/:id/quorum-freeze — return freeze status for a contract
+  app.get("/api/contracts/:id/quorum-freeze", async (req, res) => {
+    try {
+      const status = await db.getQuorumFreezeStatus(req.params.id);
+      res.json(status);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Issue #173: Fee-Bump Chain of Custody parser ───────────────────────────
+  // POST /api/fee-bump/parse — accept a base64 TransactionEnvelope XDR and
+  // return the three-tier chain of custody (sponsor, channel_account, actual_caller)
+  app.post("/api/fee-bump/parse", async (req, res) => {
+    try {
+      const { xdr: envelopeXdr } = req.body;
+      if (!envelopeXdr) return res.status(400).json({ error: "Missing xdr field" });
+      const { parseFeeBump } = await import("./feeBumpParser.js");
+      const result = parseFeeBump(envelopeXdr);
+      if (!result) return res.status(422).json({ error: "Not a fee-bump transaction envelope" });
+      res.json(result);
+    } catch (e) { res.status(400).json({ error: e.message }); }
+  });
+
   // ── Issue #139: GraphQL endpoint ───────────────────────────────────────────
   attachGraphQL(app);
 

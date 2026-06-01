@@ -130,6 +130,19 @@ export const db = {
       );
       CREATE INDEX IF NOT EXISTS idx_state_diff_contract_ledger
         ON storage_state_diffs(contract_id, ledger ASC);
+
+      -- Issue #172: CAP-0077 quorum freeze events
+      CREATE TABLE IF NOT EXISTS quorum_freezes (
+        id          BIGSERIAL PRIMARY KEY,
+        contract_id TEXT NOT NULL,
+        frozen_ids  JSONB NOT NULL,
+        ledger      BIGINT,
+        tx_hash     TEXT,
+        is_frozen   BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_quorum_freezes_contract
+        ON quorum_freezes(contract_id);
     `);
   },
 
@@ -543,5 +556,36 @@ export const db = {
       params
     );
     return rows;
+  },
+
+  // ── Issue #172: CAP-0077 quorum freeze ────────────────────────────────────
+
+  /** Record a quorum freeze event for one or more contract IDs. */
+  async upsertQuorumFreeze({ contract_id, frozen_ids, ledger = null, tx_hash = null, is_frozen = true }) {
+    await pool.query(
+      `INSERT INTO quorum_freezes (contract_id, frozen_ids, ledger, tx_hash, is_frozen)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [contract_id, JSON.stringify(frozen_ids), ledger, tx_hash ?? null, is_frozen]
+    );
+  },
+
+  /** Return the most recent quorum freeze status for a contract. */
+  async getQuorumFreezeStatus(contract_id) {
+    const { rows } = await pool.query(
+      `SELECT frozen_ids, ledger, tx_hash, is_frozen, created_at
+       FROM quorum_freezes
+       WHERE contract_id = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [contract_id]
+    );
+    if (!rows[0]) return { is_frozen: false, frozen_ids: [], ledger: null, tx_hash: null };
+    const row = rows[0];
+    return {
+      is_frozen: row.is_frozen,
+      frozen_ids: Array.isArray(row.frozen_ids) ? row.frozen_ids : JSON.parse(row.frozen_ids),
+      ledger: row.ledger ? Number(row.ledger) : null,
+      tx_hash: row.tx_hash ?? null,
+    };
   },
 };
