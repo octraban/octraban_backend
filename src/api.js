@@ -223,6 +223,34 @@ export function startApi() {
     } catch (e) { res.status(500).json({ success: false, error: e.message }); }
   });
 
+  // POST /api/sandbox/simulate — accepts a raw XDR TransactionEnvelope, simulates it directly
+  app.post("/api/sandbox/simulate", async (req, res) => {
+    try {
+      const { xdrEnvelope } = req.body;
+      if (!xdrEnvelope) return res.status(400).json({ error: "Missing xdrEnvelope" });
+
+      const { SorobanRpc, xdr } = await import("@stellar/stellar-sdk");
+      const server = new SorobanRpc.Server(RPC_URL);
+
+      const envelope = xdr.TransactionEnvelope.fromXDR(xdrEnvelope, "base64");
+      const sim = await server.simulateTransaction({ toEnvelope: () => envelope });
+
+      if (SorobanRpc.Api.isSimulationError(sim)) {
+        return res.json({ success: false, error: sim.error });
+      }
+
+      const cost = sim.cost ?? {};
+      const retVal = sim.result?.retval;
+      res.json({
+        success: true,
+        returnValue: retVal ? retVal.toXDR("base64") : undefined,
+        cost: { cpuInsns: String(cost.cpuInsns ?? 0), memBytes: String(cost.memBytes ?? 0) },
+        minResourceFee: sim.minResourceFee ?? null,
+        latestLedger: sim.latestLedger ?? null,
+      });
+    } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  });
+
   // GET /api/wallet/:address
   app.get("/api/wallet/:address", async (req, res) => {
     try {
