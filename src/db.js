@@ -130,6 +130,22 @@ export const db = {
       );
       CREATE INDEX IF NOT EXISTS idx_state_diff_contract_ledger
         ON storage_state_diffs(contract_id, ledger ASC);
+
+      -- WASM build metadata extracted from UploadContractWasm operations
+      CREATE TABLE IF NOT EXISTS wasm_build_metadata (
+        wasm_hash   TEXT PRIMARY KEY,
+        contract_id TEXT,
+        sdk_version TEXT,
+        compiler    TEXT,
+        optimizer   TEXT,
+        repository  TEXT,
+        commit      TEXT,
+        producers   JSONB,
+        ledger      BIGINT,
+        tx_hash     TEXT,
+        indexed_at  TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_wasm_meta_contract ON wasm_build_metadata(contract_id);
     `);
   },
 
@@ -543,5 +559,34 @@ export const db = {
       params
     );
     return rows;
+  },
+
+  // ── WASM build metadata ────────────────────────────────────────────────────
+
+  async upsertWasmBuildMetadata({ wasm_hash, contract_id, sdk_version, compiler, optimizer, repository, commit, producers, ledger, tx_hash }) {
+    await pool.query(
+      `INSERT INTO wasm_build_metadata
+         (wasm_hash, contract_id, sdk_version, compiler, optimizer, repository, commit, producers, ledger, tx_hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT (wasm_hash) DO UPDATE SET
+         contract_id = COALESCE(EXCLUDED.contract_id, wasm_build_metadata.contract_id),
+         sdk_version = COALESCE(EXCLUDED.sdk_version, wasm_build_metadata.sdk_version),
+         compiler    = COALESCE(EXCLUDED.compiler,    wasm_build_metadata.compiler),
+         optimizer   = COALESCE(EXCLUDED.optimizer,   wasm_build_metadata.optimizer),
+         repository  = COALESCE(EXCLUDED.repository,  wasm_build_metadata.repository),
+         commit      = COALESCE(EXCLUDED.commit,      wasm_build_metadata.commit),
+         producers   = COALESCE(EXCLUDED.producers,   wasm_build_metadata.producers)`,
+      [wasm_hash, contract_id ?? null, sdk_version ?? null, compiler ?? null,
+       optimizer ?? null, repository ?? null, commit ?? null,
+       producers ? JSON.stringify(producers) : null, ledger ?? null, tx_hash ?? null]
+    );
+  },
+
+  async getWasmBuildMetadata(contract_id) {
+    const { rows } = await pool.query(
+      `SELECT * FROM wasm_build_metadata WHERE contract_id = $1 ORDER BY ledger DESC LIMIT 1`,
+      [contract_id]
+    );
+    return rows[0] ?? null;
   },
 };

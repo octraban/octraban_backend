@@ -12,8 +12,8 @@ import { startBurnDetector } from "./burnDetector.js";
 import { multiNodeRpc } from "./rpcMultiNode.js";
 import { startMetricsCollector } from "./rpcMetrics.js";
 import { startPruner } from "./pruner.js";
-import { extractStateDiffs } from "./stateDiffIndexer.js";
 import { extractStateDiffs } from "./stateDiffIndexer.js"; // Issue #140
+import { extractBuildMetadata } from "./wasmBuildMetadata.js";
 
 const RPC_URL      = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
@@ -79,6 +79,42 @@ const cursorRef = {
 let _cursor = 0;
 
 /**
+ * For each unique tx_hash in the event batch, fetch the transaction and check
+ * whether any operation is an UploadContractWasm.  When found, extract build
+ * metadata from the raw WASM bytes and persist it.
+ *
+ * @param {string[]} txHashes  Deduplicated list of tx hashes from this page
+ * @param {number}   ledger    Current ledger number
+ */
+async function indexWasmUploads(txHashes, ledger) {
+  for (const txHash of txHashes) {
+    try {
+      const tx = await withRetry(() => rpc.getTransaction(txHash));
+      if (!tx?.envelopeXdr) continue;
+
+      const { xdr } = await import("@stellar/stellar-sdk");
+      const envelope = xdr.TransactionEnvelope.fromXDR(tx.envelopeXdr, "base64");
+      const ops = envelope.tx?.().operations?.() ?? envelope.v1?.().tx?.().operations?.() ?? [];
+
+      for (const op of ops) {
+        const body = op.body();
+        if (body.switch().name !== "invokeHostFunction") continue;
+        const hf = body.invokeHostFunctionOp().hostFunction();
+        if (hf.switch().name !== "hostFunctionTypeUploadContractWasm") continue;
+
+        const wasmBytes = hf.wasm();
+        const meta = extractBuildMetadata(wasmBytes);
+        await db.upsertWasmBuildMetadata({ ...meta, ledger, tx_hash: txHash });
+        console.log(`[${ledger}] WASM upload indexed: ${meta.wasm_hash.slice(0, 16)}… compiler=${meta.compiler ?? "unknown"}`);
+      }
+    } catch (err) {
+      // Non-fatal: log and continue
+      console.error(`[wasmUpload] tx ${txHash}: ${err.message}`);
+    }
+  }
+}
+
+/**
  * Fetch and process ALL events for a given startLedger, handling pagination
  * boundaries when a ledger contains more than PAGE_LIMIT events (Issue #33).
  *
@@ -102,8 +138,10 @@ async function indexLedger(ledger) {
     // Flag footprint contention across transactions in this page's events
     scanFootprintContention(res.events);
 
-    for (const ev of res.events) {
-      const decoded = await decode(ev);
+    // Collect unique tx hashes for WASM upload detection
+    const pageTxHashes = [...new Set(res.events.map(ev => ev.txHash).filter(Boolean))];
+
+    for (const ev of res.events) {      const decoded = await decode(ev);
       decoded.is_high_bloat_risk = isHighBloatRisk(ev, ev.contractId);
       decoded.footprint_contention = ev.footprint_contention ?? false;
 
@@ -133,6 +171,11 @@ async function indexLedger(ledger) {
       
       console.log(`[${ev.ledger}] ${decoded.function}: ${decoded.description}`);
     }
+
+    // Scan transactions for UploadContractWasm operations (non-blocking)
+    indexWasmUploads(pageTxHashes, ledger).catch(err =>
+      console.error("[wasmUpload] batch error:", err.message)
+    );
 
     // Issue #37 — record the latest ledger hash for re-org detection
     if (res.latestLedger && res.latestLedgerHash) {
