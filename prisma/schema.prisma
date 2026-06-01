@@ -112,6 +112,7 @@ model Event {
   decoded         Json?    // human-readable decoded event
   ledgerSequence  Int                      // FK → Ledger.sequence
   ledgerCloseTime DateTime
+  compacted       Boolean  @default(false) // #220: true once rolled into a SettlementBatchSummary
   createdAt       DateTime @default(now())
 
   ledger      Ledger      @relation(fields: [ledgerSequence], references: [sequence])
@@ -129,6 +130,8 @@ model Event {
   @@index([contractAddress, ledgerSequence, id])
   // Filter by contract + event type + ledger for time-range queries
   @@index([contractAddress, eventType, ledgerSequence])
+  // #220: compactor scan index
+  @@index([eventType, compacted, ledgerSequence])
 }
 
 // Custom event symbol → template bindings submitted by verified project creators
@@ -785,3 +788,26 @@ model Translation {
 
 
 
+
+// #220: High-Throughput Batch-Settlement Event Compact Engine
+// One row per (contractAddress, windowKey) — a window covers WINDOW_SIZE ledgers.
+// Replaces thousands of raw settlement Event rows with a single scannable summary.
+model SettlementBatchSummary {
+  id              String   @id @default(cuid())
+  contractAddress String                        // enterprise banking contract
+  windowKey       Int                           // floor(ledgerSequence / WINDOW_SIZE)
+  ledgerMin       Int                           // first ledger in window
+  ledgerMax       Int                           // last ledger in window
+  windowStart     DateTime                      // ledgerCloseTime of first event
+  windowEnd       DateTime                      // ledgerCloseTime of last event
+  eventCount      Int                           // number of settlement events compacted
+  totalAmount     String                        // sum of settlement amounts (string for precision)
+  uniqueParties   Int                           // distinct addresses involved
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([contractAddress, windowKey])
+  @@index([contractAddress])
+  @@index([ledgerMin])
+  @@index([windowKey])
+}

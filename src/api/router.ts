@@ -25,6 +25,7 @@ import { exportsRouter } from './exports';
 import { syncStateRouter } from './sync-state';
 import { dtccSettlementRouter } from './dtcc-settlement';
 import { commodityComplianceRouter } from './commodity-compliance';
+import { settlementBatchRouter } from './settlement-batch';
 
 export const router = Router();
 
@@ -53,3 +54,4 @@ router.use('/exports', exportsRouter);
 router.use('/sync-state', syncStateRouter);
 router.use('/dtcc-settlement', dtccSettlementRouter);
 router.use('/commodity-compliance', commodityComplianceRouter);
+router.use('/settlement-batch', settlementBatchRouter);
