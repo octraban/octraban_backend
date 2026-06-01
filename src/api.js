@@ -413,6 +413,66 @@ export function startApi() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── Issue #165: Live TTL status for contract instance, code, and persistent storage ──
+  // GET /api/contracts/:id/ttl
+  // Queries the Soroban RPC getLedgerEntries for the contract's instance and code
+  // ledger keys, then returns expiration ledgers alongside the current ledger height.
+  app.get("/api/contracts/:id/ttl", async (req, res) => {
+    try {
+      const contractId = req.params.id;
+      const { SorobanRpc, xdr, Address } = await import("@stellar/stellar-sdk");
+      const server = new SorobanRpc.Server(RPC_URL);
+
+      // Build ledger keys for instance and code entries
+      const contractAddress = Address.fromString(contractId);
+      const instanceKey = xdr.LedgerKey.contractData(
+        new xdr.LedgerKeyContractData({
+          contract: contractAddress.toScAddress(),
+          key: xdr.ScVal.scvLedgerKeyContractInstance(),
+          durability: xdr.ContractDataDurability.persistent(),
+        })
+      );
+      const codeKey = xdr.LedgerKey.contractCode(
+        new xdr.LedgerKeyContractCode({
+          hash: Buffer.alloc(32), // placeholder; resolved below from instance
+        })
+      );
+
+      // Fetch instance entry first to get the WASM hash for the code key
+      const instanceResult = await server.getLedgerEntries(instanceKey);
+      const instanceEntry = instanceResult.entries?.[0] ?? null;
+
+      let instanceTTL = null;
+      let codeTTL = null;
+      let currentLedger = instanceResult.latestLedger ?? 0;
+
+      if (instanceEntry) {
+        instanceTTL = instanceEntry.liveUntilLedgerSeq ?? null;
+
+        // Extract WASM hash from the instance entry to build the code key
+        try {
+          const contractInstance = instanceEntry.val.contractData().val().instance();
+          const wasmHash = contractInstance.executable().wasmHash();
+          const resolvedCodeKey = xdr.LedgerKey.contractCode(
+            new xdr.LedgerKeyContractCode({ hash: wasmHash })
+          );
+          const codeResult = await server.getLedgerEntries(resolvedCodeKey);
+          const codeEntry = codeResult.entries?.[0] ?? null;
+          if (codeEntry) codeTTL = codeEntry.liveUntilLedgerSeq ?? null;
+        } catch {
+          // WASM hash extraction failed — code TTL unavailable
+        }
+      }
+
+      res.json({
+        contract_id: contractId,
+        current_ledger: currentLedger,
+        instance: { live_until_ledger: instanceTTL },
+        code:     { live_until_ledger: codeTTL },
+      });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── Issue #139: GraphQL endpoint ───────────────────────────────────────────
   attachGraphQL(app);
 
