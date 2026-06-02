@@ -70,6 +70,7 @@ import { sacLabel, detectSac, detectSacAsset } from "./sac.js";
 import { classifySacSideEffect } from "./sacSideEffect.js";
 import { extractRoleAssignment } from "./roleTracker.js";
 import { decodeRwaEvent } from "./rwaDecoder.js";
+import { parseHeuristic } from "./heuristicParser.js";
 
 // Native XLM Stellar Asset Contract IDs (testnet + mainnet)
 const NATIVE_SAC_IDS = new Set([
@@ -144,6 +145,11 @@ export async function decode(ev) {
         : genericDescription(fnName, topics.slice(1), data, contractLabel);
   }
 
+  // Attach heuristic params when no ABI was available (no fnAbi, not a vault, not RWA)
+  const heuristicParams = (!fnAbi && !vaultMeta && !meta)
+    ? parseHeuristic([...topics.slice(1), ...(data != null ? [data] : [])])
+    : undefined;
+
   const decoded = {
     contract_id: contractId,
     function:    fnName,
@@ -156,6 +162,7 @@ export async function decode(ev) {
     is_clawback: fnName === "clawback",
     is_resource_limit_exceeded: isResourceLimitExceeded(ev),
     ...extractGasCosts(ev),
+    ...(heuristicParams && { heuristic_params: heuristicParams }),
   };
 
   // Protocol 26: detect TTL extension host function calls on this event
