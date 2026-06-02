@@ -28,6 +28,8 @@ export const db = {
         is_clawback      BOOLEAN NOT NULL DEFAULT FALSE,
         -- Issue #134: block compute capacity exceeded flag
         is_resource_limit_exceeded BOOLEAN NOT NULL DEFAULT FALSE,
+        -- Issue #191: CAP-0080 ZK host function telemetry (Protocol 26)
+        zk_host_calls    JSONB,
         created_at       TIMESTAMPTZ DEFAULT NOW()
       );
       -- Issue #35: explicit index mappings on high-frequency lookup columns
@@ -219,8 +221,8 @@ export const db = {
       `INSERT INTO events
          (contract_id, function, ledger, tx_hash, description, raw_topics, raw_data,
           cpu_instructions, mem_bytes, fee_charged, is_high_bloat_risk, upgrade_info, storage_tiers, is_clawback,
-          footprint_contention, ttl_extension, fee_bump, archival_info)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+          footprint_contention, ttl_extension, fee_bump, archival_info, zk_host_calls)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
        ON CONFLICT DO NOTHING`,
       [
         ev.contract_id, ev.function, ev.ledger, ev.tx_hash,
@@ -234,6 +236,7 @@ export const db = {
         ev.ttl_extension ? JSON.stringify(ev.ttl_extension) : null,
         ev.fee_bump ? JSON.stringify(ev.fee_bump) : null,
         ev.archival_info ? JSON.stringify(ev.archival_info) : null,
+        ev.zk_host_calls ? JSON.stringify(ev.zk_host_calls) : null,
       ]
     );
   },
