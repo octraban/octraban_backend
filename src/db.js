@@ -569,7 +569,6 @@ export const db = {
     return rows;
   },
 
- wasm-build-metadata-indexing
   // ── WASM build metadata ────────────────────────────────────────────────────
 
   async upsertWasmBuildMetadata({ wasm_hash, contract_id, sdk_version, compiler, optimizer, repository, commit, producers, ledger, tx_hash }) {
@@ -597,7 +596,8 @@ export const db = {
       [contract_id]
     );
     return rows[0] ?? null;
-=======
+  },
+
   /** Issue #117: persist sub-invocation records. */
   async upsertSubInvocations(records) {
     if (!records.length) return;
@@ -629,6 +629,5 @@ export const db = {
       [limit]
     );
     return rows.map(r => ({ caller: r.caller, callee: r.callee, call_count: Number(r.call_count) }));
- main
   },
 };
