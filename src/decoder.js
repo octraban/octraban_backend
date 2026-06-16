@@ -65,6 +65,7 @@ function extractGasCosts(ev) {
 
   return result;
 }
+
 import { db } from "./db.js";
 import { sacLabel, detectSac, detectSacAsset } from "./sac.js";
 import { classifySacSideEffect } from "./sacSideEffect.js";
@@ -187,7 +188,6 @@ export async function decode(ev) {
   }
 
   return decoded;
-  };
 }
 
 /**

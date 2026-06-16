@@ -267,9 +267,8 @@ export const db = {
   },
 
   async getWalletEvents(address) {
-    // Match address appearing anywhere in description or raw_topics
     const { rows } = await pool.query(
-      `SELECT * FROM events WHERE description ILIKE $1 OR raw_topics::text ILIKE $1 ORDER BY ledger DESC LIMIT 100`,
+      `SELECT * FROM events WHERE raw_topics::text ILIKE $1 ORDER BY ledger DESC LIMIT 100`,
       [`%${address}%`]
     );
     return rows;
