@@ -23,6 +23,9 @@ export function startApi() {
   const app = express();
   app.use(express.json());
 
+  // ── Health check (used by Docker Compose) ──────────────────────────────
+  app.get("/health", (_req, res) => res.json({ status: "ok" }));
+
   // ── Existing endpoints ──────────────────────────────────────────────────────
 
   // GET /api/events?contract=&fn=&page=
