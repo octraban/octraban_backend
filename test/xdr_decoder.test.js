@@ -79,15 +79,14 @@ describe("decodeContractEvent", () => {
 
   it("decodes muxed M-address topics to base G-addresses", () => {
     const ed25519 = Buffer.alloc(32, 1);
-    const muxed = xdr.MuxedAccount.keyTypeMuxedEd25519(
-      new xdr.MuxedAccountMed25519({
-        id: xdr.Uint64.fromString("123"),
-        ed25519,
-      })
-    );
+    const med25519 = new xdr.MuxedAccountMed25519({
+      id: xdr.Uint64.fromString("123"),
+      ed25519,
+    });
+    const muxedAddr = StrKey.encodeMed25519PublicKey(med25519.toXDR());
     const eventXdr = makeEvent(
       xdr.ContractEventType.contract(),
-      [xdr.ScVal.scvSymbol("transfer"), xdr.ScVal.scvAddress(xdr.ScAddress.scAddressTypeAccount(muxed))],
+      [xdr.ScVal.scvSymbol("transfer"), xdr.ScVal.scvString(muxedAddr)],
       xdr.ScVal.scvVoid()
     );
 

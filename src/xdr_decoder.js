@@ -1,5 +1,4 @@
-import { xdr, StrKey } from "@stellar/stellar-sdk";
-import { scValToNative } from "./scval.js";
+import { xdr, StrKey, scValToNative } from "@stellar/stellar-sdk";
 
 const EVENT_TYPES = { 0: "system", 1: "contract", 2: "diagnostic" };
 
@@ -21,8 +20,8 @@ export function resolveAddress(addr) {
   if (typeof addr !== "string") return addr;
   if (addr.startsWith("M")) {
     try {
-      const decoded = StrKey.decodeMuxedAccount(addr);
-      return StrKey.encodeEd25519PublicKey(decoded.ed25519);
+      const buf = Buffer.from(StrKey.decodeMed25519PublicKey(addr));
+      return StrKey.encodeEd25519PublicKey(buf.subarray(8));
     } catch {
       // not a valid muxed address — return as-is
     }
