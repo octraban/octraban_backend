@@ -1,8 +1,12 @@
 import express from "express";
 import http from "http";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
 import helmet from "helmet";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
+import swaggerUi from "swagger-ui-express";
 import { db } from "./db.js";
 import { analyzeSourceDependencies } from "./dependencyScanner.js";
 import { fetchTokenMetadata } from "./sep41Metadata.js";
@@ -52,6 +56,21 @@ export function startApi() {
   app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
   app.use(express.json());
   app.use(generalLimiter);
+
+  // ── API Documentation ────────────────────────────────────────────────────────
+  const openApiPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../openapi.yaml");
+  if (fs.existsSync(openApiPath)) {
+    const yaml = fs.readFileSync(openApiPath, "utf8");
+    import("yaml").then(({ parse }) => {
+      const spec = parse(yaml);
+      app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(spec, { customCss: ".swagger-ui .topbar { display: none }" }));
+    }).catch(() => {});
+  }
+
+  app.get("/api/openapi.yaml", (_req, res) => {
+    if (fs.existsSync(openApiPath)) res.type("yaml").sendFile(openApiPath);
+    else res.status(404).json({ error: "Not found" });
+  });
 
   // ── Existing endpoints ──────────────────────────────────────────────────────
 
