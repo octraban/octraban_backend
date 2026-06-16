@@ -1,5 +1,12 @@
 import express from "express";
 import http from "http";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+import helmet from "helmet";
+import cors from "cors";
+import rateLimit from "express-rate-limit";
+import swaggerUi from "swagger-ui-express";
 import { db } from "./db.js";
 import { analyzeSourceDependencies } from "./dependencyScanner.js";
 import { fetchTokenMetadata } from "./sep41Metadata.js";
@@ -8,20 +15,62 @@ import { bootstrapVault, refreshVaultRatio } from "./vaultIndexer.js";
 import { verifyAbi } from "./verify_abi.js";
 import { getMetrics } from "./rpcMetrics.js";
 import { getRpcNodeStatus } from "./rpcMultiNode.js";
-import { cacheAside, cacheDel } from "./metadataCache.js";  // Issue #137
-import { attachGraphQL } from "./graphql.js";               // Issue #139
-import { parseExecutionTrace } from "./executionTraceParser.js";     // Issue #174
-import { detectReentrancyFromParsed } from "./reentrancyTrapDetector.js"; // Issue #175
-import { parseDiagnosticEvents } from "./diagnosticParser.js";       // Issue #175
-import { annotateEvictionStates, summariseEvictionStats } from "./storageEvictionTracker.js"; // Issue #176
+import { cacheAside, cacheDel } from "./metadataCache.js";
+import { attachGraphQL } from "./graphql.js";
+import { parseExecutionTrace } from "./executionTraceParser.js";
+import { detectReentrancyFromParsed } from "./reentrancyTrapDetector.js";
+import { parseDiagnosticEvents } from "./diagnosticParser.js";
+import { annotateEvictionStates, summariseEvictionStats } from "./storageEvictionTracker.js";
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
 const RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
+const API_KEY = process.env.API_KEY;
+
+function requireApiKey(req, res, next) {
+  if (!API_KEY) return next();
+  const key = req.headers["x-api-key"];
+  if (!key || key !== API_KEY) return res.status(401).json({ error: "Unauthorized" });
+  next();
+}
+
+const generalLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests" },
+});
+
+const writeLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests" },
+});
 
 export function startApi() {
   const app = express();
+  app.use(helmet());
+  app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
   app.use(express.json());
+  app.use(generalLimiter);
+
+  // ── API Documentation ────────────────────────────────────────────────────────
+  const openApiPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../openapi.yaml");
+  if (fs.existsSync(openApiPath)) {
+    const yaml = fs.readFileSync(openApiPath, "utf8");
+    import("yaml").then(({ parse }) => {
+      const spec = parse(yaml);
+      app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(spec, { customCss: ".swagger-ui .topbar { display: none }" }));
+    }).catch(() => {});
+  }
+
+  app.get("/api/openapi.yaml", (_req, res) => {
+    if (fs.existsSync(openApiPath)) res.type("yaml").sendFile(openApiPath);
+    else res.status(404).json({ error: "Not found" });
+  });
 
   // ── Health check (used by Docker Compose) ──────────────────────────────
   app.get("/health", (_req, res) => res.json({ status: "ok" }));
@@ -117,7 +166,7 @@ export function startApi() {
   });
 
   // POST /api/contracts  — register ABI metadata
-  app.post("/api/contracts", async (req, res) => {
+  app.post("/api/contracts", writeLimiter, requireApiKey, async (req, res) => {
     try {
       const { id, functions } = req.body;
 
@@ -150,7 +199,7 @@ export function startApi() {
   });
 
   // POST /api/verify — verify ABI without registering
-  app.post("/api/verify", async (req, res) => {
+  app.post("/api/verify", writeLimiter, requireApiKey, async (req, res) => {
     try {
       const { contractId, functions } = req.body;
 
@@ -190,7 +239,7 @@ export function startApi() {
   });
 
   // POST /api/simulate — issue #46: simulate a contract call via RPC
-  app.post("/api/simulate", async (req, res) => {
+  app.post("/api/simulate", writeLimiter, requireApiKey, async (req, res) => {
     try {
       const { contractId, fn, args = [] } = req.body;
       if (!contractId || !fn) return res.status(400).json({ error: "Missing contractId or fn" });
@@ -227,7 +276,7 @@ export function startApi() {
   });
 
   // POST /api/sandbox/simulate — accepts a raw XDR TransactionEnvelope, simulates it directly
-  app.post("/api/sandbox/simulate", async (req, res) => {
+  app.post("/api/sandbox/simulate", writeLimiter, requireApiKey, async (req, res) => {
     try {
       const { xdrEnvelope } = req.body;
       if (!xdrEnvelope) return res.status(400).json({ error: "Missing xdrEnvelope" });
@@ -379,7 +428,7 @@ export function startApi() {
   // ── POST /api/auth-tree — parse multi-sig ContractAuth trees ───────────────
   // Body: { auth: string[] }  — array of base64 SorobanAuthorizationEntry XDRs
   // Returns: ordered array of { signer, invocations: [{ depth, scope }] }
-  app.post("/api/auth-tree", async (req, res) => {
+  app.post("/api/auth-tree", writeLimiter, requireApiKey, async (req, res) => {
     try {
       const { auth } = req.body;
       if (!Array.isArray(auth)) return res.status(400).json({ error: "auth must be an array" });
@@ -416,7 +465,7 @@ export function startApi() {
 
   // POST /api/contracts/:id/source-verifications
   // Body: { wasm_hash, signer, signature, compiler_hash }
-  app.post("/api/contracts/:id/source-verifications", async (req, res) => {
+  app.post("/api/contracts/:id/source-verifications", writeLimiter, requireApiKey, async (req, res) => {
     try {
       const { wasm_hash, signer, signature, compiler_hash } = req.body;
       if (!wasm_hash || !signer || !signature || !compiler_hash) {
@@ -522,7 +571,9 @@ export function startApi() {
 
   // ── Start HTTP + WebSocket server ───────────────────────────────────────────
   const server = http.createServer(app);
-  attachWebSocketServer(server);                // Issue #39
+  attachWebSocketServer(server);
+
+  server.on("close", () => console.log("[api] server closed"));
   server.listen(PORT, () => console.log(`API listening on :${PORT}`));
   return server;
 }

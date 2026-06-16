@@ -1,0 +1,479 @@
+openapi: "3.1.0"
+info:
+  title: Soroban Smart Block Explorer API
+  version: "0.1.0"
+  description: Human-readable Soroban contract event explorer for the Stellar blockchain.
+
+servers:
+  - url: https://localhost:3001
+    description: Local development
+
+paths:
+  /api/events:
+    get:
+      summary: List contract events (offset pagination)
+      parameters:
+        - name: contract
+          in: query
+          schema: { type: string }
+          description: Filter by contract ID
+        - name: fn
+          in: query
+          schema: { type: string }
+          description: Filter by function name
+        - name: type
+          in: query
+          schema: { type: string, enum: [soroban, classic] }
+          description: Filter by transaction type
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+      responses:
+        "200":
+          description: Array of decoded events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DecodedEvent"
+
+  /api/v1/events:
+    get:
+      summary: List contract events (cursor pagination)
+      parameters:
+        - name: contract
+          in: query
+          schema: { type: string }
+        - name: fn
+          in: query
+          schema: { type: string }
+        - name: type
+          in: query
+          schema: { type: string, enum: [soroban, classic] }
+        - name: after
+          in: query
+          schema: { type: integer }
+          description: Event seq cursor from previous page
+        - name: limit
+          in: query
+          schema: { type: integer, maximum: 200, default: 25 }
+      responses:
+        "200":
+          description: Paginated events with next_cursor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/DecodedEvent" } }
+                  next_cursor: { type: integer, nullable: true }
+
+  /api/events/{seq}:
+    get:
+      summary: Get single event by sequence number
+      parameters:
+        - name: seq
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Decoded event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecodedEvent"
+        "404":
+          description: Event not found
+
+  /api/events/{seq}/zk-costs:
+    get:
+      summary: Get ZK host function costs for an event
+      parameters:
+        - name: seq
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: ZK cost breakdown
+
+  /api/contracts/{id}:
+    get:
+      summary: Get contract metadata
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Contract metadata with dependency advisory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContractMeta"
+    post:
+      summary: Register contract ABI metadata
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContractRegistration"
+      responses:
+        "201":
+          description: Contract registered
+        "400":
+          description: Invalid input or ABI verification failed
+
+  /api/contracts/{id}/build-metadata:
+    get:
+      summary: Get WASM build metadata for a contract
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Build metadata (compiler, SDK, repository)
+
+  /api/contracts/{id}/abi:
+    get:
+      summary: Download standardized ABI JSON for a contract
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: ABI JSON file
+
+  /api/contracts/{id}/transactions:
+    get:
+      summary: Get paginated transaction history for a contract
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: function_name
+          in: query
+          schema: { type: string }
+        - name: start_ledger
+          in: query
+          schema: { type: integer }
+        - name: end_ledger
+          in: query
+          schema: { type: integer }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, maximum: 100, default: 25 }
+      responses:
+        "200":
+          description: Paginated transaction list
+
+  /api/contracts/{id}/upgrades:
+    get:
+      summary: Get contract WASM upgrade lineage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Upgrade history
+
+  /api/contracts/{id}/ttl:
+    get:
+      summary: Get live TTL status for contract instance and code
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: TTL expiration ledgers
+
+  /api/contracts/{id}/state-diffs:
+    get:
+      summary: Get storage state-diff timeline
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: key
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, maximum: 500, default: 200 }
+      responses:
+        "200":
+          description: State diff entries
+
+  /api/wallet/{address}:
+    get:
+      summary: Get events involving a wallet address
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Events matching address
+
+  /api/tokens/{id}/holders:
+    get:
+      summary: Get token holders and balances
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Holders list with balances
+
+  /api/tokens/{id}/volume:
+    get:
+      summary: Get 24-hour transfer volume
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 24h volume data
+
+  /api/spec/{id}:
+    get:
+      summary: Get on-chain contract spec (functions)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Contract spec functions
+
+  /api/verify:
+    post:
+      summary: Verify ABI against on-chain spec without registering
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                contractId: { type: string }
+                functions:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/FunctionSpec"
+      responses:
+        "200":
+          description: Verification result
+
+  /api/simulate:
+    post:
+      summary: Simulate a contract call
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                contractId: { type: string }
+                fn: { type: string }
+                args: { type: array }
+      responses:
+        "200":
+          description: Simulation result
+
+  /api/sandbox/simulate:
+    post:
+      summary: Simulate a raw XDR transaction envelope
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                xdrEnvelope: { type: string }
+      responses:
+        "200":
+          description: Simulation result
+
+  /api/auth-tree:
+    post:
+      summary: Parse multi-sig ContractAuth trees
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                auth:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200":
+          description: Parsed auth tree
+
+  /api/burn-alerts:
+    get:
+      summary: Get suspicious burn sequence alerts
+      parameters:
+        - name: contract
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Burn alerts
+
+  /api/rpc-metrics:
+    get:
+      summary: Get RPC node performance metrics
+      responses:
+        "200":
+          description: RPC metrics
+
+  /api/rpc-nodes:
+    get:
+      summary: Get live RPC node health status
+      responses:
+        "200":
+          description: RPC node statuses
+
+  /api/contracts/{id}/circuit-breaker:
+    get:
+      summary: Get circuit breaker pause status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Circuit breaker status
+
+  /api/contracts/{id}/migration-status:
+    get:
+      summary: Get SEP-49 migration tracker status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Migration status
+
+  /api/contracts/{id}/rwa-metadata:
+    get:
+      summary: Get RWA-specific metadata
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: RWA metadata
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: API key for write operations. Set via API_KEY environment variable.
+
+  schemas:
+    DecodedEvent:
+      type: object
+      properties:
+        seq: { type: integer }
+        contract_id: { type: string }
+        function: { type: string }
+        ledger: { type: integer }
+        tx_hash: { type: string }
+        description: { type: string }
+        raw_topics: { type: array, items: { type: string } }
+        raw_data: { type: string }
+        cpu_instructions: { type: integer, nullable: true }
+        mem_bytes: { type: integer, nullable: true }
+        fee_charged: { type: integer, nullable: true }
+        is_high_bloat_risk: { type: boolean }
+        upgrade_info: { type: object, nullable: true }
+        storage_tiers: { type: object, nullable: true }
+
+    ContractMeta:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        functions:
+          type: array
+          items:
+            $ref: "#/components/schemas/FunctionSpec"
+        has_circuit_breaker: { type: boolean }
+        is_paused: { type: boolean }
+        is_rwa: { type: boolean }
+        rwa_type: { type: string, nullable: true }
+        dependency_advisory:
+          type: object
+          nullable: true
+
+    ContractRegistration:
+      type: object
+      required: [id, functions]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        functions:
+          type: array
+          items:
+            $ref: "#/components/schemas/FunctionSpec"
+
+    FunctionSpec:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        args:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              type: { type: string }

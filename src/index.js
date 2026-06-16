@@ -202,7 +202,7 @@ async function indexLedger(ledger) {
     }
 
     // Scan transactions for UploadContractWasm operations (non-blocking)
-    indexWasmUploads(pageTxHashes, ledger).catch(err =>
+    indexWasmUploads(uniqueTxHashes, ledger).catch(err =>
       console.error("[wasmUpload] batch error:", err.message)
     );
 
@@ -218,9 +218,11 @@ async function indexLedger(ledger) {
   return latestLedger;
 }
 
+let shutdown = false;
+
 async function run() {
   await db.init();
-  startApi();
+  const server = startApi();
   startAbiSync();
   startBurnDetector();
   startMetricsCollector();  // Issue #115 — RPC latency probes
@@ -241,17 +243,23 @@ async function run() {
 
   console.log(`[daemon] starting from ledger ${_cursor}`);
 
-  while (true) {
+  while (!shutdown) {
     try {
       const latest = await indexLedger(_cursor);
-      // Advance cursor to the ledger after the last one the RPC reported
       _cursor = latest + 1;
       await db.saveCursor(_cursor);
     } catch (err) {
       console.error("[daemon] indexer error:", err.message);
     }
-    await new Promise(r => setTimeout(r, POLL_MS));
+    if (!shutdown) await new Promise(r => setTimeout(r, POLL_MS));
   }
+
+  console.log("[daemon] shutting down");
+  server?.close();
+  process.exit(0);
 }
+
+process.on("SIGTERM", () => { shutdown = true; console.log("[daemon] SIGTERM received"); });
+process.on("SIGINT", () => { shutdown = true; console.log("[daemon] SIGINT received"); });
 
 run();

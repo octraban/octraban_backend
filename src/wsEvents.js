@@ -9,17 +9,16 @@
 
 import { EventEmitter } from "events";
 import { WebSocketServer } from "ws";
+import url from "url";
 
-// Internal pub/sub bus — shared across the process
+const API_KEY = process.env.API_KEY;
 const bus = new EventEmitter();
-bus.setMaxListeners(0); // allow unlimited subscribers
+bus.setMaxListeners(0);
 
-/** Publish a decoded event to all connected WebSocket clients. */
 export function publish(event) {
   bus.emit("event", event);
 }
 
-/** Publish a vault conversion-ratio update to all connected WebSocket clients. */
 export function publishVaultRatio(snapshot) {
   bus.emit("vault_ratio", {
     contract_id:  snapshot.contract_id,
@@ -30,40 +29,46 @@ export function publishVaultRatio(snapshot) {
   });
 }
 
-/**
- * Issue #142: Publish a new cross-contract call link to all connected clients.
- * @param {{ caller: string, callee: string, fn: string, ledger: number }} link
- */
 export function publishContractLink(link) {
   bus.emit("contract_link", link);
 }
 
-/**
- * Attach a WebSocket server to an existing HTTP server instance.
- *
- * @param {import("http").Server} httpServer
- */
-export function attachWebSocketServer(httpServer) {
-  const wss = new WebSocketServer({ server: httpServer });
+function isOriginAllowed(origin) {
+  if (!origin) return false;
+  const allowed = process.env.CORS_ORIGIN || "*";
+  if (allowed === "*") return true;
+  return allowed.split(",").some(a => a.trim() === origin);
+}
 
-  wss.on("connection", (ws) => {
+export function attachWebSocketServer(httpServer) {
+  const wss = new WebSocketServer({
+    server: httpServer,
+    verifyClient: (info, cb) => {
+      const params = new url.URL(info.req.url || "", "http://localhost").searchParams;
+      const key = params.get("api_key");
+      if (API_KEY && key !== API_KEY) {
+        cb(false, 401, "Unauthorized");
+        return;
+      }
+      cb(true);
+    },
+  });
+
+  wss.on("connection", (ws, req) => {
     console.log("[ws] Client connected");
 
-    // Forward every published event to this client
     const handler = (event) => {
       if (ws.readyState === ws.OPEN) {
         ws.send(JSON.stringify({ type: "event", data: event }));
       }
     };
 
-    // Forward vault ratio updates
     const vaultHandler = (snapshot) => {
       if (ws.readyState === ws.OPEN) {
         ws.send(JSON.stringify({ type: "vault_ratio", data: snapshot }));
       }
     };
 
-    // Forward contract link updates (Issue #142)
     const linkHandler = (link) => {
       if (ws.readyState === ws.OPEN) {
         ws.send(JSON.stringify({ type: "contract_link", data: link }));
@@ -88,7 +93,6 @@ export function attachWebSocketServer(httpServer) {
       bus.off("contract_link", linkHandler);
     });
 
-    // Acknowledge connection
     ws.send(JSON.stringify({ type: "connected", message: "Soroban event stream ready" }));
   });
 
