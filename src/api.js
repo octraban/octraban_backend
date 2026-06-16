@@ -21,6 +21,9 @@ import { parseExecutionTrace } from "./executionTraceParser.js";
 import { detectReentrancyFromParsed } from "./reentrancyTrapDetector.js";
 import { parseDiagnosticEvents } from "./diagnosticParser.js";
 import { annotateEvictionStates, summariseEvictionStats } from "./storageEvictionTracker.js";
+import { runAllChecks } from "./doctor-lib.js";
+import pg from "pg";
+
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
@@ -564,6 +567,78 @@ export function startApi() {
         code:     { live_until_ledger: codeTTL },
       });
     } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Setup Wizard & Diagnostics Endpoints ────────────────────────────────────
+  app.get("/api/setup/doctor", async (req, res) => {
+    try {
+      const report = await runAllChecks();
+      res.json(report);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/setup/test-db", async (req, res) => {
+    try {
+      const { databaseUrl } = req.body;
+      if (!databaseUrl) return res.status(400).json({ error: "Missing databaseUrl" });
+      const client = new pg.Client({ connectionString: databaseUrl, connectionTimeoutMillis: 3000 });
+      await client.connect();
+      await client.query("SELECT 1");
+      await client.end();
+      res.json({ success: true });
+    } catch (e) {
+      res.json({ success: false, error: e.message });
+    }
+  });
+
+  app.post("/api/setup/save-config", async (req, res) => {
+    try {
+      const { sorobanRpcUrl, databaseUrl, pollMs } = req.body;
+      const envPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.env");
+      let envContent = "";
+      if (fs.existsSync(envPath)) {
+        envContent = fs.readFileSync(envPath, "utf8");
+      }
+      const updateEnvVar = (key, val) => {
+        if (!val) return;
+        const regex = new RegExp(`^#?\\s*${key}=.*$`, "m");
+        if (regex.test(envContent)) {
+          envContent = envContent.replace(regex, `${key}=${val}`);
+        } else {
+          envContent += `\n${key}=${val}`;
+        }
+      };
+      updateEnvVar("SOROBAN_RPC_URL", sorobanRpcUrl);
+      updateEnvVar("DATABASE_URL", databaseUrl);
+      updateEnvVar("POLL_MS", pollMs);
+      fs.writeFileSync(envPath, envContent, "utf8");
+
+      // Update current process environment
+      if (sorobanRpcUrl) process.env.SOROBAN_RPC_URL = sorobanRpcUrl;
+      if (databaseUrl) process.env.DATABASE_URL = databaseUrl;
+      if (pollMs) process.env.POLL_MS = pollMs;
+
+      res.json({ success: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/setup/db-init", async (req, res) => {
+    try {
+      // 1. Run migrations
+      await db.init();
+
+      // 2. Load seed data using seed-lib
+      const { seed } = await import("./seed-lib.js");
+      await seed(process.env.DATABASE_URL);
+
+      res.json({ success: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // ── Issue #139: GraphQL endpoint ───────────────────────────────────────────
