@@ -642,74 +642,67 @@ export function startApi() {
     }
   });
 
-  // ── Sandbox IDE routes ─────────────────────────────────────────────────────
-  // Create or update sandbox
-  app.post('/api/sandbox', async (req, res) => {
+  // ── Issue #215: CSV/JSON export endpoints ─────────────────────────────────
+
+  function rowsToCsv(rows, columns) {
+    if (!rows.length) return columns.join(",") + "\n";
+    const escape = (v) => {
+      if (v == null) return "";
+      const s = String(v);
+      return s.includes(",") || s.includes('"') || s.includes("\n")
+        ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = columns.join(",");
+    const body = rows.map(r => columns.map(c => escape(r[c])).join(",")).join("\n");
+    return header + "\n" + body + "\n";
+  }
+
+  const EVENT_COLUMNS = [
+    "seq", "contract_id", "function", "ledger", "tx_hash", "description",
+    "cpu_instructions", "mem_bytes", "fee_charged", "is_clawback", "is_high_bloat_risk",
+  ];
+
+  const CONTRACT_COLUMNS = [
+    "id", "name", "description", "registered_by",
+    "has_circuit_breaker", "is_paused", "is_rwa", "rwa_type", "created_at",
+  ];
+
+  // GET /api/export/events?format=csv|json&contract=&fn=&type=&limit=
+  app.get("/api/export/events", async (req, res) => {
     try {
-      const { sandboxId, templateId, files, metadata } = req.body;
-
-      if (!sandboxId || !templateId) {
-        return res.status(400).json({ error: 'sandboxId and templateId required' });
-      }
-
-      const filesJson = JSON.stringify(files);
-      const metadataJson = JSON.stringify(metadata || {});
-
-      await db.query(
-        `INSERT INTO sandboxes (sandbox_id, template_id, files, metadata, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, NOW(), NOW())
-         ON CONFLICT (sandbox_id) DO UPDATE SET
-         files = $3, metadata = $4, updated_at = NOW()`,
-        [sandboxId, templateId, filesJson, metadataJson]
-      );
-
-      res.json({ success: true, sandboxId });
-    } catch (error) {
-      console.error('Failed to save sandbox:', error);
-      res.status(500).json({ error: 'Failed to save sandbox' });
-    }
-  });
-
-  // Get sandbox by ID
-  app.get('/api/sandbox/:id', async (req, res) => {
-    try {
-      const { id } = req.params;
-
-      const result = await db.query(
-        `SELECT sandbox_id, template_id, files, metadata, created_at, updated_at
-         FROM sandboxes WHERE sandbox_id = $1`,
-        [id]
-      );
-
-      if (result.rows.length === 0) {
-        return res.status(404).json({ error: 'Sandbox not found' });
-      }
-
-      const sandbox = result.rows[0];
-      res.json({
-        sandboxId: sandbox.sandbox_id,
-        templateId: sandbox.template_id,
-        files: JSON.parse(sandbox.files),
-        metadata: JSON.parse(sandbox.metadata || '{}'),
-        createdAt: sandbox.created_at,
-        updatedAt: sandbox.updated_at,
+      const format = req.query.format === "json" ? "json" : "csv";
+      const limit  = Math.min(Number(req.query.limit) || 10000, 10000);
+      const rows   = await db.getEventsForExport({
+        contract: req.query.contract,
+        fn:       req.query.fn,
+        type:     req.query.type,
+        limit,
       });
-    } catch (error) {
-      console.error('Failed to fetch sandbox:', error);
-      res.status(500).json({ error: 'Failed to fetch sandbox' });
-    }
+      if (format === "json") {
+        res.setHeader("Content-Disposition", 'attachment; filename="events.json"');
+        res.setHeader("Content-Type", "application/json");
+        return res.json(rows);
+      }
+      res.setHeader("Content-Disposition", 'attachment; filename="events.csv"');
+      res.setHeader("Content-Type", "text/csv");
+      return res.send(rowsToCsv(rows, EVENT_COLUMNS));
+    } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // Delete sandbox
-  app.delete('/api/sandbox/:id', async (req, res) => {
+  // GET /api/export/contracts?format=csv|json
+  app.get("/api/export/contracts", async (req, res) => {
     try {
-      const { id } = req.params;
-      await db.query('DELETE FROM sandboxes WHERE sandbox_id = $1', [id]);
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Failed to delete sandbox:', error);
-      res.status(500).json({ error: 'Failed to delete sandbox' });
-    }
+      const format = req.query.format === "json" ? "json" : "csv";
+      const rows   = await db.getContractsForExport();
+      if (format === "json") {
+        res.setHeader("Content-Disposition", 'attachment; filename="contracts.json"');
+        res.setHeader("Content-Type", "application/json");
+        return res.json(rows);
+      }
+      res.setHeader("Content-Disposition", 'attachment; filename="contracts.csv"');
+      res.setHeader("Content-Type", "text/csv");
+      return res.send(rowsToCsv(rows, CONTRACT_COLUMNS));
+    } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // ── Issue #139: GraphQL endpoint ───────────────────────────────────────────
