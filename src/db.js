@@ -748,4 +748,32 @@ export const db = {
       [contractId, from, amount]
     );
   },
+
+  // Issue #215: data export — events (CSV/JSON)
+  async getEventsForExport({ contract, fn, type, limit = 10000 } = {}) {
+    const conditions = [];
+    const params = [];
+    if (contract) { params.push(contract); conditions.push(`contract_id = $${params.length}`); }
+    if (fn)       { params.push(fn);       conditions.push(`function = $${params.length}`); }
+    if (type === "soroban") { conditions.push(`contract_id IS NOT NULL AND contract_id <> ''`); }
+    if (type === "classic") { conditions.push(`(contract_id IS NULL OR contract_id = '')`); }
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+    params.push(Math.min(limit, 10000));
+    const { rows } = await pool.query(
+      `SELECT seq, contract_id, function, ledger, tx_hash, description,
+              cpu_instructions, mem_bytes, fee_charged, is_clawback, is_high_bloat_risk
+       FROM events ${where} ORDER BY seq DESC LIMIT $${params.length}`,
+      params
+    );
+    return rows;
+  },
+
+  // Issue #215: data export — registered contracts (CSV/JSON)
+  async getContractsForExport() {
+    const { rows } = await pool.query(
+      `SELECT id, name, description, registered_by, has_circuit_breaker, is_paused, is_rwa, rwa_type, created_at
+       FROM contracts ORDER BY created_at DESC`
+    );
+    return rows;
+  },
 };
