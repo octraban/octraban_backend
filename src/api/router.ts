@@ -33,6 +33,7 @@ import { systemicRouter } from './systemic';
 import { benchmarkRouter } from './benchmarks';
 import { networkRouter } from './network';
 import { emergencyBaseRouter } from './emergency-router';
+import { stellarRouter } from './stellar';
 
 export const router = Router();
 
@@ -69,3 +70,4 @@ router.use('/systemic', systemicRouter);
 router.use('/benchmarks', benchmarkRouter);
 router.use('/network', networkRouter);
 router.use('/emergency', emergencyBaseRouter);
+router.use('/stellar', stellarRouter);
