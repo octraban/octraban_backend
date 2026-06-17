@@ -22,6 +22,8 @@ import { handleVaultEvent, refreshAllVaults } from "./vaultIndexer.js";
 import { processCircuitBreakerEvent } from "./circuitBreakerIndexer.js";
 import { startGasGuzzlersWorker } from "./gasGuzzlers.js";
 import { recordLedgerHash } from "./reorgWorker.js";
+import { warmCache } from "./cacheWarming.js";
+import { cacheInvalidate } from "./cacheLayer.js";
 
 const RPC_URL =
   process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
@@ -196,6 +198,11 @@ async function indexLedger(ledger) {
     pageCursor = res.events.length === PAGE_LIMIT ? res.cursor : undefined;
   } while (pageCursor);
 
+  // Invalidate events list cache after each ledger so stale pages are evicted.
+  if (latestLedger > ledger) {
+    cacheInvalidate("events:list:*").catch(() => {});
+  }
+
   return latestLedger;
 }
 
@@ -204,6 +211,7 @@ let shutdown = false;
 async function run() {
   await db.init();
   const server = startApi();
+  warmCache().catch((e) => console.warn("[daemon] cache warm failed:", e.message));
   startAbiSync();
   startBurnDetector();
   startMetricsCollector(); // Issue #115 — RPC latency probes

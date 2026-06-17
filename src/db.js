@@ -912,4 +912,21 @@ export const db = {
     );
     return rows;
   },
+
+  async query(sql, params = []) {
+    return pool.query(sql, params);
+  },
+
+  async getTopContracts(limit = 10) {
+    const { rows } = await pool.query(
+      `SELECT contract_id, COUNT(*) AS event_count
+       FROM events
+       WHERE contract_id IS NOT NULL AND contract_id <> ''
+       GROUP BY contract_id
+       ORDER BY event_count DESC
+       LIMIT $1`,
+      [limit],
+    );
+    return rows;
+  },
 };

@@ -14,7 +14,19 @@ import { attachWebSocketServer } from "./wsEvents.js";
 import { verifyAbi } from "./verify_abi.js";
 import { getMetrics } from "./rpcMetrics.js";
 import { getRpcNodeStatus } from "./rpcMultiNode.js";
-import { cacheAside, cacheDel } from "./metadataCache.js";
+import {
+  cacheAside,
+  cacheInvalidate,
+  cacheDel,
+  cacheGet,
+  cacheSet,
+  generateETag,
+  getTTL,
+  recordCachedLatency,
+  recordUncachedLatency,
+  getAnalytics,
+} from "./cacheLayer.js";
+import { recordAccess, schedulePrefetch } from "./prefetchEngine.js";
 import { attachGraphQL } from "./graphql.js";
 import { runAllChecks } from "./doctor-lib.js";
 import pg from "pg";
@@ -33,6 +45,50 @@ function requireApiKey(req, res, next) {
   if (!key || key !== API_KEY)
     return res.status(401).json({ error: "Unauthorized" });
   next();
+}
+
+// ── Cache middleware factory ──────────────────────────────────────────────────
+// Creates an Express middleware that serves from L1/L2 cache on hit,
+// intercepts res.json on miss to cache the response and attach headers.
+function makeCache(cacheType, getKey) {
+  return async (req, res, next) => {
+    const key = getKey(req);
+    const start = Date.now();
+
+    const cached = await cacheGet(key, cacheType);
+    if (cached !== null) {
+      const etag = generateETag(cached);
+      if (req.headers["if-none-match"] === etag) {
+        recordCachedLatency(Date.now() - start);
+        return res.status(304).end();
+      }
+      const { l3 } = getTTL(cacheType);
+      res.setHeader("Cache-Control", l3);
+      res.setHeader("ETag", etag);
+      res.setHeader("X-Cache", "HIT");
+      recordCachedLatency(Date.now() - start);
+      recordAccess(key);
+      return res.json(cached);
+    }
+
+    // Miss: intercept res.json to cache the successful response
+    const originalJson = res.json.bind(res);
+    res.json = (data) => {
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        const computeMs = Date.now() - start;
+        const etag = generateETag(data);
+        const { l3 } = getTTL(cacheType);
+        res.setHeader("Cache-Control", l3);
+        res.setHeader("ETag", etag);
+        res.setHeader("X-Cache", "MISS");
+        cacheSet(key, data, cacheType, computeMs).catch(() => {});
+        recordUncachedLatency(computeMs);
+        recordAccess(key);
+      }
+      return originalJson(data);
+    };
+    next();
+  };
 }
 
 const generalLimiter = rateLimit({
@@ -90,30 +146,52 @@ export function startApi() {
   // ── Existing endpoints ──────────────────────────────────────────────────────
 
   // GET /api/events?contract=&fn=&page=
-  app.get("/api/events", async (req, res) => {
-    try {
-      const events = await db.getEvents({
-        contract: req.query.contract,
-        fn: req.query.fn,
-        page: Number(req.query.page) || 1,
-        type: req.query.type,
-      });
-      res.json(events);
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
+  app.get(
+    "/api/events",
+    makeCache("events_list", (req) => {
+      const { contract = "", fn = "", page = "1", type = "" } = req.query;
+      return `events:list:${contract}:${fn}:${page}:${type}`;
+    }),
+    async (req, res) => {
+      try {
+        const key = `events:list:${req.query.contract ?? ""}:${req.query.fn ?? ""}:${Number(req.query.page) || 1}:${req.query.type ?? ""}`;
+        const events = await db.getEvents({
+          contract: req.query.contract,
+          fn: req.query.fn,
+          page: Number(req.query.page) || 1,
+          type: req.query.type,
+        });
+        // Predictive pre-fetch: next page if user is paginating
+        schedulePrefetch(key, {
+          [`events:list:${req.query.contract ?? ""}:${req.query.fn ?? ""}:${(Number(req.query.page) || 1) + 1}:${req.query.type ?? ""}`]: () =>
+            db.getEvents({
+              contract: req.query.contract,
+              fn: req.query.fn,
+              page: (Number(req.query.page) || 1) + 1,
+              type: req.query.type,
+            }),
+        });
+        res.json(events);
+      } catch (e) {
+        res.status(500).json({ error: e.message });
+      }
+    },
+  );
 
   // GET /api/events/:seq
-  app.get("/api/events/:seq", async (req, res) => {
-    try {
-      const ev = await db.getEvent(Number(req.params.seq));
-      if (!ev) return res.status(404).json({ error: "Not found" });
-      res.json(ev);
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
+  app.get(
+    "/api/events/:seq",
+    makeCache("events_single", (req) => `events:single:${req.params.seq}`),
+    async (req, res) => {
+      try {
+        const ev = await db.getEvent(Number(req.params.seq));
+        if (!ev) return res.status(404).json({ error: "Not found" });
+        res.json(ev);
+      } catch (e) {
+        res.status(500).json({ error: e.message });
+      }
+    },
+  );
 
   // Issue #164 — GET /api/events/:seq/zk-costs
   // Returns the ZK host function call list and cost delta for a single event.
@@ -133,27 +211,34 @@ export function startApi() {
   });
 
   // GET /api/contracts/:id
-  app.get("/api/contracts/:id", async (req, res) => {
-    try {
-      // Issue #137: cache contract metadata (Cache-Aside, TTL 60 s)
-      const cacheKey = `contract:meta:${req.params.id}`;
-      const meta = await cacheAside(cacheKey, () =>
-        db.getContractMeta(req.params.id),
-      );
-      if (!meta) return res.status(404).json({ error: "Not found" });
+  app.get(
+    "/api/contracts/:id",
+    makeCache(
+      "contracts_single",
+      (req) => `contracts:single:${req.params.id}`,
+    ),
+    async (req, res) => {
+      try {
+        const meta = await cacheAside(
+          `contracts:single:${req.params.id}`,
+          () => db.getContractMeta(req.params.id),
+          "contracts_single",
+        );
+        if (!meta) return res.status(404).json({ error: "Not found" });
 
-      const sourceFiles = Array.isArray(meta.source_files)
-        ? meta.source_files
-        : meta.source_files
-          ? JSON.parse(meta.source_files)
-          : [];
+        const sourceFiles = Array.isArray(meta.source_files)
+          ? meta.source_files
+          : meta.source_files
+            ? JSON.parse(meta.source_files)
+            : [];
 
-      const advisory = await analyzeSourceDependencies(sourceFiles);
-      res.json({ ...meta, dependency_advisory: advisory });
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
+        const advisory = await analyzeSourceDependencies(sourceFiles);
+        res.json({ ...meta, dependency_advisory: advisory });
+      } catch (e) {
+        res.status(500).json({ error: e.message });
+      }
+    },
+  );
 
   // GET /api/contracts/:id/build-metadata — WASM build metadata (compiler, SDK, repo link)
   app.get("/api/contracts/:id/build-metadata", async (req, res) => {
@@ -226,7 +311,7 @@ export function startApi() {
       }
 
       await db.upsertContractMeta(req.body);
-      await cacheDel(`contract:meta:${id}`); // Issue #137: bust cache on update
+      await cacheInvalidate(`contracts:single:${id}`);
       res.status(201).json({ ok: true });
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -859,6 +944,37 @@ export function startApi() {
       res.status(500).json({ error: e.message });
     }
   });
+
+  // ── Cache analytics endpoint ───────────────────────────────────────────────
+  // GET /api/cache/stats — hit rates, latency, invalidations, top keys, etc.
+  app.get("/api/cache/stats", (_req, res) => {
+    try {
+      res.json(getAnalytics());
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── Stats endpoint (cached) ────────────────────────────────────────────────
+  // GET /api/stats — aggregate counts for events and contracts
+  app.get(
+    "/api/stats",
+    makeCache("stats", () => "stats:global"),
+    async (_req, res) => {
+      try {
+        const [eventsResult, contractsResult] = await Promise.all([
+          db.query("SELECT COUNT(*) AS total FROM events"),
+          db.query("SELECT COUNT(*) AS total FROM contracts"),
+        ]);
+        res.json({
+          events: Number(eventsResult.rows[0].total),
+          contracts: Number(contractsResult.rows[0].total),
+        });
+      } catch (e) {
+        res.status(500).json({ error: e.message });
+      }
+    },
+  );
 
   // ── Issue #139: GraphQL endpoint ───────────────────────────────────────────
   attachGraphQL(app);
