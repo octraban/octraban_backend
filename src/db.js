@@ -151,6 +151,68 @@ export const db = {
       );
       CREATE INDEX IF NOT EXISTS idx_quorum_freezes_contract
         ON quorum_freezes(contract_id);
+
+      CREATE TABLE IF NOT EXISTS vaults (
+        contract_id     TEXT PRIMARY KEY,
+        name            TEXT,
+        underlying_asset TEXT,
+        decimals        INT DEFAULT 7,
+        active          BOOLEAN DEFAULT TRUE,
+        created_at      TIMESTAMPTZ DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS vault_snapshots (
+        id            BIGSERIAL PRIMARY KEY,
+        contract_id   TEXT NOT NULL REFERENCES vaults(contract_id),
+        ledger        BIGINT NOT NULL,
+        total_assets  TEXT NOT NULL,
+        total_supply  TEXT NOT NULL,
+        ratio         TEXT NOT NULL,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_vault_snapshots_contract
+        ON vault_snapshots(contract_id, ledger DESC);
+
+      CREATE TABLE IF NOT EXISTS token_holders (
+        id            BIGSERIAL PRIMARY KEY,
+        contract_id   TEXT NOT NULL,
+        address       TEXT NOT NULL,
+        balance_raw   TEXT NOT NULL DEFAULT '0',
+        updated_at    TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (contract_id, address)
+      );
+      CREATE INDEX IF NOT EXISTS idx_token_holders_contract
+        ON token_holders(contract_id);
+
+      CREATE TABLE IF NOT EXISTS privileged_roles (
+        id            BIGSERIAL PRIMARY KEY,
+        contract_id   TEXT NOT NULL,
+        role          TEXT NOT NULL,
+        address       TEXT NOT NULL,
+        revoked       BOOLEAN NOT NULL DEFAULT FALSE,
+        ledger        BIGINT,
+        updated_at    TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (contract_id, role, address)
+      );
+      CREATE INDEX IF NOT EXISTS idx_privileged_roles_contract
+        ON privileged_roles(contract_id);
+
+      CREATE TABLE IF NOT EXISTS wasm_build_metadata (
+        wasm_hash     TEXT PRIMARY KEY,
+        contract_id   TEXT,
+        sdk_version   TEXT,
+        compiler      TEXT,
+        optimizer     TEXT,
+        repository    TEXT,
+        commit        TEXT,
+        producers     JSONB,
+        ledger        BIGINT,
+        tx_hash       TEXT,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_wasm_build_contract
+        ON wasm_build_metadata(contract_id);
     `);
   },
 
@@ -628,5 +690,62 @@ export const db = {
       [limit]
     );
     return rows.map(r => ({ caller: r.caller, callee: r.callee, call_count: Number(r.call_count) }));
+  },
+
+  // ── Token holders ──────────────────────────────────────────────────────────
+
+  async getTokenHolders(contractId) {
+    const { rows } = await pool.query(
+      `SELECT address, balance_raw FROM token_holders
+       WHERE contract_id = $1
+       ORDER BY balance_raw::NUMERIC DESC`,
+      [contractId]
+    );
+    return rows;
+  },
+
+  async applyTransfer(contractId, from, to, amount) {
+    const client = pool;
+    await client.query("BEGIN");
+    try {
+      await client.query(
+        `INSERT INTO token_holders (contract_id, address, balance_raw)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (contract_id, address)
+         DO UPDATE SET balance_raw = (COALESCE(NULLIF(token_holders.balance_raw, ''), '0')::NUMERIC - $3::NUMERIC)::TEXT`,
+        [contractId, from, amount]
+      );
+      await client.query(
+        `INSERT INTO token_holders (contract_id, address, balance_raw)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (contract_id, address)
+         DO UPDATE SET balance_raw = (COALESCE(NULLIF(token_holders.balance_raw, ''), '0')::NUMERIC + $3::NUMERIC)::TEXT`,
+        [contractId, to, amount]
+      );
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    }
+  },
+
+  async applyMint(contractId, to, amount) {
+    await pool.query(
+      `INSERT INTO token_holders (contract_id, address, balance_raw)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (contract_id, address)
+       DO UPDATE SET balance_raw = (COALESCE(NULLIF(token_holders.balance_raw, ''), '0')::NUMERIC + $3::NUMERIC)::TEXT`,
+      [contractId, to, amount]
+    );
+  },
+
+  async applyBurn(contractId, from, amount) {
+    await pool.query(
+      `INSERT INTO token_holders (contract_id, address, balance_raw)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (contract_id, address)
+       DO UPDATE SET balance_raw = (COALESCE(NULLIF(token_holders.balance_raw, ''), '0')::NUMERIC - $3::NUMERIC)::TEXT`,
+      [contractId, from, amount]
+    );
   },
 };

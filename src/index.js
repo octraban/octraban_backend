@@ -16,6 +16,13 @@ import { extractStateDiffs } from "./stateDiffIndexer.js";
 import { parseFeeBump } from "./feeBumpParser.js";
 import { detectEvictions } from "./archivalEvictionDetector.js";
 import { parseAndDescribeRestore } from "./restoreFootprintParser.js";
+import { publish } from "./wsEvents.js";
+import { extractBuildMetadata } from "./wasmBuildMetadata.js";
+import { scanFootprintContention } from "./footprintContentionScanner.js";
+import { handleVaultEvent, refreshAllVaults } from "./vaultIndexer.js";
+import { processCircuitBreakerEvent } from "./circuitBreakerIndexer.js";
+import { startGasGuzzlersWorker } from "./gasGuzzlers.js";
+import { recordLedgerHash } from "./reorgWorker.js";
 
 const RPC_URL      = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);

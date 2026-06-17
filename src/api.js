@@ -23,7 +23,8 @@ import { parseDiagnosticEvents } from "./diagnosticParser.js";
 import { annotateEvictionStates, summariseEvictionStats } from "./storageEvictionTracker.js";
 import { runAllChecks } from "./doctor-lib.js";
 import pg from "pg";
-
+import { getBurnAlerts } from "./burnDetector.js";
+import { formatAmount } from "./formatAmount.js";
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
