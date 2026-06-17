@@ -41,7 +41,7 @@ export function schedulePrefetch(key, loaderMap) {
   for (const nextKey of predictions) {
     if (_inFlight.has(nextKey) || !loaderMap[nextKey]) continue;
     _inFlight.add(nextKey);
-    setImmediate(async () => {
+    setTimeout(async () => {
       try {
         const hit = await cacheGet(nextKey);
         if (!hit) {
@@ -51,9 +51,9 @@ export function schedulePrefetch(key, loaderMap) {
             await cacheSet(nextKey, value, type, 0);
           }
         }
-      } catch {}
+      } catch { /* prefetch failure is non-fatal */ }
       _inFlight.delete(nextKey);
-    });
+    }, 0);
   }
 }
 

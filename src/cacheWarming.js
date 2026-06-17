@@ -43,7 +43,7 @@ export async function warmCache() {
           );
           results.warmed++;
         }
-      } catch {}
+      } catch { /* individual contract warm failure is non-fatal */ }
     }
   } catch (e) {
     console.warn("[cache:warm] top contracts failed:", e.message);

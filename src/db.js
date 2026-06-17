@@ -913,10 +913,6 @@ export const db = {
     return rows;
   },
 
-  async query(sql, params = []) {
-    return pool.query(sql, params);
-  },
-
   async getTopContracts(limit = 10) {
     const { rows } = await pool.query(
       `SELECT contract_id, COUNT(*) AS event_count

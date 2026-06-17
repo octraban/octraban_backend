@@ -166,7 +166,7 @@ async function _setupPubSub(url) {
         ...msg,
         via: "pubsub",
       });
-    } catch {}
+    } catch { /* malformed invalidation message — ignore */ }
   });
   console.log("[cache:pubsub] subscribed to", INVALIDATION_CHANNEL);
 }

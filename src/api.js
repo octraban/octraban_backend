@@ -17,7 +17,6 @@ import { getRpcNodeStatus } from "./rpcMultiNode.js";
 import {
   cacheAside,
   cacheInvalidate,
-  cacheDel,
   cacheGet,
   cacheSet,
   generateETag,
