@@ -9,9 +9,7 @@ import {
   Networks,
   Account,
   Contract,
-  xdr,
   scValToNative,
-  nativeToScVal,
 } from "@stellar/stellar-sdk";
 import { withRetry } from "./rpcRetry.js";
 

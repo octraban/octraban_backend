@@ -154,7 +154,7 @@ export function computeZkCostDelta(calls) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function buildCall(fnName, source) {
+function buildCall(fnName, _source) {
   const cpu_native = NATIVE_HOST_COST[fnName] ?? 0;
   const cpu_legacy = LEGACY_WASM_COST[fnName] ?? 0;
   const curve = fnName.startsWith("bn254") ? "BN254" : "BLS12-381";

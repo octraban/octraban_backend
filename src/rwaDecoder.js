@@ -41,7 +41,7 @@ const RWA_KEYWORDS = [
  * @param {string} contractId - Contract ID
  * @returns {object|null} - { type: string, decoder: function } or null
  */
-export function detectRwaToken(meta, contractId) {
+export function detectRwaToken(meta, _contractId) {
   if (!meta) return null;
 
   // Check for RWA-specific metadata fields
@@ -82,7 +82,7 @@ function getRwaDecoder(rwaType) {
  * @param {any} data - Event data
  * @returns {string} - Human-readable description
  */
-function decodeDividendDistribution(fnName, args, data) {
+function decodeDividendDistribution(fnName, args, _data) {
   const [yieldPerShare, investorCount, totalAmount, currency] = args;
   
   if (yieldPerShare !== undefined && investorCount !== undefined) {
@@ -104,7 +104,7 @@ function decodeDividendDistribution(fnName, args, data) {
  * @param {any} data - Event data
  * @returns {string} - Human-readable description
  */
-function decodeInvestorRegistryUpdate(fnName, args, data) {
+function decodeInvestorRegistryUpdate(fnName, args, _data) {
   const [investorAddress, action, shares, status] = args;
   
   const actionLabel = {
@@ -130,8 +130,8 @@ function decodeInvestorRegistryUpdate(fnName, args, data) {
  * @param {any} data - Event data
  * @returns {string} - Human-readable description
  */
-function decodeCorporateAction(fnName, args, data) {
-  const [actionType, details, effectiveDate] = args;
+function decodeCorporateAction(fnName, args, _data) {
+  const [actionType, , effectiveDate] = args;
   
   const typeLabel = {
     'split': 'Stock Split',
@@ -152,7 +152,7 @@ function decodeCorporateAction(fnName, args, data) {
  * @param {any} data - Event data
  * @returns {string} - Human-readable description
  */
-function decodeMintShares(fnName, args, data) {
+function decodeMintShares(fnName, args, _data) {
   const [to, amount, reason] = args;
   
   const reasonLabel = {
@@ -172,7 +172,7 @@ function decodeMintShares(fnName, args, data) {
  * @param {any} data - Event data
  * @returns {string} - Human-readable description
  */
-function decodeBurnShares(fnName, args, data) {
+function decodeBurnShares(fnName, args, _data) {
   const [from, amount, reason] = args;
   
   const reasonLabel = {
@@ -192,7 +192,7 @@ function decodeBurnShares(fnName, args, data) {
  * @param {any} data - Event data
  * @returns {string} - Human-readable description
  */
-function decodeTransferShares(fnName, args, data) {
+function decodeTransferShares(fnName, args, _data) {
   const [from, to, amount] = args;
   
   return `Transferred ${formatAmount(amount)} shares from ${formatAddress(from)} to ${formatAddress(to)}`;
@@ -206,7 +206,7 @@ function decodeTransferShares(fnName, args, data) {
  * @param {any} data - Event data
  * @returns {string} - Human-readable description
  */
-function decodeDividendReinvestment(fnName, args, data) {
+function decodeDividendReinvestment(fnName, args, _data) {
   const [investor, dividendAmount, sharesIssued] = args;
   
   return `Dividend reinvestment: ${formatAmount(dividendAmount)} USD converted to ${formatAmount(sharesIssued)} shares for ${formatAddress(investor)}`;
@@ -220,7 +220,7 @@ function decodeDividendReinvestment(fnName, args, data) {
  * @param {any} data - Event data
  * @returns {string} - Human-readable description
  */
-function decodeRedemption(fnName, args, data) {
+function decodeRedemption(fnName, args, _data) {
   const [investor, sharesRedeemed, amountReceived] = args;
   
   return `Redeemed ${formatAmount(sharesRedeemed)} shares for ${formatAmount(amountReceived)} USD from ${formatAddress(investor)}`;
@@ -234,7 +234,7 @@ function decodeRedemption(fnName, args, data) {
  * @param {any} data - Event data
  * @returns {string} - Human-readable description
  */
-function decodeSubscription(fnName, args, data) {
+function decodeSubscription(fnName, args, _data) {
   const [investor, amountInvested, sharesIssued] = args;
   
   return `New subscription: ${formatAmount(amountInvested)} USD invested by ${formatAddress(investor)}, ${formatAmount(sharesIssued)} shares issued`;
@@ -331,12 +331,12 @@ export function decodeRwaEvent(event, meta) {
 
   try {
     const args = event.raw_topics?.slice(1) || [];
-    let data = event.raw_data;
+    let _data = event.raw_data;
     try {
-      data = JSON.parse(event.raw_data);
+      _data = JSON.parse(event.raw_data);
     } catch { /* keep as string */ }
     
-    return decoder(event.function, args, data);
+    return decoder(event.function, args, _data);
   } catch (err) {
     console.error('[RWA Decoder] Error decoding event:', err);
     return null;

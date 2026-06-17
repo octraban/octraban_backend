@@ -11,16 +11,11 @@ import { db } from "./db.js";
 import { analyzeSourceDependencies } from "./dependencyScanner.js";
 import { fetchTokenMetadata } from "./sep41Metadata.js";
 import { attachWebSocketServer } from "./wsEvents.js";
-import { bootstrapVault, refreshVaultRatio } from "./vaultIndexer.js";
 import { verifyAbi } from "./verify_abi.js";
 import { getMetrics } from "./rpcMetrics.js";
 import { getRpcNodeStatus } from "./rpcMultiNode.js";
 import { cacheAside, cacheDel } from "./metadataCache.js";
 import { attachGraphQL } from "./graphql.js";
-import { parseExecutionTrace } from "./executionTraceParser.js";
-import { detectReentrancyFromParsed } from "./reentrancyTrapDetector.js";
-import { parseDiagnosticEvents } from "./diagnosticParser.js";
-import { annotateEvictionStates, summariseEvictionStats } from "./storageEvictionTracker.js";
 import { runAllChecks } from "./doctor-lib.js";
 import pg from "pg";
 import { getBurnAlerts } from "./burnDetector.js";
@@ -248,7 +243,7 @@ export function startApi() {
       const { contractId, fn, args = [] } = req.body;
       if (!contractId || !fn) return res.status(400).json({ error: "Missing contractId or fn" });
 
-      const { SorobanRpc, Contract, nativeToScVal, xdr } = await import("@stellar/stellar-sdk");
+      const { SorobanRpc, Contract, nativeToScVal } = await import("@stellar/stellar-sdk");
       const rpcUrl = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
       const server = new SorobanRpc.Server(rpcUrl);
 
@@ -527,11 +522,6 @@ export function startApi() {
           contract: contractAddress.toScAddress(),
           key: xdr.ScVal.scvLedgerKeyContractInstance(),
           durability: xdr.ContractDataDurability.persistent(),
-        })
-      );
-      const codeKey = xdr.LedgerKey.contractCode(
-        new xdr.LedgerKeyContractCode({
-          hash: Buffer.alloc(32), // placeholder; resolved below from instance
         })
       );
 

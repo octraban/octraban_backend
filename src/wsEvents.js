@@ -33,13 +33,6 @@ export function publishContractLink(link) {
   bus.emit("contract_link", link);
 }
 
-function isOriginAllowed(origin) {
-  if (!origin) return false;
-  const allowed = process.env.CORS_ORIGIN || "*";
-  if (allowed === "*") return true;
-  return allowed.split(",").some(a => a.trim() === origin);
-}
-
 export function attachWebSocketServer(httpServer) {
   const wss = new WebSocketServer({
     server: httpServer,
@@ -54,7 +47,7 @@ export function attachWebSocketServer(httpServer) {
     },
   });
 
-  wss.on("connection", (ws, req) => {
+  wss.on("connection", (ws, _req) => {
     console.log("[ws] Client connected");
 
     const handler = (event) => {

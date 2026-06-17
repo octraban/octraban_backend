@@ -1,4 +1,4 @@
-import { xdr, StrKey } from "@stellar/stellar-sdk";
+import { StrKey } from "@stellar/stellar-sdk";
 
 /**
  * Convert any ScVal XDR object to a typed JavaScript value using ABI type

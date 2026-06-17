@@ -1,4 +1,4 @@
-import { xdr } from "@stellar/stellar-sdk";
+
 
 /**
  * Parse a Soroban i128 ScVal into a native BigInt without precision loss.

@@ -113,7 +113,6 @@ export function parseDiagnosticEvents(diagnosticEventsXdr) {
         });
 
         const dataIsVoid = dataVal?.switch?.().name === 'scvVoid';
-        const dataIsOverflowString = dataVal?.switch?.().name === 'scvString' && /overflow/i.test(dataVal.str().toString());
 
         // Only classify as `Overflow [Void]` when the overflow is coming from
         // arithmetic host functions that returned Void (checked ops), or when

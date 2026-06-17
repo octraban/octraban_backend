@@ -9,7 +9,7 @@
  * or null when the transaction is not an upgrade.
  */
 
-import { xdr } from "@stellar/stellar-sdk";
+
 
 /**
  * Extract the hex-encoded WASM hash from a ContractDataEntry whose val is

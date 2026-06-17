@@ -1,4 +1,4 @@
-import { xdr, scValToNative, StrKey } from "@stellar/stellar-sdk";
+import { scValToNative } from "@stellar/stellar-sdk";
 import { parseTTLHostFunction, formatTTLExtension } from "./ttlExtensionParser.js";
 import { parseZkHostFunctions, computeZkCostDelta } from "./zkHostFunctions.js";
 
@@ -67,8 +67,7 @@ function extractGasCosts(ev) {
 }
 
 import { db } from "./db.js";
-import { sacLabel, detectSac, detectSacAsset } from "./sac.js";
-import { classifySacSideEffect } from "./sacSideEffect.js";
+import { detectSac, detectSacAsset } from "./sac.js";
 import { extractRoleAssignment } from "./roleTracker.js";
 import { decodeRwaEvent } from "./rwaDecoder.js";
 import { parseHeuristic } from "./heuristicParser.js";
@@ -118,7 +117,7 @@ export async function decode(ev) {
   const vaultMeta = await db.getVault(contractId).catch(() => null);
 
   const { isSac, assetCode } = detectSac(contractId);
-  const { assetIssuer } = detectSacAsset(contractId);
+  detectSacAsset(contractId);
   const contractLabel = vaultMeta?.name
     ? `${vaultMeta.name} (Vault)`
     : isSac

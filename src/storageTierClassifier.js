@@ -11,7 +11,7 @@
  * Only CREATED and UPDATED changes are counted (not STATE or REMOVED).
  */
 
-import { xdr, StrKey, scValToNative } from "@stellar/stellar-sdk";
+import { StrKey, scValToNative } from "@stellar/stellar-sdk";
 
 /**
  * @typedef {{ tier: 'instance'|'persistent'|'temporary', contractId: string, key: string, changeType: 'created'|'updated' }} StorageWrite

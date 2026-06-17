@@ -15,7 +15,7 @@
  *     rejections in the explorer.
  */
 
-import { xdr, StrKey } from "@stellar/stellar-sdk";
+import { StrKey } from "@stellar/stellar-sdk";
 
 // Protocol 26 config-setting ID for frozen ledger keys
 const FROZEN_KEYS_SETTING_NAME = "configSettingContractFrozenKeys";

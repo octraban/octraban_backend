@@ -13,6 +13,7 @@
  *   { "id": "C...", "name": "...", "description": "...", "functions": [...] }
  */
 
+/* global fetch */
 import cron from "node-cron";
 import { db } from "./db.js";
 

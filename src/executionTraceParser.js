@@ -8,11 +8,6 @@
 
 import { xdr, StrKey, scValToNative } from "@stellar/stellar-sdk";
 
-const HOST_FN_EVENTS = new Set([
-  "fn_call", "fn_return", "invoke_contract", "auth_check",
-  "host_fn", "wasm_trap", "call", "return",
-]);
-
 /**
  * Decode a single DiagnosticEvent XDR to a trace node shape.
  *

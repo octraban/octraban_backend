@@ -10,62 +10,11 @@
  * its liveUntilLedger < currentLedger).
  */
 
-import { xdr, StrKey, scValToNative } from "@stellar/stellar-sdk";
+import { StrKey, scValToNative } from "@stellar/stellar-sdk";
 
 /**
  * Classify a removed LedgerEntry into a structured descriptor.
  *
- * @param {xdr.LedgerEntry} entry
- * @returns {{ key_type: string, key_label: string, contract_id?: string, wasm_hash?: string, data_key?: string, durability?: string } | null}
- */
-function classifyRemovedEntry(entry) {
-  try {
-    const data = entry.data();
-    const kind = data.switch().name;
-
-    if (kind === "contractData") {
-      const cd = data.contractData();
-      const durability = cd.durability().name === "persistent" ? "persistent" : "temporary";
-      const contractId = StrKey.encodeContract(cd.contract().contractId());
-      const keyVal = cd.key();
-      const isInstance = keyVal.switch().name === "scvLedgerKeyContractInstance";
-
-      if (isInstance) {
-        return {
-          key_type: "contractInstance",
-          key_label: `Contract instance (${contractId.slice(0, 8)}…)`,
-          contract_id: contractId,
-          durability,
-        };
-      }
-
-      let data_key;
-      try { data_key = String(scValToNative(keyVal)); } catch { data_key = keyVal.switch().name; }
-      return {
-        key_type: "contractData",
-        key_label: `Contract data key "${data_key}" (${contractId.slice(0, 8)}…)`,
-        contract_id: contractId,
-        data_key,
-        durability,
-      };
-    }
-
-    if (kind === "contractCode") {
-      const wasm_hash = Buffer.from(data.contractCode().hash()).toString("hex");
-      return {
-        key_type: "contractCode",
-        key_label: `Contract WASM code (${wasm_hash.slice(0, 12)}…)`,
-        wasm_hash,
-      };
-    }
-
-    // account / trustline entries are not subject to Soroban TTL eviction
-    return null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Detect evicted ledger keys from a raw Soroban RPC event's txMeta.
  *
