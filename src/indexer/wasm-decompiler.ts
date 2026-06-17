@@ -611,7 +611,7 @@ function parseWasmSections(wasm: Buffer): WasmSectionSummary[] {
     };
 
     if (sectionId === 0) {
-      const [name, nameLen] = readString(wasm, offset);
+      const [name] = readString(wasm, offset);
       summary.details = { customName: name };
     }
 
@@ -861,7 +861,7 @@ function analyzeFunctionBodies(wasm: Buffer, moduleInfo: ParsedWasmModule): Func
         const instructions: WasmInstruction[] = [];
         let instructionOffset = pos;
         while (instructionOffset < bodyEnd) {
-          const instruction = readInstruction(wasm, instructionOffset, bodyEnd);
+          const instruction = readInstruction(wasm, instructionOffset);
           instructions.push(instruction);
           instructionOffset = instruction.nextOffset;
         }
@@ -877,7 +877,6 @@ function analyzeFunctionBodies(wasm: Buffer, moduleInfo: ParsedWasmModule): Func
         const hostCalls: HostCallInfo[] = [];
         const storageOperations: StorageOperation[] = [];
         const pseudoLines: string[] = [];
-        let stackDepth = 0;
         let branchCount = 0;
 
         for (const insn of instructions) {
@@ -915,7 +914,7 @@ function analyzeFunctionBodies(wasm: Buffer, moduleInfo: ParsedWasmModule): Func
               const typeIndex = insn.immediates[0] ?? 0;
               branchCount += 1;
               line = `call_indirect(type=${typeIndex})`;
-              breaks: break;
+              break;
             }
             case 'br_if':
               branchCount += 1;
@@ -1040,7 +1039,7 @@ function buildFunctionCFG(instructions: WasmInstruction[]): FunctionCFG {
   return { entryBlock: 'block_0', blocks, loops };
 }
 
-function readInstruction(wasm: Buffer, offset: number, end: number): WasmInstruction & { nextOffset: number } {
+function readInstruction(wasm: Buffer, offset: number): WasmInstruction & { nextOffset: number } {
   const start = offset;
   const opcode = wasm[offset++];
   const mnemonic = OPCODE_NAMES[opcode] ?? `0x${opcode.toString(16).padStart(2, '0')}`;
