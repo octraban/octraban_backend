@@ -34,9 +34,7 @@ function toJson(val) {
   if (typeof val === "string") return resolveAddress(val);
   if (Array.isArray(val)) return val.map(toJson);
   if (val !== null && typeof val === "object") {
-    return Object.fromEntries(
-      Object.entries(val).map(([k, v]) => [k, toJson(v)]),
-    );
+    return Object.fromEntries(Object.entries(val).map(([k, v]) => [k, toJson(v)]));
   }
   return val;
 }

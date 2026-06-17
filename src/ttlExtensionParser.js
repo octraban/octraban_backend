@@ -13,11 +13,7 @@
  * storage and display.
  */
 
-const TTL_HOST_FN_NAMES = new Set([
-  "extend_contract_instance_ttl",
-  "extend_contract_code_ttl",
-  "extend_ttl",
-]);
+const TTL_HOST_FN_NAMES = new Set(["extend_contract_instance_ttl", "extend_contract_code_ttl", "extend_ttl"]);
 
 function _num(value) {
   if (value === undefined || value === null) return null;
@@ -45,10 +41,7 @@ export function parseTTLHostFunction(operation) {
     op.type === "extendContractCode" ||
     (op.ext?.v === 1 && (op.contractId || op.codeHash))
   ) {
-    const mappedFn =
-      op.type === "extendContractCode"
-        ? "extend_contract_code_ttl"
-        : "extend_contract_instance_ttl";
+    const mappedFn = op.type === "extendContractCode" ? "extend_contract_code_ttl" : "extend_contract_instance_ttl";
 
     return {
       fn_name: mappedFn,
@@ -71,9 +64,7 @@ export function extractTTLModifications(transaction) {
   const results = [];
 
   for (const op of transaction.operations) {
-    const parsed = parseTTLHostFunction(
-      op.hostFunction ?? op.host_function ?? op,
-    );
+    const parsed = parseTTLHostFunction(op.hostFunction ?? op.host_function ?? op);
     if (parsed) {
       results.push({
         ...parsed,
@@ -90,10 +81,7 @@ export function extractTTLModifications(transaction) {
       (op.ext?.v === 1 && (op.contractId || op.codeHash))
     ) {
       results.push({
-        fn_name:
-          op.type === "extendContractCode"
-            ? "extend_contract_code_ttl"
-            : "extend_contract_instance_ttl",
+        fn_name: op.type === "extendContractCode" ? "extend_contract_code_ttl" : "extend_contract_instance_ttl",
         extend_to: _num(op.extendTo ?? op.extend_to),
         min_extension: null,
         max_extension: null,
@@ -118,8 +106,7 @@ export function formatTTLExtension(ttlExt) {
 
   const parts = [action];
   if (ttlExt.extend_to !== null) parts.push(`to ledger ${ttlExt.extend_to}`);
-  if (ttlExt.min_extension !== null)
-    parts.push(`requested +${ttlExt.min_extension}`);
+  if (ttlExt.min_extension !== null) parts.push(`requested +${ttlExt.min_extension}`);
   if (ttlExt.max_extension !== null) parts.push(`max +${ttlExt.max_extension}`);
 
   return parts.join(" ");

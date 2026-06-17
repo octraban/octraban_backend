@@ -12,11 +12,7 @@
 
 import { SorobanRpc } from "@stellar/stellar-sdk";
 
-const RPC_URLS = (
-  process.env.SOROBAN_RPC_URLS ||
-  process.env.SOROBAN_RPC_URL ||
-  "https://soroban-testnet.stellar.org"
-)
+const RPC_URLS = (process.env.SOROBAN_RPC_URLS || process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org")
   .split(",")
   .map((u) => u.trim())
   .filter(Boolean);
@@ -50,10 +46,7 @@ function nextHealthy(startIndex) {
 async function withTimeout(promise, ms) {
   let timer;
   const timeout = new Promise((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`RPC timeout after ${ms}ms`)),
-      ms,
-    );
+    timer = setTimeout(() => reject(new Error(`RPC timeout after ${ms}ms`)), ms);
   });
   try {
     return await Promise.race([promise, timeout]);
@@ -68,10 +61,7 @@ async function callWithFailover(method, ...args) {
   for (let attempt = 0; attempt < nodes.length; attempt++) {
     const node = nodes[idx];
     try {
-      const result = await withTimeout(
-        node.server[method](...args),
-        CALL_TIMEOUT_MS,
-      );
+      const result = await withTimeout(node.server[method](...args), CALL_TIMEOUT_MS);
 
       // Update latest ledger knowledge for lag detection
       const ledger = result?.latestLedger ?? result?.sequence;
@@ -80,9 +70,7 @@ async function callWithFailover(method, ...args) {
       // Check if this node is lagging behind the best known ledger
       const bestLedger = Math.max(...nodes.map((n) => n.latestLedger));
       if (bestLedger - node.latestLedger > LAG_THRESHOLD) {
-        console.warn(
-          `[rpc-multi] node ${node.url} is ${bestLedger - node.latestLedger} ledgers behind, switching`,
-        );
+        console.warn(`[rpc-multi] node ${node.url} is ${bestLedger - node.latestLedger} ledgers behind, switching`);
         node.healthy = false;
         primaryIndex = nextHealthy(idx);
         idx = primaryIndex;
@@ -97,9 +85,7 @@ async function callWithFailover(method, ...args) {
 
       return result;
     } catch (err) {
-      console.warn(
-        `[rpc-multi] node ${node.url} failed (${err.message}), trying next`,
-      );
+      console.warn(`[rpc-multi] node ${node.url} failed (${err.message}), trying next`);
       node.healthy = false;
       idx = nextHealthy(idx);
     }
@@ -113,10 +99,7 @@ setInterval(async () => {
   for (const node of nodes) {
     if (!node.healthy) {
       try {
-        const res = await withTimeout(
-          node.server.getLatestLedger(),
-          CALL_TIMEOUT_MS,
-        );
+        const res = await withTimeout(node.server.getLatestLedger(), CALL_TIMEOUT_MS);
         node.latestLedger = res.sequence;
         node.healthy = true;
         console.log(`[rpc-multi] node ${node.url} recovered`);

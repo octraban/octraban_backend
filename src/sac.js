@@ -18,9 +18,7 @@ function buildSacMap(assets) {
   for (const { code, issuer } of assets) {
     try {
       const asset = issuer ? new Asset(code, issuer) : Asset.native();
-      const contractId = new Contract(
-        asset.contractId(NETWORK_PASSPHRASE),
-      ).contractId();
+      const contractId = new Contract(asset.contractId(NETWORK_PASSPHRASE)).contractId();
       map.set(contractId, {
         code: issuer ? code : "XLM",
         issuer: issuer ?? null,

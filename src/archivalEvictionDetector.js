@@ -54,12 +54,10 @@ export function detectEvictions(ev, ledger, txHash) {
 
         if (kind === "contractData") {
           const cd = key.contractData();
-          const durability =
-            cd.durability().name === "persistent" ? "persistent" : "temporary";
+          const durability = cd.durability().name === "persistent" ? "persistent" : "temporary";
           const contract_id = StrKey.encodeContract(cd.contract().contractId());
           const keyVal = cd.key();
-          const isInstance =
-            keyVal.switch().name === "scvLedgerKeyContractInstance";
+          const isInstance = keyVal.switch().name === "scvLedgerKeyContractInstance";
 
           let key_type, key_label, data_key;
           if (isInstance) {
@@ -85,9 +83,7 @@ export function detectEvictions(ev, ledger, txHash) {
             data_key,
           });
         } else if (kind === "contractCode") {
-          const wasm_hash = Buffer.from(key.contractCode().hash()).toString(
-            "hex",
-          );
+          const wasm_hash = Buffer.from(key.contractCode().hash()).toString("hex");
           evictions.push({
             contract_id: undefined,
             ledger,

@@ -53,29 +53,19 @@ export function detectUpgrade(ev) {
     for (const change of changes) {
       try {
         const switchName = change.switch().name;
-        if (
-          switchName !== "ledgerEntryState" &&
-          switchName !== "ledgerEntryUpdated"
-        )
-          continue;
+        if (switchName !== "ledgerEntryState" && switchName !== "ledgerEntryUpdated") continue;
 
-        const entry =
-          switchName === "ledgerEntryState" ? change.state() : change.updated();
+        const entry = switchName === "ledgerEntryState" ? change.state() : change.updated();
         const contractData = entry.data?.().contractData?.();
         if (!contractData) continue;
 
         // Must be the contract instance key
-        if (
-          contractData.key?.().switch().name !== "scvLedgerKeyContractInstance"
-        )
-          continue;
+        if (contractData.key?.().switch().name !== "scvLedgerKeyContractInstance") continue;
 
         const hash = wasmHashFromContractData(contractData);
         if (!hash) continue;
 
-        const contractHex = Buffer.from(
-          contractData.contract().contractId(),
-        ).toString("hex");
+        const contractHex = Buffer.from(contractData.contract().contractId()).toString("hex");
 
         if (switchName === "ledgerEntryState") before.set(contractHex, hash);
         if (switchName === "ledgerEntryUpdated") after.set(contractHex, hash);

@@ -1,8 +1,5 @@
 import { scValToNative } from "@stellar/stellar-sdk";
-import {
-  parseTTLHostFunction,
-  formatTTLExtension,
-} from "./ttlExtensionParser.js";
+import { parseTTLHostFunction, formatTTLExtension } from "./ttlExtensionParser.js";
 import { parseZkHostFunctions, computeZkCostDelta } from "./zkHostFunctions.js";
 
 // Issue #134 — result codes that indicate block compute capacity was exhausted
@@ -59,13 +56,10 @@ function extractGasCosts(ev) {
       const extV1 = sorobanMeta.ext?.().v1?.();
       if (extV1) {
         if (extV1.totalNonRefundableResourceFeeCharged != null)
-          result.cpu_instructions = Number(
-            extV1.totalNonRefundableResourceFeeCharged,
-          );
+          result.cpu_instructions = Number(extV1.totalNonRefundableResourceFeeCharged);
         if (extV1.totalRefundableResourceFeeCharged != null)
           result.fee_charged = Number(extV1.totalRefundableResourceFeeCharged);
-        if (extV1.rentFeeCharged != null)
-          result.mem_bytes = Number(extV1.rentFeeCharged);
+        if (extV1.rentFeeCharged != null) result.mem_bytes = Number(extV1.rentFeeCharged);
       }
     } catch {
       /* ext not v1 */
@@ -99,10 +93,7 @@ export async function decode(ev) {
   const data = scValToNative(ev.value);
 
   // First topic is typically the function name symbol
-  const fnName =
-    typeof topics[0] === "symbol" || typeof topics[0] === "string"
-      ? String(topics[0])
-      : "unknown";
+  const fnName = typeof topics[0] === "symbol" || typeof topics[0] === "string" ? String(topics[0]) : "unknown";
 
   // Detect native XLM wrap/unwrap on the SAC contract
   if (NATIVE_SAC_IDS.has(contractId)) {
@@ -151,13 +142,7 @@ export async function decode(ev) {
   // Fall back to standard decoders
   if (!description) {
     description = vaultMeta
-      ? vaultDescription(
-          fnName,
-          topics.slice(1),
-          data,
-          contractLabel,
-          vaultMeta,
-        )
+      ? vaultDescription(fnName, topics.slice(1), data, contractLabel, vaultMeta)
       : fnAbi
         ? buildDescription(fnName, topics.slice(1), data, contractLabel)
         : genericDescription(fnName, topics.slice(1), data, contractLabel);
@@ -165,9 +150,7 @@ export async function decode(ev) {
 
   // Attach heuristic params when no ABI was available (no fnAbi, not a vault, not RWA)
   const heuristicParams =
-    !fnAbi && !vaultMeta && !meta
-      ? parseHeuristic([...topics.slice(1), ...(data != null ? [data] : [])])
-      : undefined;
+    !fnAbi && !vaultMeta && !meta ? parseHeuristic([...topics.slice(1), ...(data != null ? [data] : [])]) : undefined;
 
   const decoded = {
     contract_id: contractId,
@@ -185,9 +168,7 @@ export async function decode(ev) {
   };
 
   // Protocol 26: detect TTL extension host function calls on this event
-  const ttlExt = parseTTLHostFunction(
-    ev.hostFunction ?? ev.host_function ?? ev.operation ?? null,
-  );
+  const ttlExt = parseTTLHostFunction(ev.hostFunction ?? ev.host_function ?? ev.operation ?? null);
   if (ttlExt) {
     decoded.ttl_extension = ttlExt;
     // Enrich description so the ledger history row is self-explanatory
@@ -210,9 +191,7 @@ export async function decode(ev) {
       contract_id: contractId,
       ledger: ev.ledger,
       ...roleAssignment,
-    }).catch((err) =>
-      console.error("[roleTracker] upsertRole failed:", err.message),
-    );
+    }).catch((err) => console.error("[roleTracker] upsertRole failed:", err.message));
   }
 
   return decoded;
@@ -255,8 +234,7 @@ function vaultDescription(fn, args, data, contractName, vaultMeta) {
     }
     case "burn":
     case "withdraw": {
-      const [admin, from, to, assets, shares] =
-        args.length >= 4 ? args : [null, null, args[0], args[1], args[2]];
+      const [admin, from, to, assets, shares] = args.length >= 4 ? args : [null, null, args[0], args[1], args[2]];
       const amt = assets ?? data;
       const shr = shares ?? "?";
       return `Burned ${String(shr)} shares → withdrew ${String(amt)} ${assetLabel} from ${fmt(from ?? admin ?? to)} on ${contractName}`;
@@ -307,7 +285,5 @@ function fmtXlm(amount) {
   if (amount == null) return "?";
   // SAC amounts are in stroops (1 XLM = 10_000_000 stroops)
   const n = Number(amount);
-  return isNaN(n)
-    ? String(amount)
-    : (n / 1e7).toLocaleString(undefined, { maximumFractionDigits: 7 });
+  return isNaN(n) ? String(amount) : (n / 1e7).toLocaleString(undefined, { maximumFractionDigits: 7 });
 }

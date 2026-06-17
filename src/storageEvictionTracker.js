@@ -63,13 +63,9 @@ export function classifyEntryState(liveUntilLedger, currentLedger) {
 export function annotateEvictionStates(entries, currentLedger) {
   return entries.map((entry) => {
     const state = classifyEntryState(entry.liveUntilLedger, currentLedger);
-    const ledgersUntilEviction =
-      state === "evicted" ? 0 : entry.liveUntilLedger - currentLedger;
+    const ledgersUntilEviction = state === "evicted" ? 0 : entry.liveUntilLedger - currentLedger;
 
-    const estimatedRestoreFeeStroops =
-      state === "evicted"
-        ? estimateRestoreFee(entry.valueSizeBytes ?? 256)
-        : null;
+    const estimatedRestoreFeeStroops = state === "evicted" ? estimateRestoreFee(entry.valueSizeBytes ?? 256) : null;
 
     const secondsUntilEviction = ledgersUntilEviction * LEDGER_CLOSE_SECONDS;
 
@@ -143,8 +139,7 @@ export async function parseRpcLedgerEntries(rpcEntries, keySerializer = null) {
   for (const entry of rpcEntries ?? []) {
     try {
       const xdrEntry = entry.xdr ?? entry.entry ?? entry;
-      const liveUntilLedger =
-        entry.liveUntilLedgerSeq ?? entry.live_until_ledger_seq ?? null;
+      const liveUntilLedger = entry.liveUntilLedgerSeq ?? entry.live_until_ledger_seq ?? null;
       if (liveUntilLedger == null) continue;
 
       let contractId = null;
@@ -154,11 +149,7 @@ export async function parseRpcLedgerEntries(rpcEntries, keySerializer = null) {
       // Try to extract contractId and key from the XDR string
       if (typeof xdrEntry === "string") {
         try {
-          const {
-            xdr: xdrSdk,
-            StrKey,
-            scValToNative,
-          } = await import("@stellar/stellar-sdk").catch(() => ({}));
+          const { xdr: xdrSdk, StrKey, scValToNative } = await import("@stellar/stellar-sdk").catch(() => ({}));
           if (xdrSdk) {
             const le = xdrSdk.LedgerEntry.fromXDR(xdrEntry, "base64");
             const data = le.data();
@@ -180,11 +171,7 @@ export async function parseRpcLedgerEntries(rpcEntries, keySerializer = null) {
 
       // Fallback shapes from simplified/mock data
       contractId = contractId ?? entry.contractId ?? entry.contract_id ?? null;
-      key =
-        key ??
-        (keySerializer
-          ? keySerializer(entry)
-          : (entry.key ?? entry.keyXdr ?? null));
+      key = key ?? (keySerializer ? keySerializer(entry) : (entry.key ?? entry.keyXdr ?? null));
 
       if (!contractId || !key) continue;
 
@@ -194,8 +181,7 @@ export async function parseRpcLedgerEntries(rpcEntries, keySerializer = null) {
         durability,
         liveUntilLedger: Number(liveUntilLedger),
         valueSizeBytes: entry.valueSizeBytes ?? entry.value_size_bytes ?? 256,
-        lastModifiedLedger:
-          entry.lastModifiedLedgerSeq ?? entry.last_modified_ledger_seq ?? null,
+        lastModifiedLedger: entry.lastModifiedLedgerSeq ?? entry.last_modified_ledger_seq ?? null,
       });
     } catch {
       /* skip malformed entries */

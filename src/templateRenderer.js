@@ -38,8 +38,7 @@ function fmtAddr(v) {
  */
 function fmtValue(v) {
   const s = String(v);
-  if ((s.startsWith("G") || s.startsWith("C")) && s.length === 56)
-    return fmtAddr(s);
+  if ((s.startsWith("G") || s.startsWith("C")) && s.length === 56) return fmtAddr(s);
   return s;
 }
 
@@ -63,7 +62,5 @@ export function renderTemplate(template, params = [], args = [], ctx = {}) {
   if (ctx.contractName) vars._contract = ctx.contractName;
   if (ctx.fnName) vars._fn = ctx.fnName;
 
-  return template.replace(/\{(\w+)\}/g, (match, key) =>
-    key in vars ? vars[key] : match,
-  );
+  return template.replace(/\{(\w+)\}/g, (match, key) => (key in vars ? vars[key] : match));
 }

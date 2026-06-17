@@ -45,9 +45,7 @@ export async function findLedgerGaps() {
     return [];
   }
 
-  console.log(
-    `[gapDetector] Scanning ledger range ${min_ledger} → ${max_ledger}`,
-  );
+  console.log(`[gapDetector] Scanning ledger range ${min_ledger} → ${max_ledger}`);
 
   // generate_series produces every integer in [min, max]; LEFT JOIN finds the holes
   const { rows } = await db.query(
@@ -93,15 +91,12 @@ function resyncGaps(gaps) {
 
   for (const [from, to] of ranges) {
     console.log(`[gapDetector] Resyncing ledgers ${from} → ${to}`);
-    const result = spawnSync(
-      process.execPath,
-      [catchupScript, `--from=${from}`, `--to=${to}`],
-      { stdio: "inherit", env: process.env },
-    );
+    const result = spawnSync(process.execPath, [catchupScript, `--from=${from}`, `--to=${to}`], {
+      stdio: "inherit",
+      env: process.env,
+    });
     if (result.status !== 0) {
-      console.error(
-        `[gapDetector] catchup failed for range ${from}-${to} (exit ${result.status})`,
-      );
+      console.error(`[gapDetector] catchup failed for range ${from}-${to} (exit ${result.status})`);
     }
   }
 }

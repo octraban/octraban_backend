@@ -3,18 +3,10 @@
  * Uses read-only simulateTransaction to retrieve name, symbol, and decimals
  * from any SEP-41 compliant contract without spending fees.
  */
-import {
-  SorobanRpc,
-  TransactionBuilder,
-  Networks,
-  Account,
-  Contract,
-  scValToNative,
-} from "@stellar/stellar-sdk";
+import { SorobanRpc, TransactionBuilder, Networks, Account, Contract, scValToNative } from "@stellar/stellar-sdk";
 import { withRetry } from "./rpcRetry.js";
 
-const RPC_URL =
-  process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
+const RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
 // Dummy source account — simulation never submits, so balance doesn't matter
 const DUMMY_SOURCE = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";

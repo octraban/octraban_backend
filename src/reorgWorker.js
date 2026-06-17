@@ -35,21 +35,14 @@ export async function recordLedgerHash(ledger, hash) {
 
 /** Return the last N ledger rows we have on record, newest first. */
 async function getRecentLedgerHashes(limit = 20) {
-  const { rows } = await pool.query(
-    `SELECT ledger, hash FROM ledger_hashes ORDER BY ledger DESC LIMIT $1`,
-    [limit],
-  );
+  const { rows } = await pool.query(`SELECT ledger, hash FROM ledger_hashes ORDER BY ledger DESC LIMIT $1`, [limit]);
   return rows; // [{ ledger, hash }, …]
 }
 
 /** Delete all events and ledger_hash records at or above forkLedger. */
 async function rollback(forkLedger) {
-  await pool.query(`DELETE FROM events        WHERE ledger     >= $1`, [
-    forkLedger,
-  ]);
-  await pool.query(`DELETE FROM ledger_hashes WHERE ledger     >= $1`, [
-    forkLedger,
-  ]);
+  await pool.query(`DELETE FROM events        WHERE ledger     >= $1`, [forkLedger]);
+  await pool.query(`DELETE FROM ledger_hashes WHERE ledger     >= $1`, [forkLedger]);
   console.warn(`[reorg] Rolled back ledger ${forkLedger}+`);
 }
 
@@ -76,9 +69,7 @@ export async function checkForReorg(rpc) {
     }
 
     if (networkHash && networkHash !== hash) {
-      console.warn(
-        `[reorg] Mismatch at ledger ${ledger}: stored=${hash} network=${networkHash}`,
-      );
+      console.warn(`[reorg] Mismatch at ledger ${ledger}: stored=${hash} network=${networkHash}`);
       return ledger;
     }
   }

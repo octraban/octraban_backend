@@ -30,9 +30,7 @@ export function scValToJsTyped(val, typeHint, typeIndex) {
         const fieldName = String(rawKey);
         // Find the field definition to get its type for recursive decoding
         const fieldDef = typeDef.fields?.find((f) => f.name === fieldName);
-        result[fieldName] = fieldDef
-          ? scValToJsTyped(entry.val(), fieldDef.type, typeIndex)
-          : scValToJs(entry.val());
+        result[fieldName] = fieldDef ? scValToJsTyped(entry.val(), fieldDef.type, typeIndex) : scValToJs(entry.val());
       }
       return result;
     }
@@ -44,11 +42,7 @@ export function scValToJsTyped(val, typeHint, typeIndex) {
         const result = {};
         items.forEach((item, i) => {
           const fieldDef = fields[i];
-          result[fieldDef.name] = scValToJsTyped(
-            item,
-            fieldDef.type,
-            typeIndex,
-          );
+          result[fieldDef.name] = scValToJsTyped(item, fieldDef.type, typeIndex);
         });
         return result;
       }
@@ -84,10 +78,7 @@ export function scValToJsTyped(val, typeHint, typeIndex) {
       if (items.length === 0) return scValToJs(val);
 
       const tagVal = items[0];
-      const tag =
-        tagVal.switch().name === "scvSymbol"
-          ? tagVal.sym().toString()
-          : String(scValToJs(tagVal));
+      const tag = tagVal.switch().name === "scvSymbol" ? tagVal.sym().toString() : String(scValToJs(tagVal));
 
       const matchedCase = typeDef.cases?.find((c) => c.name === tag);
 

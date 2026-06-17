@@ -52,10 +52,7 @@ export async function runBurnDetection() {
     // Build supply estimate per contract (minted - burned so far)
     const mintedByContract = new Map();
     for (const r of mintRows) {
-      mintedByContract.set(
-        r.contract_id,
-        BigInt(r.total_minted?.split(".")[0] ?? "0"),
-      );
+      mintedByContract.set(r.contract_id, BigInt(r.total_minted?.split(".")[0] ?? "0"));
     }
 
     // Group burns by contract + ledger
@@ -133,9 +130,5 @@ export function getBurnAlerts(contractId) {
 export function startBurnDetector() {
   runBurnDetection();
   setInterval(runBurnDetection, POLL_INTERVAL_MS);
-  console.log(
-    "[burnDetector] started, polling every",
-    POLL_INTERVAL_MS / 1000,
-    "s",
-  );
+  console.log("[burnDetector] started, polling every", POLL_INTERVAL_MS / 1000, "s");
 }

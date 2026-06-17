@@ -21,10 +21,8 @@ export function parseContractReturnValue(result) {
     if (typeof result.error === "string") textCandidates.push(result.error);
     if (typeof result.err === "string") textCandidates.push(result.err);
     if (typeof result.message === "string") textCandidates.push(result.message);
-    if (result.result && typeof result.result.error === "string")
-      textCandidates.push(result.result.error);
-    if (result.diagnostic && typeof result.diagnostic === "string")
-      textCandidates.push(result.diagnostic);
+    if (result.result && typeof result.result.error === "string") textCandidates.push(result.result.error);
+    if (result.diagnostic && typeof result.diagnostic === "string") textCandidates.push(result.diagnostic);
   } catch {
     /* ignore */
   }

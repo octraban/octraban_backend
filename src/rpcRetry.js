@@ -1,7 +1,4 @@
-export async function withRetry(
-  fn,
-  { maxAttempts = 5, baseDelayMs = 100 } = {},
-) {
+export async function withRetry(fn, { maxAttempts = 5, baseDelayMs = 100 } = {}) {
   let lastError;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -11,9 +8,7 @@ export async function withRetry(
       const isRetryable = isRetryableError(err);
       if (!isRetryable || attempt === maxAttempts) throw err;
       const delay = Math.pow(2, attempt) * baseDelayMs;
-      console.warn(
-        `[rpc-retry] attempt ${attempt}/${maxAttempts} failed (${err.message}), retrying in ${delay}ms`,
-      );
+      console.warn(`[rpc-retry] attempt ${attempt}/${maxAttempts} failed (${err.message}), retrying in ${delay}ms`);
       await new Promise((r) => setTimeout(r, delay));
     }
   }
@@ -25,10 +20,6 @@ function isRetryableError(err) {
   const status = err?.response?.status ?? err?.status ?? err?.statusCode;
   if (status === 429) return true;
   if (err?.code === "ECONNRESET" || err?.code === "ETIMEDOUT") return true;
-  if (
-    err?.message &&
-    /timeout|rate\s*limit|too\s*many\s*requests/i.test(err.message)
-  )
-    return true;
+  if (err?.message && /timeout|rate\s*limit|too\s*many\s*requests/i.test(err.message)) return true;
   return false;
 }

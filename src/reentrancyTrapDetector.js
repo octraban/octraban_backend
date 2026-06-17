@@ -89,17 +89,8 @@ export function detectReentrancyTraps(diagnosticEventsXdr) {
   let depth = 0;
   let maxDepth = 0;
   for (const ev of parsed) {
-    const indicator = (
-      ev.type ??
-      ev.eventType ??
-      ev.topic0 ??
-      ""
-    ).toLowerCase();
-    if (
-      indicator === "fn_call" ||
-      indicator === "call" ||
-      indicator === "invoke_contract"
-    ) {
+    const indicator = (ev.type ?? ev.eventType ?? ev.topic0 ?? "").toLowerCase();
+    if (indicator === "fn_call" || indicator === "call" || indicator === "invoke_contract") {
       depth++;
       maxDepth = Math.max(maxDepth, depth);
     } else if (indicator === "fn_return" || indicator === "return") {

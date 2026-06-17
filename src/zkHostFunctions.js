@@ -112,8 +112,7 @@ export function parseZkHostFunctions(ev) {
   // Source 2: flat hostFunctions list (some RPC versions)
   const hostFns = ev.hostFunctions ?? ev.host_functions ?? [];
   for (const hf of hostFns) {
-    const fnName =
-      typeof hf === "string" ? hf : (hf.name ?? hf.fn_name ?? null);
+    const fnName = typeof hf === "string" ? hf : (hf.name ?? hf.fn_name ?? null);
     if (fnName && ZK_HOST_FN_NAMES.has(fnName)) {
       calls.push(buildCall(fnName, hf));
     }
@@ -161,8 +160,7 @@ export function computeZkCostDelta(calls) {
     total_legacy += c.cpu_legacy;
   }
   const saved_cpu = total_legacy - total_native;
-  const saved_pct =
-    total_legacy > 0 ? Math.round((saved_cpu / total_legacy) * 100) : 0;
+  const saved_pct = total_legacy > 0 ? Math.round((saved_cpu / total_legacy) * 100) : 0;
   return { total_native, total_legacy, saved_cpu, saved_pct };
 }
 

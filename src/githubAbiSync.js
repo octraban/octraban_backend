@@ -18,8 +18,7 @@ import cron from "node-cron";
 import { db } from "./db.js";
 
 const GITHUB_API = "https://api.github.com";
-const ABI_REPO =
-  process.env.ABI_REPO || "Soroban-Smart-Block-Explorer/verified-abis";
+const ABI_REPO = process.env.ABI_REPO || "Soroban-Smart-Block-Explorer/verified-abis";
 const ABI_PATH = process.env.ABI_PATH || "contracts";
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || "";
 // Default: run every 10 minutes
@@ -40,9 +39,7 @@ async function ghFetch(url) {
   if (res.status === 403 || res.status === 429) {
     const reset = res.headers.get("x-ratelimit-reset");
     const waitMs = reset ? Number(reset) * 1000 - Date.now() : 60_000;
-    console.warn(
-      `[abi-sync] GitHub rate-limited. Retrying after ${Math.ceil(waitMs / 1000)}s`,
-    );
+    console.warn(`[abi-sync] GitHub rate-limited. Retrying after ${Math.ceil(waitMs / 1000)}s`);
     await new Promise((r) => setTimeout(r, Math.max(waitMs, 0)));
     return ghFetch(url);
   }
@@ -63,9 +60,7 @@ async function syncAbis() {
     return;
   }
 
-  const jsonFiles = entries.filter(
-    (e) => e.type === "file" && e.name.endsWith(".json"),
-  );
+  const jsonFiles = entries.filter((e) => e.type === "file" && e.name.endsWith(".json"));
 
   let added = 0,
     updated = 0,
@@ -97,15 +92,11 @@ async function syncAbis() {
     }
   }
 
-  console.log(
-    `[abi-sync] Sync complete — added: ${added}, updated: ${updated}, errors: ${errors}`,
-  );
+  console.log(`[abi-sync] Sync complete — added: ${added}, updated: ${updated}, errors: ${errors}`);
 }
 
 export function startAbiSync() {
-  console.log(
-    `[abi-sync] Scheduling ABI sync (${SYNC_CRON}) from ${ABI_REPO}/${ABI_PATH}`,
-  );
+  console.log(`[abi-sync] Scheduling ABI sync (${SYNC_CRON}) from ${ABI_REPO}/${ABI_PATH}`);
   // Run once immediately on startup, then on schedule
   syncAbis();
   cron.schedule(SYNC_CRON, syncAbis);

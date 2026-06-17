@@ -39,15 +39,11 @@ export function parseSacInvocation(base64Xdr) {
   const hf = xdr.HostFunction.fromXDR(base64Xdr, "base64");
 
   if (hf.switch().name !== "hostFunctionTypeInvokeContract") {
-    throw new Error(
-      `Expected hostFunctionTypeInvokeContract, got ${hf.switch().name}`,
-    );
+    throw new Error(`Expected hostFunctionTypeInvokeContract, got ${hf.switch().name}`);
   }
 
   const invoke = hf.invokeContract();
-  const contractId = StrKey.encodeContract(
-    invoke.contractAddress().contractId(),
-  );
+  const contractId = StrKey.encodeContract(invoke.contractAddress().contractId());
   const functionName = invoke.functionName().toString();
   const args = invoke.args().map((a) => {
     try {
@@ -57,8 +53,7 @@ export function parseSacInvocation(base64Xdr) {
     }
   });
 
-  const operationalTag =
-    SAC_OP_TAGS[functionName] ?? `SAC Action: ${functionName}`;
+  const operationalTag = SAC_OP_TAGS[functionName] ?? `SAC Action: ${functionName}`;
   const isSacInternal = functionName in SAC_OP_TAGS;
 
   return { contractId, functionName, operationalTag, args, isSacInternal };
@@ -74,9 +69,7 @@ export function parseSacInvocation(base64Xdr) {
  */
 export function describeSacInvocation(functionName, args, assetCode = "asset") {
   const fmt = (addr) =>
-    typeof addr === "string" && addr.length > 10
-      ? `${addr.slice(0, 6)}…${addr.slice(-4)}`
-      : String(addr ?? "?");
+    typeof addr === "string" && addr.length > 10 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : String(addr ?? "?");
 
   switch (functionName) {
     case "mint": {
@@ -108,9 +101,6 @@ export function describeSacInvocation(functionName, args, assetCode = "asset") {
       return `SAC Action: Approved ${amount ?? "?"} ${assetCode} allowance for ${fmt(spender)} from ${fmt(from)}${expiry != null ? ` (expires ledger ${expiry})` : ""}`;
     }
     default:
-      return (
-        SAC_OP_TAGS[functionName] ??
-        `SAC Action: ${functionName}(${args.map(String).join(", ")})`
-      );
+      return SAC_OP_TAGS[functionName] ?? `SAC Action: ${functionName}(${args.map(String).join(", ")})`;
   }
 }

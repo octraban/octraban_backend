@@ -12,8 +12,7 @@ function collectCreates(invocation, parentContractId, acc) {
   try {
     const fn = invocation.function();
     if (
-      fn.switch().name ===
-        "sorobanAuthorizedFunctionTypeCreateContractV2HostFn" ||
+      fn.switch().name === "sorobanAuthorizedFunctionTypeCreateContractV2HostFn" ||
       fn.switch().name === "sorobanAuthorizedFunctionTypeCreateContractHostFn"
     ) {
       const args = fn.createContractV2HostFn?.() ?? fn.createContractHostFn?.();
@@ -60,13 +59,8 @@ function extractCreatedContracts(sorobanMeta) {
         const entry = change.created();
         const contractData = entry.data?.().contractData?.();
         if (!contractData) continue;
-        if (
-          contractData.key?.().switch().name !== "scvLedgerKeyContractInstance"
-        )
-          continue;
-        const contractId = StrKey.encodeContract(
-          contractData.contract().contractId(),
-        );
+        if (contractData.key?.().switch().name !== "scvLedgerKeyContractInstance") continue;
+        const contractId = StrKey.encodeContract(contractData.contract().contractId());
         created.push(contractId);
       } catch {
         /* skip */
@@ -156,10 +150,7 @@ export function detectFactoryDeployment(ev) {
     // Extract deployment details from auth entries
     const deploymentDetails = [];
     try {
-      const env = xdr.TransactionEnvelope.fromXDR(
-        ev.envelopeXdr || ev.envelope_xdr,
-        "base64",
-      );
+      const env = xdr.TransactionEnvelope.fromXDR(ev.envelopeXdr || ev.envelope_xdr, "base64");
       let ops = [];
       try {
         ops = env.v1?.().tx().operations() ?? env.tx?.().operations() ?? [];
@@ -181,12 +172,10 @@ export function detectFactoryDeployment(ev) {
               const fnType = fn.switch().name;
 
               if (
-                fnType ===
-                  "sorobanAuthorizedFunctionTypeCreateContractV2HostFn" ||
+                fnType === "sorobanAuthorizedFunctionTypeCreateContractV2HostFn" ||
                 fnType === "sorobanAuthorizedFunctionTypeCreateContractHostFn"
               ) {
-                const args =
-                  fn.createContractV2HostFn?.() ?? fn.createContractHostFn?.();
+                const args = fn.createContractV2HostFn?.() ?? fn.createContractHostFn?.();
                 const deployInfo = extractDeploymentInfo(args);
                 deploymentDetails.push(deployInfo);
               }
@@ -237,10 +226,7 @@ export function detectFactoryDeployment(ev) {
  *   deploymentTree: { factoryContractId: string|null, contracts: object[] }
  * }}
  */
-export function parseFactoryDeployment(
-  txEnvelopeXdr,
-  factoryContractId = null,
-) {
+export function parseFactoryDeployment(txEnvelopeXdr, factoryContractId = null) {
   const env = xdr.TransactionEnvelope.fromXDR(txEnvelopeXdr, "base64");
 
   let ops;
@@ -261,11 +247,7 @@ export function parseFactoryDeployment(
       // Scan auth entries for CreateContract sub-invocations
       for (const authEntry of ihf.auth()) {
         try {
-          collectCreates(
-            authEntry.rootInvocation(),
-            factoryContractId,
-            creates,
-          );
+          collectCreates(authEntry.rootInvocation(), factoryContractId, creates);
         } catch {
           /* skip */
         }

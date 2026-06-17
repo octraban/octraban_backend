@@ -19,13 +19,13 @@ import crypto from "crypto";
 // ── TTL configuration by cache type ──────────────────────────────────────────
 // l1/l2 in seconds; l3 is the Cache-Control header string for CDN/browser.
 const TTL_CONFIG = {
-  events_list:      { l1: 5,   l2: 30,  l3: "public, max-age=30, stale-while-revalidate=300" },
-  events_single:    { l1: 10,  l2: 60,  l3: "private, max-age=60" },
-  contracts_list:   { l1: 30,  l2: 300, l3: "public, max-age=300, stale-if-error=86400" },
-  contracts_single: { l1: 60,  l2: 900, l3: "public, max-age=300, stale-if-error=86400" },
-  search:           { l1: 0,   l2: 10,  l3: "no-cache, no-store" },
-  stats:            { l1: 60,  l2: 300, l3: "public, max-age=300" },
-  default:          { l1: 30,  l2: 60,  l3: "public, max-age=60" },
+  events_list: { l1: 5, l2: 30, l3: "public, max-age=30, stale-while-revalidate=300" },
+  events_single: { l1: 10, l2: 60, l3: "private, max-age=60" },
+  contracts_list: { l1: 30, l2: 300, l3: "public, max-age=300, stale-if-error=86400" },
+  contracts_single: { l1: 60, l2: 900, l3: "public, max-age=300, stale-if-error=86400" },
+  search: { l1: 0, l2: 10, l3: "no-cache, no-store" },
+  stats: { l1: 60, l2: 300, l3: "public, max-age=300" },
+  default: { l1: 30, l2: 60, l3: "public, max-age=60" },
 };
 
 export function getTTL(type) {
@@ -105,10 +105,7 @@ const _l1 = new LRUCache(L1_MAX);
 // Algorithm: recompute if now − β·computeMs·ln(rand) ≥ expiresAt
 function _shouldXFetch(entry) {
   if (!entry.computeMs || entry.computeMs < 1) return false;
-  return (
-    Date.now() - XFETCH_BETA * entry.computeMs * Math.log(Math.random()) >=
-    entry.expiresAt
-  );
+  return Date.now() - XFETCH_BETA * entry.computeMs * Math.log(Math.random()) >= entry.expiresAt;
 }
 
 // Keys currently being recomputed (prevents multiple concurrent recomputes).
@@ -119,9 +116,7 @@ const _recomputing = new Set();
 let _redis = null;
 let _redisSub = null;
 const INVALIDATION_CHANNEL = "cache:invalidate";
-const _instanceId =
-  process.env.INSTANCE_ID ||
-  `inst-${Math.random().toString(36).slice(2, 8)}`;
+const _instanceId = process.env.INSTANCE_ID || `inst-${Math.random().toString(36).slice(2, 8)}`;
 
 async function _getRedis() {
   if (_redis) return _redis;
@@ -130,14 +125,10 @@ async function _getRedis() {
   try {
     const { createClient } = await import("redis");
     _redis = createClient({ url });
-    _redis.on("error", (err) =>
-      console.warn("[cache:l2] error:", err.message),
-    );
+    _redis.on("error", (err) => console.warn("[cache:l2] error:", err.message));
     await _redis.connect();
     console.log("[cache:l2] connected:", url);
-    _setupPubSub(url).catch((e) =>
-      console.warn("[cache:pubsub] setup failed:", e.message),
-    );
+    _setupPubSub(url).catch((e) => console.warn("[cache:pubsub] setup failed:", e.message));
   } catch (err) {
     console.warn("[cache:l2] unavailable, using L1 only:", err.message);
     _redis = null;
@@ -148,9 +139,7 @@ async function _getRedis() {
 async function _setupPubSub(url) {
   const { createClient } = await import("redis");
   _redisSub = createClient({ url });
-  _redisSub.on("error", (err) =>
-    console.warn("[cache:pubsub] error:", err.message),
-  );
+  _redisSub.on("error", (err) => console.warn("[cache:pubsub] error:", err.message));
   await _redisSub.connect();
   await _redisSub.subscribe(INVALIDATION_CHANNEL, (message) => {
     try {
@@ -166,7 +155,9 @@ async function _setupPubSub(url) {
         ...msg,
         via: "pubsub",
       });
-    } catch { /* malformed invalidation message — ignore */ }
+    } catch {
+      /* malformed invalidation message — ignore */
+    }
   });
   console.log("[cache:pubsub] subscribed to", INVALIDATION_CHANNEL);
 }
@@ -177,12 +168,12 @@ const _analytics = {
   startTime: Date.now(),
   l1: { hits: 0, misses: 0 },
   l2: { hits: 0, misses: 0 },
-  invalidations: [],    // ring buffer, max 200
-  stampedeEvents: [],   // ring buffer, max 200
-  cachedLatency: [],    // ring buffer, max 1000 (ms samples)
-  uncachedLatency: [],  // ring buffer, max 1000 (ms samples)
-  byEndpoint: {},       // cacheType → { hits, misses }
-  keyAccess: {},        // key → count
+  invalidations: [], // ring buffer, max 200
+  stampedeEvents: [], // ring buffer, max 200
+  cachedLatency: [], // ring buffer, max 1000 (ms samples)
+  uncachedLatency: [], // ring buffer, max 1000 (ms samples)
+  byEndpoint: {}, // cacheType → { hits, misses }
+  keyAccess: {}, // key → count
 };
 
 function _pushAnalyticsEvent(arr, event, max = 200) {
@@ -409,8 +400,7 @@ export async function cacheAside(key, loader, ttlOrType = "default") {
  */
 export async function cacheApplyDelta(key, delta, ttlOrType = "default") {
   const current = await cacheGet(key);
-  if (current === null || typeof current !== "object" || Array.isArray(current))
-    return null;
+  if (current === null || typeof current !== "object" || Array.isArray(current)) return null;
   const updated = { ...current, ...delta };
   await cacheSet(key, updated, ttlOrType, 0);
   return updated;
@@ -422,11 +412,7 @@ export async function cacheApplyDelta(key, delta, ttlOrType = "default") {
  * Generate a weak ETag from response data (MD5 of JSON, first 16 hex chars).
  */
 export function generateETag(data) {
-  const hash = crypto
-    .createHash("md5")
-    .update(JSON.stringify(data))
-    .digest("hex")
-    .slice(0, 16);
+  const hash = crypto.createHash("md5").update(JSON.stringify(data)).digest("hex").slice(0, 16);
   return `W/"${hash}"`;
 }
 
@@ -439,8 +425,7 @@ export function recordCachedLatency(ms) {
 
 export function recordUncachedLatency(ms) {
   _analytics.uncachedLatency.push(ms);
-  if (_analytics.uncachedLatency.length > 1000)
-    _analytics.uncachedLatency.shift();
+  if (_analytics.uncachedLatency.length > 1000) _analytics.uncachedLatency.shift();
 }
 
 // ── Analytics export ──────────────────────────────────────────────────────────

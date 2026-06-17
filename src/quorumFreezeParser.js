@@ -40,9 +40,7 @@ function contractIdsFromLedgerKeys(ledgerKeys) {
 
       if (typeName === "contractData") {
         const cd = key.contractData();
-        const contractHex = Buffer.from(cd.contract().contractId()).toString(
-          "hex",
-        );
+        const contractHex = Buffer.from(cd.contract().contractId()).toString("hex");
         ids.add(StrKey.encodeContract(Buffer.from(contractHex, "hex")));
       } else if (typeName === "contractCode") {
         // ContractCode keys are identified by wasmHash — we store the hash
@@ -76,16 +74,9 @@ export function detectQuorumFreeze(txMeta) {
     for (const change of changes) {
       try {
         const switchName = change.switch().name;
-        if (
-          switchName !== "ledgerEntryUpdated" &&
-          switchName !== "ledgerEntryCreated"
-        )
-          continue;
+        if (switchName !== "ledgerEntryUpdated" && switchName !== "ledgerEntryCreated") continue;
 
-        const entry =
-          switchName === "ledgerEntryUpdated"
-            ? change.updated()
-            : change.created();
+        const entry = switchName === "ledgerEntryUpdated" ? change.updated() : change.created();
 
         const data = entry.data?.();
         if (!data) continue;

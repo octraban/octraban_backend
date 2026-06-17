@@ -34,15 +34,13 @@ import { formatAmount } from "./formatAmount.js";
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
-const RPC_URL =
-  process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
+const RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const API_KEY = process.env.API_KEY;
 
 function requireApiKey(req, res, next) {
   if (!API_KEY) return next();
   const key = req.headers["x-api-key"];
-  if (!key || key !== API_KEY)
-    return res.status(401).json({ error: "Unauthorized" });
+  if (!key || key !== API_KEY) return res.status(401).json({ error: "Unauthorized" });
   next();
 }
 
@@ -114,10 +112,7 @@ export function startApi() {
   app.use(generalLimiter);
 
   // ── API Documentation ────────────────────────────────────────────────────────
-  const openApiPath = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "../openapi.yaml",
-  );
+  const openApiPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../openapi.yaml");
   if (fs.existsSync(openApiPath)) {
     const yaml = fs.readFileSync(openApiPath, "utf8");
     import("yaml")
@@ -162,13 +157,14 @@ export function startApi() {
         });
         // Predictive pre-fetch: next page if user is paginating
         schedulePrefetch(key, {
-          [`events:list:${req.query.contract ?? ""}:${req.query.fn ?? ""}:${(Number(req.query.page) || 1) + 1}:${req.query.type ?? ""}`]: () =>
-            db.getEvents({
-              contract: req.query.contract,
-              fn: req.query.fn,
-              page: (Number(req.query.page) || 1) + 1,
-              type: req.query.type,
-            }),
+          [`events:list:${req.query.contract ?? ""}:${req.query.fn ?? ""}:${(Number(req.query.page) || 1) + 1}:${req.query.type ?? ""}`]:
+            () =>
+              db.getEvents({
+                contract: req.query.contract,
+                fn: req.query.fn,
+                page: (Number(req.query.page) || 1) + 1,
+                type: req.query.type,
+              }),
         });
         res.json(events);
       } catch (e) {
@@ -199,10 +195,7 @@ export function startApi() {
       const ev = await db.getEvent(Number(req.params.seq));
       if (!ev) return res.status(404).json({ error: "Not found" });
       if (!ev.zk_host_calls) return res.json({ calls: [], delta: null });
-      const zk =
-        typeof ev.zk_host_calls === "string"
-          ? JSON.parse(ev.zk_host_calls)
-          : ev.zk_host_calls;
+      const zk = typeof ev.zk_host_calls === "string" ? JSON.parse(ev.zk_host_calls) : ev.zk_host_calls;
       res.json(zk);
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -212,10 +205,7 @@ export function startApi() {
   // GET /api/contracts/:id
   app.get(
     "/api/contracts/:id",
-    makeCache(
-      "contracts_single",
-      (req) => `contracts:single:${req.params.id}`,
-    ),
+    makeCache("contracts_single", (req) => `contracts:single:${req.params.id}`),
     async (req, res) => {
       try {
         const meta = await cacheAside(
@@ -243,10 +233,7 @@ export function startApi() {
   app.get("/api/contracts/:id/build-metadata", async (req, res) => {
     try {
       const meta = await db.getWasmBuildMetadata(req.params.id);
-      if (!meta)
-        return res
-          .status(404)
-          .json({ error: "No build metadata found for this contract" });
+      if (!meta) return res.status(404).json({ error: "No build metadata found for this contract" });
       res.json(meta);
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -272,10 +259,7 @@ export function startApi() {
           };
         }),
       };
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename="${req.params.id}.abi.json"`,
-      );
+      res.setHeader("Content-Disposition", `attachment; filename="${req.params.id}.abi.json"`);
       res.json(abi);
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -323,9 +307,7 @@ export function startApi() {
       const { contractId, functions } = req.body;
 
       if (!contractId || !functions) {
-        return res
-          .status(400)
-          .json({ error: "Missing contractId or functions" });
+        return res.status(400).json({ error: "Missing contractId or functions" });
       }
 
       const verification = await verifyAbi(contractId, functions);
@@ -341,9 +323,7 @@ export function startApi() {
       const { fetchContractSpec } = await import("./verify_abi.js");
       const spec = await fetchContractSpec(req.params.id);
       if (spec === null) {
-        return res
-          .status(404)
-          .json({ error: "Contract not found or has no spec" });
+        return res.status(404).json({ error: "Contract not found or has no spec" });
       }
       res.json(spec);
     } catch (e) {
@@ -359,9 +339,7 @@ export function startApi() {
       const { fetchContractSpecFull } = await import("./verify_abi.js");
       const spec = await fetchContractSpecFull(req.params.id);
       if (spec === null) {
-        return res
-          .status(404)
-          .json({ error: "Contract not found or has no WASM spec" });
+        return res.status(404).json({ error: "Contract not found or has no WASM spec" });
       }
       res.json(spec);
     } catch (e) {
@@ -373,13 +351,10 @@ export function startApi() {
   app.post("/api/simulate", writeLimiter, requireApiKey, async (req, res) => {
     try {
       const { contractId, fn, args = [] } = req.body;
-      if (!contractId || !fn)
-        return res.status(400).json({ error: "Missing contractId or fn" });
+      if (!contractId || !fn) return res.status(400).json({ error: "Missing contractId or fn" });
 
-      const { SorobanRpc, Contract, nativeToScVal } =
-        await import("@stellar/stellar-sdk");
-      const rpcUrl =
-        process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
+      const { SorobanRpc, Contract, nativeToScVal } = await import("@stellar/stellar-sdk");
+      const rpcUrl = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
       const server = new SorobanRpc.Server(rpcUrl);
 
       const contract = new Contract(contractId);
@@ -387,11 +362,9 @@ export function startApi() {
       const op = contract.call(fn, ...scArgs);
 
       const account = await server.getAccount(
-        process.env.SIMULATE_SOURCE ||
-          "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+        process.env.SIMULATE_SOURCE || "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
       );
-      const { TransactionBuilder, Networks, BASE_FEE } =
-        await import("@stellar/stellar-sdk");
+      const { TransactionBuilder, Networks, BASE_FEE } = await import("@stellar/stellar-sdk");
       const tx = new TransactionBuilder(account, {
         fee: BASE_FEE,
         networkPassphrase: Networks.TESTNET,
@@ -422,45 +395,39 @@ export function startApi() {
   });
 
   // POST /api/sandbox/simulate — accepts a raw XDR TransactionEnvelope, simulates it directly
-  app.post(
-    "/api/sandbox/simulate",
-    writeLimiter,
-    requireApiKey,
-    async (req, res) => {
-      try {
-        const { xdrEnvelope } = req.body;
-        if (!xdrEnvelope)
-          return res.status(400).json({ error: "Missing xdrEnvelope" });
+  app.post("/api/sandbox/simulate", writeLimiter, requireApiKey, async (req, res) => {
+    try {
+      const { xdrEnvelope } = req.body;
+      if (!xdrEnvelope) return res.status(400).json({ error: "Missing xdrEnvelope" });
 
-        const { SorobanRpc, xdr } = await import("@stellar/stellar-sdk");
-        const server = new SorobanRpc.Server(RPC_URL);
+      const { SorobanRpc, xdr } = await import("@stellar/stellar-sdk");
+      const server = new SorobanRpc.Server(RPC_URL);
 
-        const envelope = xdr.TransactionEnvelope.fromXDR(xdrEnvelope, "base64");
-        const sim = await server.simulateTransaction({
-          toEnvelope: () => envelope,
-        });
+      const envelope = xdr.TransactionEnvelope.fromXDR(xdrEnvelope, "base64");
+      const sim = await server.simulateTransaction({
+        toEnvelope: () => envelope,
+      });
 
-        if (SorobanRpc.Api.isSimulationError(sim)) {
-          return res.json({ success: false, error: sim.error });
-        }
-
-        const cost = sim.cost ?? {};
-        const retVal = sim.result?.retval;
-        res.json({
-          success: true,
-          returnValue: retVal ? retVal.toXDR("base64") : undefined,
-          cost: {
-            cpuInsns: String(cost.cpuInsns ?? 0),
-            memBytes: String(cost.memBytes ?? 0),
-          },
-          minResourceFee: sim.minResourceFee ?? null,
-          latestLedger: sim.latestLedger ?? null,
-        });
-      } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+      if (SorobanRpc.Api.isSimulationError(sim)) {
+        return res.json({ success: false, error: sim.error });
       }
-    },
-  );
+
+      const cost = sim.cost ?? {};
+      const retVal = sim.result?.retval;
+      res.json({
+        success: true,
+        returnValue: retVal ? retVal.toXDR("base64") : undefined,
+        cost: {
+          cpuInsns: String(cost.cpuInsns ?? 0),
+          memBytes: String(cost.memBytes ?? 0),
+        },
+        minResourceFee: sim.minResourceFee ?? null,
+        latestLedger: sim.latestLedger ?? null,
+      });
+    } catch (e) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
 
   // GET /api/wallet/:address
   app.get("/api/wallet/:address", async (req, res) => {
@@ -544,8 +511,7 @@ export function startApi() {
   // GET /api/v1/contracts/:id/transactions?function_name=&start_ledger=&end_ledger=&page=&limit=
   app.get("/api/v1/contracts/:id/transactions", async (req, res) => {
     try {
-      const { function_name, start_ledger, end_ledger, page, limit } =
-        req.query;
+      const { function_name, start_ledger, end_ledger, page, limit } = req.query;
       const result = await db.getContractTransactions(req.params.id, {
         function_name: function_name || undefined,
         start_ledger: start_ledger ? Number(start_ledger) : undefined,
@@ -613,8 +579,7 @@ export function startApi() {
   app.post("/api/auth-tree", writeLimiter, requireApiKey, async (req, res) => {
     try {
       const { auth } = req.body;
-      if (!Array.isArray(auth))
-        return res.status(400).json({ error: "auth must be an array" });
+      if (!Array.isArray(auth)) return res.status(400).json({ error: "auth must be an array" });
       const { parseAuthTree } = await import("./authTreeParser.js");
       res.json(parseAuthTree(auth));
     } catch (e) {
@@ -656,39 +621,31 @@ export function startApi() {
 
   // POST /api/contracts/:id/source-verifications
   // Body: { wasm_hash, signer, signature, compiler_hash }
-  app.post(
-    "/api/contracts/:id/source-verifications",
-    writeLimiter,
-    requireApiKey,
-    async (req, res) => {
-      try {
-        const { wasm_hash, signer, signature, compiler_hash } = req.body;
-        if (!wasm_hash || !signer || !signature || !compiler_hash) {
-          return res.status(400).json({
-            error: "Missing wasm_hash, signer, signature, or compiler_hash",
-          });
-        }
-        await db.addSourceVerification({
-          contract_id: req.params.id,
-          wasm_hash,
-          signer,
-          signature,
-          compiler_hash,
+  app.post("/api/contracts/:id/source-verifications", writeLimiter, requireApiKey, async (req, res) => {
+    try {
+      const { wasm_hash, signer, signature, compiler_hash } = req.body;
+      if (!wasm_hash || !signer || !signature || !compiler_hash) {
+        return res.status(400).json({
+          error: "Missing wasm_hash, signer, signature, or compiler_hash",
         });
-        res.status(201).json({ ok: true });
-      } catch (e) {
-        res.status(500).json({ error: e.message });
       }
-    },
-  );
+      await db.addSourceVerification({
+        contract_id: req.params.id,
+        wasm_hash,
+        signer,
+        signature,
+        compiler_hash,
+      });
+      res.status(201).json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
 
   // GET /api/contracts/:id/source-verifications?wasm_hash=
   app.get("/api/contracts/:id/source-verifications", async (req, res) => {
     try {
-      const rows = await db.getSourceVerifications(
-        req.params.id,
-        req.query.wasm_hash || undefined,
-      );
+      const rows = await db.getSourceVerifications(req.params.id, req.query.wasm_hash || undefined);
       res.json(rows);
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -743,14 +700,9 @@ export function startApi() {
 
         // Extract WASM hash from the instance entry to build the code key
         try {
-          const contractInstance = instanceEntry.val
-            .contractData()
-            .val()
-            .instance();
+          const contractInstance = instanceEntry.val.contractData().val().instance();
           const wasmHash = contractInstance.executable().wasmHash();
-          const resolvedCodeKey = xdr.LedgerKey.contractCode(
-            new xdr.LedgerKeyContractCode({ hash: wasmHash }),
-          );
+          const resolvedCodeKey = xdr.LedgerKey.contractCode(new xdr.LedgerKeyContractCode({ hash: wasmHash }));
           const codeResult = await server.getLedgerEntries(resolvedCodeKey);
           const codeEntry = codeResult.entries?.[0] ?? null;
           if (codeEntry) codeTTL = codeEntry.liveUntilLedgerSeq ?? null;
@@ -783,8 +735,7 @@ export function startApi() {
   app.post("/api/setup/test-db", async (req, res) => {
     try {
       const { databaseUrl } = req.body;
-      if (!databaseUrl)
-        return res.status(400).json({ error: "Missing databaseUrl" });
+      if (!databaseUrl) return res.status(400).json({ error: "Missing databaseUrl" });
       const client = new pg.Client({
         connectionString: databaseUrl,
         connectionTimeoutMillis: 3000,
@@ -801,10 +752,7 @@ export function startApi() {
   app.post("/api/setup/save-config", async (req, res) => {
     try {
       const { sorobanRpcUrl, databaseUrl, pollMs } = req.body;
-      const envPath = path.resolve(
-        path.dirname(fileURLToPath(import.meta.url)),
-        "../../.env",
-      );
+      const envPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.env");
       let envContent = "";
       if (fs.existsSync(envPath)) {
         envContent = fs.readFileSync(envPath, "utf8");
@@ -856,14 +804,10 @@ export function startApi() {
     const escape = (v) => {
       if (v == null) return "";
       const s = String(v);
-      return s.includes(",") || s.includes('"') || s.includes("\n")
-        ? `"${s.replace(/"/g, '""')}"`
-        : s;
+      return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const header = columns.join(",");
-    const body = rows
-      .map((r) => columns.map((c) => escape(r[c])).join(","))
-      .join("\n");
+    const body = rows.map((r) => columns.map((c) => escape(r[c])).join(",")).join("\n");
     return header + "\n" + body + "\n";
   }
 
@@ -905,10 +849,7 @@ export function startApi() {
         limit,
       });
       if (format === "json") {
-        res.setHeader(
-          "Content-Disposition",
-          'attachment; filename="events.json"',
-        );
+        res.setHeader("Content-Disposition", 'attachment; filename="events.json"');
         res.setHeader("Content-Type", "application/json");
         return res.json(rows);
       }
@@ -926,17 +867,11 @@ export function startApi() {
       const format = req.query.format === "json" ? "json" : "csv";
       const rows = await db.getContractsForExport();
       if (format === "json") {
-        res.setHeader(
-          "Content-Disposition",
-          'attachment; filename="contracts.json"',
-        );
+        res.setHeader("Content-Disposition", 'attachment; filename="contracts.json"');
         res.setHeader("Content-Type", "application/json");
         return res.json(rows);
       }
-      res.setHeader(
-        "Content-Disposition",
-        'attachment; filename="contracts.csv"',
-      );
+      res.setHeader("Content-Disposition", 'attachment; filename="contracts.csv"');
       res.setHeader("Content-Type", "text/csv");
       return res.send(rowsToCsv(rows, CONTRACT_COLUMNS));
     } catch (e) {

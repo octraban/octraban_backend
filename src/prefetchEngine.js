@@ -11,7 +11,7 @@
 
 import { cacheGet, cacheSet } from "./cacheLayer.js";
 
-const _freq = new Map();    // key → access count
+const _freq = new Map(); // key → access count
 const _inFlight = new Set(); // keys currently being pre-fetched
 
 /**
@@ -51,7 +51,9 @@ export function schedulePrefetch(key, loaderMap) {
             await cacheSet(nextKey, value, type, 0);
           }
         }
-      } catch { /* prefetch failure is non-fatal */ }
+      } catch {
+        /* prefetch failure is non-fatal */
+      }
       _inFlight.delete(nextKey);
     }, 0);
   }
@@ -62,13 +64,12 @@ function _predict(key) {
   const results = [];
 
   // events:list:{contract}:{fn}:{page}:{type} → pre-fetch page + 1
-  const listMatch = key.match(
-    /^events:list:([^:]*):([^:]*):(\d+):([^:]*)$/,
-  );
+  const listMatch = key.match(/^events:list:([^:]*):([^:]*):(\d+):([^:]*)$/);
   if (listMatch) {
     const [, contract, fn, page, type] = listMatch;
     const nextPage = Number(page) + 1;
-    if (nextPage <= 5) { // only pre-fetch up to page 5
+    if (nextPage <= 5) {
+      // only pre-fetch up to page 5
       results.push(`events:list:${contract}:${fn}:${nextPage}:${type}`);
     }
     // If filtering on a contract, also pre-fetch the contract detail

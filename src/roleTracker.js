@@ -40,14 +40,8 @@ export function extractRoleAssignment(ev) {
 
   // Generic role_granted / role_revoked / role_set pattern
   // topic[0] = event name, topic[1] = role name, topic[2] = address
-  if (
-    topic0 === "role_granted" ||
-    topic0 === "role_revoked" ||
-    topic0 === "role_set"
-  ) {
-    const role = ev.raw_topics[1]
-      ? String(ev.raw_topics[1]).toLowerCase()
-      : "unknown";
+  if (topic0 === "role_granted" || topic0 === "role_revoked" || topic0 === "role_set") {
+    const role = ev.raw_topics[1] ? String(ev.raw_topics[1]).toLowerCase() : "unknown";
     const address = ev.raw_topics[2] ?? _parseAddress(ev.raw_data);
     if (!address) return null;
     return {
@@ -61,8 +55,7 @@ export function extractRoleAssignment(ev) {
   const canonicalRole = ROLE_EVENT_MAP[topic0];
   if (canonicalRole) {
     // Address is typically topic[1] or topic[2]; fall back to raw_data
-    const address =
-      ev.raw_topics[1] ?? ev.raw_topics[2] ?? _parseAddress(ev.raw_data);
+    const address = ev.raw_topics[1] ?? ev.raw_topics[2] ?? _parseAddress(ev.raw_data);
     if (!address) return null;
     return { role: canonicalRole, address: String(address), revoked: false };
   }

@@ -91,13 +91,8 @@ export function generateCompatibilityReport(comparison) {
   const breakingChanges = detectBreakingChanges(comparison);
   const isCompatible = breakingChanges.length === 0;
 
-  const totalChanges =
-    comparison.removed.length +
-    comparison.added.length +
-    comparison.modified.length;
-  const compatibilityScore = isCompatible
-    ? 100
-    : Math.max(0, 100 - breakingChanges.length * 25);
+  const totalChanges = comparison.removed.length + comparison.added.length + comparison.modified.length;
+  const compatibilityScore = isCompatible ? 100 : Math.max(0, 100 - breakingChanges.length * 25);
 
   return {
     isCompatible,

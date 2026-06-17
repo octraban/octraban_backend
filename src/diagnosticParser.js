@@ -59,8 +59,7 @@ function extractErrorFromScVal(val) {
  * @returns {{ contractId: string|null, error: string, topics: string[], data: any }[]}
  */
 export function parseDiagnosticEvents(diagnosticEventsXdr) {
-  if (!Array.isArray(diagnosticEventsXdr) || diagnosticEventsXdr.length === 0)
-    return [];
+  if (!Array.isArray(diagnosticEventsXdr) || diagnosticEventsXdr.length === 0) return [];
 
   const results = [];
 
@@ -76,13 +75,7 @@ export function parseDiagnosticEvents(diagnosticEventsXdr) {
       const contractId = rawId ? StrKey.encodeContract(rawId) : null;
 
       // Generic topic markers that are not error labels
-      const SKIP = new Set([
-        "fn_call",
-        "fn_return",
-        "log",
-        "error",
-        "diagnostic",
-      ]);
+      const SKIP = new Set(["fn_call", "fn_return", "log", "error", "diagnostic"]);
 
       // 1. Check data first for scvError (most reliable source)
       let error = null;

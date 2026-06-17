@@ -24,14 +24,10 @@ const PRUNE_LEDGER_BUFFER = Number(process.env.PRUNE_LEDGER_BUFFER || 1000); // 
  * Soroban temporary storage has a max TTL of ~110 days (~1,382,400 ledgers at 5s/ledger).
  * We prune entries older than MAX_TEMP_TTL_LEDGERS ledgers.
  */
-const MAX_TEMP_TTL_LEDGERS = Number(
-  process.env.MAX_TEMP_TTL_LEDGERS || 1_382_400,
-);
+const MAX_TEMP_TTL_LEDGERS = Number(process.env.MAX_TEMP_TTL_LEDGERS || 1_382_400);
 
 async function getCurrentLedger() {
-  const { rows } = await db.query(
-    "SELECT COALESCE(MAX(ledger), 0) AS max_ledger FROM events",
-  );
+  const { rows } = await db.query("SELECT COALESCE(MAX(ledger), 0) AS max_ledger FROM events");
   return Number(rows[0].max_ledger);
 }
 
@@ -39,8 +35,7 @@ async function pruneExpiredTemporaryData() {
   console.log("[pruner] starting pruning run…");
 
   const currentLedger = await getCurrentLedger();
-  const expiryLedger =
-    currentLedger - MAX_TEMP_TTL_LEDGERS - PRUNE_LEDGER_BUFFER;
+  const expiryLedger = currentLedger - MAX_TEMP_TTL_LEDGERS - PRUNE_LEDGER_BUFFER;
 
   if (expiryLedger <= 0) {
     console.log("[pruner] not enough ledger history yet, skipping");
@@ -68,9 +63,7 @@ async function pruneExpiredTemporaryData() {
   );
 
   const deleted = result.rowCount ?? 0;
-  console.log(
-    `[pruner] deleted ${deleted} expired temporary-storage events (ledger < ${expiryLedger})`,
-  );
+  console.log(`[pruner] deleted ${deleted} expired temporary-storage events (ledger < ${expiryLedger})`);
 
   // Also vacuum the table to reclaim space (non-blocking)
   await db.query("VACUUM ANALYZE events").catch(() => {});
@@ -82,9 +75,7 @@ async function pruneExpiredTemporaryData() {
 export function startPruner() {
   console.log(`[pruner] scheduled — cron: "${PRUNE_CRON}"`);
   cron.schedule(PRUNE_CRON, () => {
-    pruneExpiredTemporaryData().catch((err) =>
-      console.error("[pruner] error:", err.message),
-    );
+    pruneExpiredTemporaryData().catch((err) => console.error("[pruner] error:", err.message));
   });
 }
 

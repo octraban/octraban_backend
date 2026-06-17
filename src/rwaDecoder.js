@@ -62,10 +62,7 @@ export function detectRwaToken(meta, _contractId) {
   }
 
   // Check for Benji-specific patterns
-  if (
-    meta.name?.toLowerCase().includes("benji") ||
-    meta.description?.toLowerCase().includes("franklin templeton")
-  ) {
+  if (meta.name?.toLowerCase().includes("benji") || meta.description?.toLowerCase().includes("franklin templeton")) {
     return {
       type: "benji",
       decoder: getRwaDecoder("benji"),

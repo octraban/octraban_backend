@@ -77,9 +77,7 @@ export function extractStateDiffs(ev) {
           const key = change.removed();
           const contractData = key.contractData?.();
           if (!contractData) continue;
-          const contractId = StrKey.encodeContract(
-            contractData.contract().contractId(),
-          );
+          const contractId = StrKey.encodeContract(contractData.contract().contractId());
           const keyLabel = scValLabel(contractData.key());
           const composite = `${contractId}::${keyLabel}`;
           before.set(composite, {
@@ -117,9 +115,7 @@ export function extractStateDiffs(ev) {
         const contractData = entry.data?.().contractData?.();
         if (!contractData) continue;
 
-        const contractId = StrKey.encodeContract(
-          contractData.contract().contractId(),
-        );
+        const contractId = StrKey.encodeContract(contractData.contract().contractId());
         const keyLabel = scValLabel(contractData.key());
         const valueLabel = scValLabel(contractData.val());
         const tier = deriveTier(contractData);
@@ -138,11 +134,7 @@ export function extractStateDiffs(ev) {
     // Emit diffs
     for (const [composite, afterEntry] of after) {
       const beforeEntry = before.get(composite);
-      const changeType = afterEntry.removed
-        ? "removed"
-        : beforeEntry
-          ? "updated"
-          : "created";
+      const changeType = afterEntry.removed ? "removed" : beforeEntry ? "updated" : "created";
 
       diffs.push({
         contract_id: afterEntry.contractId,

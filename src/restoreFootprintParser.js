@@ -14,11 +14,9 @@ function classifyRestoredKey(key) {
     case "contractData": {
       const cd = key.contractData();
       const contractId = StrKey.encodeContract(cd.contract().contractId());
-      const durability =
-        cd.durability().name === "persistent" ? "persistent" : "temporary";
+      const durability = cd.durability().name === "persistent" ? "persistent" : "temporary";
       const keyVal = cd.key();
-      const isInstance =
-        keyVal.switch().name === "scvLedgerKeyContractInstance";
+      const isInstance = keyVal.switch().name === "scvLedgerKeyContractInstance";
       if (isInstance) {
         return {
           type: "contractInstance",
@@ -52,9 +50,7 @@ function classifyRestoredKey(key) {
     }
 
     case "account": {
-      const accountId = StrKey.encodeEd25519PublicKey(
-        key.account().accountId().ed25519(),
-      );
+      const accountId = StrKey.encodeEd25519PublicKey(key.account().accountId().ed25519());
       return {
         type: "account",
         label: `Account ${accountId.slice(0, 8)}…`,
@@ -63,9 +59,7 @@ function classifyRestoredKey(key) {
     }
 
     case "trustline": {
-      const accountId = StrKey.encodeEd25519PublicKey(
-        key.trustLine().accountId().ed25519(),
-      );
+      const accountId = StrKey.encodeEd25519PublicKey(key.trustLine().accountId().ed25519());
       return {
         type: "trustline",
         label: `Trustline for ${accountId.slice(0, 8)}…`,
@@ -108,8 +102,7 @@ export function parseRestoreFootprintOp(txEnvelopeXdr) {
       if (body.switch().name !== "restoreFootprint") continue;
 
       const restore = body.restoreFootprint();
-      const footprint =
-        restore.ext?.().v1?.().footprint?.() ?? restore.footprint?.();
+      const footprint = restore.ext?.().v1?.().footprint?.() ?? restore.footprint?.();
       if (!footprint) continue;
 
       // readWrite keys are the ones being restored

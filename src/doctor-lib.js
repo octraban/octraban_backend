@@ -9,9 +9,7 @@ import pg from "pg";
 // Helper to run shell commands safely
 function checkCommand(command) {
   try {
-    const stdout = execSync(command, { stdio: "pipe", timeout: 3000 })
-      .toString()
-      .trim();
+    const stdout = execSync(command, { stdio: "pipe", timeout: 3000 }).toString().trim();
     return { available: true, output: stdout };
   } catch (err) {
     return { available: false, output: "", error: err.message };
@@ -65,10 +63,7 @@ export async function runAllChecks(customDbUrl = null) {
     results.runtimes.npm = {
       status: npmMajor >= 10 ? "pass" : "warn",
       version: npmCheck.output,
-      message:
-        npmMajor >= 10
-          ? "npm 10+ detected"
-          : "npm 10+ recommended (detected " + npmCheck.output + ")",
+      message: npmMajor >= 10 ? "npm 10+ detected" : "npm 10+ recommended (detected " + npmCheck.output + ")",
     };
   } else {
     results.runtimes.npm = {
@@ -86,21 +81,17 @@ export async function runAllChecks(customDbUrl = null) {
     const isRustOld =
       rustVersionMatch &&
       (parseInt(rustVersionMatch[1], 10) < 1 ||
-        (parseInt(rustVersionMatch[1], 10) === 1 &&
-          parseInt(rustVersionMatch[2], 10) < 80));
+        (parseInt(rustVersionMatch[1], 10) === 1 && parseInt(rustVersionMatch[2], 10) < 80));
     results.runtimes.rust = {
       status: isRustOld ? "warn" : "pass",
       version: rustCheck.output.split(" ")[1] || rustCheck.output,
-      message: isRustOld
-        ? "Rust 1.80+ recommended"
-        : `Rust ${rustCheck.output.split(" ")[1]} detected`,
+      message: isRustOld ? "Rust 1.80+ recommended" : `Rust ${rustCheck.output.split(" ")[1]} detected`,
     };
   } else {
     results.runtimes.rust = {
       status: "fail",
       version: "Not found",
-      message:
-        "Rust compiler (rustc) not found. Install from https://rustup.rs/",
+      message: "Rust compiler (rustc) not found. Install from https://rustup.rs/",
     };
   }
 
@@ -108,9 +99,7 @@ export async function runAllChecks(customDbUrl = null) {
   if (rustCheck.available) {
     const targetCheck = checkCommand("rustup target list --installed");
     if (targetCheck.available) {
-      const isWasmInstalled = targetCheck.output.includes(
-        "wasm32-unknown-unknown",
-      );
+      const isWasmInstalled = targetCheck.output.includes("wasm32-unknown-unknown");
       results.runtimes.wasm32 = {
         status: isWasmInstalled ? "pass" : "fail",
         message: isWasmInstalled
@@ -120,8 +109,7 @@ export async function runAllChecks(customDbUrl = null) {
     } else {
       results.runtimes.wasm32 = {
         status: "warn",
-        message:
-          "Could not verify installed Rust targets (rustup not available)",
+        message: "Could not verify installed Rust targets (rustup not available)",
       };
     }
   } else {
@@ -170,18 +158,14 @@ export async function runAllChecks(customDbUrl = null) {
   results.env.DATABASE_URL = {
     status: process.env.DATABASE_URL ? "pass" : "fail",
     value: process.env.DATABASE_URL || "Not set",
-    message: process.env.DATABASE_URL
-      ? "DATABASE_URL configured"
-      : "DATABASE_URL is required",
+    message: process.env.DATABASE_URL ? "DATABASE_URL configured" : "DATABASE_URL is required",
   };
 
   // 4. Ports Availability Check (5173, 3001, 5432)
   const portsToCheck = [5173, 3001, 5432];
   for (const port of portsToCheck) {
     const inUse = await isPortInUse(port);
-    let message = inUse
-      ? `Port ${port} is in use`
-      : `Port ${port} is available`;
+    let message = inUse ? `Port ${port} is in use` : `Port ${port} is available`;
     let status = inUse ? "warn" : "pass";
     if (port === 5432) {
       if (inUse) {

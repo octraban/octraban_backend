@@ -37,8 +37,7 @@ export function attachWebSocketServer(httpServer) {
   const wss = new WebSocketServer({
     server: httpServer,
     verifyClient: (info, cb) => {
-      const params = new url.URL(info.req.url || "", "http://localhost")
-        .searchParams;
+      const params = new url.URL(info.req.url || "", "http://localhost").searchParams;
       const key = params.get("api_key");
       if (API_KEY && key !== API_KEY) {
         cb(false, 401, "Unauthorized");

@@ -53,9 +53,7 @@ export function extractContractSpecSection(wasm) {
     if (sectionId === 0) {
       // Custom section: read name
       const { value: nameLen, offset: afterNameLen } = readLEB128(buf, pos);
-      const name = buf
-        .slice(afterNameLen, afterNameLen + nameLen)
-        .toString("utf8");
+      const name = buf.slice(afterNameLen, afterNameLen + nameLen).toString("utf8");
       if (name === "contractspecv0") {
         return buf.slice(afterNameLen + nameLen, sectionEnd);
       }
@@ -96,14 +94,10 @@ function typeStr(typeDef) {
   };
   if (MAP[name]) return MAP[name];
   if (name === "scSpecTypeUdt") return typeDef.udt().name().toString();
-  if (name === "scSpecTypeOption")
-    return `Option<${typeStr(typeDef.option().valueType())}>`;
-  if (name === "scSpecTypeVec")
-    return `Vec<${typeStr(typeDef.vec().elementType())}>`;
-  if (name === "scSpecTypeMap")
-    return `Map<${typeStr(typeDef.map().keyType())},${typeStr(typeDef.map().valueType())}>`;
-  if (name === "scSpecTypeTuple")
-    return `(${typeDef.tuple().valueTypes().map(typeStr).join(",")})`;
+  if (name === "scSpecTypeOption") return `Option<${typeStr(typeDef.option().valueType())}>`;
+  if (name === "scSpecTypeVec") return `Vec<${typeStr(typeDef.vec().elementType())}>`;
+  if (name === "scSpecTypeMap") return `Map<${typeStr(typeDef.map().keyType())},${typeStr(typeDef.map().valueType())}>`;
+  if (name === "scSpecTypeTuple") return `(${typeDef.tuple().valueTypes().map(typeStr).join(",")})`;
   if (name === "scSpecTypeBytesN") return `BytesN<${typeDef.bytesN().n()}>`;
   if (name === "scSpecTypeResult")
     return `Result<${typeStr(typeDef.result().okType())},${typeStr(typeDef.result().errorType())}>`;
@@ -119,9 +113,7 @@ function decodeEntry(entry) {
       kind: "function",
       name: fn.name().toString(),
       doc: fn.doc().toString() || undefined,
-      inputs: fn
-        .inputs()
-        .map((i) => ({ name: i.name().toString(), type: typeStr(i.type()) })),
+      inputs: fn.inputs().map((i) => ({ name: i.name().toString(), type: typeStr(i.type()) })),
       outputs: fn.outputs().map(typeStr),
     };
   }
@@ -132,9 +124,7 @@ function decodeEntry(entry) {
       kind: "struct",
       name: s.name().toString(),
       doc: s.doc().toString() || undefined,
-      fields: s
-        .fields()
-        .map((f) => ({ name: f.name().toString(), type: typeStr(f.type()) })),
+      fields: s.fields().map((f) => ({ name: f.name().toString(), type: typeStr(f.type()) })),
     };
   }
 
@@ -146,8 +136,7 @@ function decodeEntry(entry) {
       doc: u.doc().toString() || undefined,
       cases: u.cases().map((c) => {
         const ck = c.switch().name;
-        if (ck === "scSpecUdtUnionCaseVoidV0")
-          return { name: c.voidCase().name().toString() };
+        if (ck === "scSpecUdtUnionCaseVoidV0") return { name: c.voidCase().name().toString() };
         if (ck === "scSpecUdtUnionCaseTupleV0") {
           const t = c.tupleCase();
           return { name: t.name().toString(), types: t.type().map(typeStr) };
@@ -163,9 +152,7 @@ function decodeEntry(entry) {
       kind: "enum",
       name: e.name().toString(),
       doc: e.doc().toString() || undefined,
-      cases: e
-        .cases()
-        .map((c) => ({ name: c.name().toString(), value: c.value() })),
+      cases: e.cases().map((c) => ({ name: c.name().toString(), value: c.value() })),
     };
   }
 
@@ -175,9 +162,7 @@ function decodeEntry(entry) {
       kind: "error_enum",
       name: e.name().toString(),
       doc: e.doc().toString() || undefined,
-      cases: e
-        .cases()
-        .map((c) => ({ name: c.name().toString(), value: c.value() })),
+      cases: e.cases().map((c) => ({ name: c.name().toString(), value: c.value() })),
     };
   }
 

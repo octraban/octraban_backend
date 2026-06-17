@@ -7,9 +7,4 @@
  * Redis Pub/Sub invalidation.
  */
 
-export {
-  cacheGet,
-  cacheSet,
-  cacheDel,
-  cacheAside,
-} from "./cacheLayer.js";
+export { cacheGet, cacheSet, cacheDel, cacheAside } from "./cacheLayer.js";

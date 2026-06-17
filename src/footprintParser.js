@@ -13,11 +13,9 @@ function classifyKey(key) {
     case "contractData": {
       const cd = key.contractData();
       const dataKeyVal = cd.key();
-      const isInstance =
-        dataKeyVal.switch().name === "scvLedgerKeyContractInstance";
+      const isInstance = dataKeyVal.switch().name === "scvLedgerKeyContractInstance";
       const contractId = StrKey.encodeContract(cd.contract().contractId());
-      const durability =
-        cd.durability().name === "persistent" ? "persistent" : "temporary";
+      const durability = cd.durability().name === "persistent" ? "persistent" : "temporary";
       if (isInstance) {
         return { type: "contractInstance", contractId, durability };
       }
@@ -38,9 +36,7 @@ function classifyKey(key) {
     case "account":
       return {
         type: "account",
-        accountId: StrKey.encodeEd25519PublicKey(
-          key.account().accountId().ed25519(),
-        ),
+        accountId: StrKey.encodeEd25519PublicKey(key.account().accountId().ed25519()),
       };
 
     case "trustline": {

@@ -93,9 +93,7 @@ function parseQuery(query) {
 
   // Detect nested: data { ... }
   const dataMatch = rawFields.match(/data\s*\{([^}]*)\}/s);
-  const dataFields = dataMatch
-    ? dataMatch[1].trim().split(/\s+/).filter(Boolean)
-    : null;
+  const dataFields = dataMatch ? dataMatch[1].trim().split(/\s+/).filter(Boolean) : null;
 
   return { opName, args, topFields, dataFields };
 }
@@ -126,13 +124,8 @@ async function execute(parsed) {
     if (!parsed.topFields || parsed.topFields.includes("next_cursor")) {
       out.next_cursor = page.next_cursor;
     }
-    if (
-      !parsed.topFields ||
-      parsed.topFields.some((f) => f === "data" || parsed.dataFields)
-    ) {
-      out.data = (page.data || []).map((ev) =>
-        parsed.dataFields ? project(ev, parsed.dataFields) : ev,
-      );
+    if (!parsed.topFields || parsed.topFields.some((f) => f === "data" || parsed.dataFields)) {
+      out.data = (page.data || []).map((ev) => (parsed.dataFields ? project(ev, parsed.dataFields) : ev));
     }
     return out;
   }
@@ -153,8 +146,7 @@ export function attachGraphQL(app) {
   // POST /graphql — standard GraphQL over HTTP
   app.post("/graphql", async (req, res) => {
     const { query, variables } = req.body;
-    if (!query)
-      return res.status(400).json({ errors: [{ message: "Missing query" }] });
+    if (!query) return res.status(400).json({ errors: [{ message: "Missing query" }] });
 
     try {
       const parsed = parseQuery(query);

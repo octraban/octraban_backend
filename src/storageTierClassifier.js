@@ -33,30 +33,18 @@ export function classifyStorageWrites(ev) {
     for (const change of sorobanMeta.changedEntries?.() ?? []) {
       try {
         const switchName = change.switch().name;
-        if (
-          switchName !== "ledgerEntryCreated" &&
-          switchName !== "ledgerEntryUpdated"
-        )
-          continue;
+        if (switchName !== "ledgerEntryCreated" && switchName !== "ledgerEntryUpdated") continue;
 
-        const entry =
-          switchName === "ledgerEntryCreated"
-            ? change.created()
-            : change.updated();
+        const entry = switchName === "ledgerEntryCreated" ? change.created() : change.updated();
         const contractData = entry.data?.().contractData?.();
         if (!contractData) continue;
 
         const durability = contractData.durability().name; // "temporary" | "persistent"
         const keyType = contractData.key().switch().name; // scvLedgerKeyContractInstance | …
-        const contractId = StrKey.encodeContract(
-          contractData.contract().contractId(),
-        );
+        const contractId = StrKey.encodeContract(contractData.contract().contractId());
         const keyLabel =
-          keyType === "scvLedgerKeyContractInstance"
-            ? "ContractInstance"
-            : safeKeyLabel(contractData.key());
-        const changeType =
-          switchName === "ledgerEntryCreated" ? "created" : "updated";
+          keyType === "scvLedgerKeyContractInstance" ? "ContractInstance" : safeKeyLabel(contractData.key());
+        const changeType = switchName === "ledgerEntryCreated" ? "created" : "updated";
 
         const write = { tier: null, contractId, key: keyLabel, changeType };
 
@@ -84,11 +72,8 @@ export function classifyStorageWrites(ev) {
 function safeKeyLabel(scVal) {
   try {
     const native = scValToNative(scVal);
-    if (typeof native === "string" || typeof native === "number")
-      return String(native);
-    return JSON.stringify(native, (_, v) =>
-      typeof v === "bigint" ? v.toString() : v,
-    );
+    if (typeof native === "string" || typeof native === "number") return String(native);
+    return JSON.stringify(native, (_, v) => (typeof v === "bigint" ? v.toString() : v));
   } catch {
     return "?";
   }

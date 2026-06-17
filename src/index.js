@@ -25,8 +25,7 @@ import { recordLedgerHash } from "./reorgWorker.js";
 import { warmCache } from "./cacheWarming.js";
 import { cacheInvalidate } from "./cacheLayer.js";
 
-const RPC_URL =
-  process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
+const RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
 const POLL_MS = Number(process.env.POLL_MS || 5000);
 // Max events per RPC page — Soroban caps at 200
@@ -53,14 +52,8 @@ async function indexWasmUploads(txHashes, ledger) {
       if (!tx?.envelopeXdr) continue;
 
       const { xdr } = await import("@stellar/stellar-sdk");
-      const envelope = xdr.TransactionEnvelope.fromXDR(
-        tx.envelopeXdr,
-        "base64",
-      );
-      const ops =
-        envelope.tx?.().operations?.() ??
-        envelope.v1?.().tx?.().operations?.() ??
-        [];
+      const envelope = xdr.TransactionEnvelope.fromXDR(tx.envelopeXdr, "base64");
+      const ops = envelope.tx?.().operations?.() ?? envelope.v1?.().tx?.().operations?.() ?? [];
 
       for (const op of ops) {
         const body = op.body();
@@ -110,9 +103,7 @@ async function indexLedger(ledger) {
     // getTransaction calls when multiple events share the same transaction.
     const feeBumpCache = new Map();
     const restoreCache = new Map(); // Issue #167: txHash → archival_info
-    const uniqueTxHashes = [
-      ...new Set(res.events.map((e) => e.txHash).filter(Boolean)),
-    ];
+    const uniqueTxHashes = [...new Set(res.events.map((e) => e.txHash).filter(Boolean))];
     await Promise.all(
       uniqueTxHashes.map(async (txHash) => {
         try {
@@ -120,10 +111,7 @@ async function indexLedger(ledger) {
           if (txResult?.envelopeXdr) {
             feeBumpCache.set(txHash, parseFeeBump(txResult.envelopeXdr));
             // Issue #167: parse RestoreFootprintOp if present
-            const restore = parseAndDescribeRestore(
-              txResult.envelopeXdr,
-              txResult.resultMetaXdr ?? null,
-            );
+            const restore = parseAndDescribeRestore(txResult.envelopeXdr, txResult.resultMetaXdr ?? null);
             if (restore.isRestoreOp) restoreCache.set(txHash, restore);
           }
         } catch {
@@ -139,9 +127,7 @@ async function indexLedger(ledger) {
 
       const upgrade = detectUpgrade(ev);
       if (upgrade) {
-        console.log(
-          `[${ev.ledger}] CONTRACT UPGRADE ${ev.contractId}: ${upgrade.oldHash} → ${upgrade.newHash}`,
-        );
+        console.log(`[${ev.ledger}] CONTRACT UPGRADE ${ev.contractId}: ${upgrade.oldHash} → ${upgrade.newHash}`);
         decoded.upgrade = upgrade;
       }
 
@@ -160,12 +146,8 @@ async function indexLedger(ledger) {
       if (evictions.length) {
         await db
           .insertArchivalEvictions(evictions)
-          .catch((err) =>
-            console.error("[archivalEviction] insert failed:", err.message),
-          );
-        console.log(
-          `[${ev.ledger}] EVICTED ${evictions.length} key(s) in tx ${ev.txHash}`,
-        );
+          .catch((err) => console.error("[archivalEviction] insert failed:", err.message));
+        console.log(`[${ev.ledger}] EVICTED ${evictions.length} key(s) in tx ${ev.txHash}`);
       }
 
       publish(decoded); // Issue #39 — push to WS clients
@@ -183,15 +165,11 @@ async function indexLedger(ledger) {
     }
 
     // Scan transactions for UploadContractWasm operations (non-blocking)
-    indexWasmUploads(uniqueTxHashes, ledger).catch((err) =>
-      console.error("[wasmUpload] batch error:", err.message),
-    );
+    indexWasmUploads(uniqueTxHashes, ledger).catch((err) => console.error("[wasmUpload] batch error:", err.message));
 
     // Issue #37 — record the latest ledger hash for re-org detection
     if (res.latestLedger && res.latestLedgerHash) {
-      await recordLedgerHash(res.latestLedger, res.latestLedgerHash).catch(
-        () => {},
-      );
+      await recordLedgerHash(res.latestLedger, res.latestLedgerHash).catch(() => {});
     }
 
     // If the RPC returned a full page there may be more events; follow the cursor.
@@ -227,10 +205,7 @@ async function run() {
   // after a restart. Fall back to START_LEDGER or (latest - 100) for first run.
   const dbMax = await db.getMaxLedger();
   _cursor =
-    dbMax > 0
-      ? dbMax + 1
-      : START_LEDGER ||
-        (await withRetry(() => multiNodeRpc.getLatestLedger())).sequence - 100;
+    dbMax > 0 ? dbMax + 1 : START_LEDGER || (await withRetry(() => multiNodeRpc.getLatestLedger())).sequence - 100;
 
   console.log(`[daemon] starting from ledger ${_cursor}`);
 

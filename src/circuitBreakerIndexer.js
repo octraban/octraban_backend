@@ -4,10 +4,7 @@
  */
 
 import { db } from "./db.js";
-import {
-  hasCircuitBreaker,
-  determinePauseStatus,
-} from "./circuitBreakerDetector.js";
+import { hasCircuitBreaker, determinePauseStatus } from "./circuitBreakerDetector.js";
 
 /**
  * Process a decoded event and update circuit breaker status if applicable.
@@ -24,22 +21,13 @@ export async function processCircuitBreakerEvent(decoded, meta) {
   const fnName = decoded.function.toLowerCase();
 
   // Check if this is a pause/unpause event
-  if (
-    fnName.includes("pause") ||
-    fnName.includes("unpause") ||
-    fnName.includes("resume")
-  ) {
+  if (fnName.includes("pause") || fnName.includes("unpause") || fnName.includes("resume")) {
     const isPaused = fnName.includes("pause") && !fnName.includes("unpause");
 
     // Update circuit breaker status in database
     await db
       .updateCircuitBreakerStatus(decoded.contract_id, isPaused, decoded.ledger)
-      .catch((err) =>
-        console.error(
-          "[circuitBreakerIndexer] Failed to update status:",
-          err.message,
-        ),
-      );
+      .catch((err) => console.error("[circuitBreakerIndexer] Failed to update status:", err.message));
   }
 }
 
@@ -69,15 +57,8 @@ export async function refreshCircuitBreakerStatus(contractId, meta) {
     const status = determinePauseStatus(events.data);
 
     // Update database
-    await db.updateCircuitBreakerStatus(
-      contractId,
-      status.isPaused,
-      status.lastStatusChange,
-    );
+    await db.updateCircuitBreakerStatus(contractId, status.isPaused, status.lastStatusChange);
   } catch (err) {
-    console.error(
-      "[circuitBreakerIndexer] Failed to refresh status:",
-      err.message,
-    );
+    console.error("[circuitBreakerIndexer] Failed to refresh status:", err.message);
   }
 }

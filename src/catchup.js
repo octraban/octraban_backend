@@ -20,8 +20,7 @@ import { isHighBloatRisk } from "./bloatDetector.js";
 import { detectUpgrade } from "./upgradeDetector.js";
 import { classifyStorageWrites } from "./storageTierClassifier.js";
 
-const RPC_URL =
-  process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
+const RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const PAGE_LIMIT = 200; // Soroban RPC hard cap
 
 const rpc = new SorobanRpc.Server(RPC_URL, { allowHttp: true });
@@ -44,9 +43,7 @@ function parseArgs() {
   const batch = Number(args.batch || 50); // ledgers per worker chunk
 
   if (!from || !to || from > to) {
-    console.error(
-      "Usage: node src/catchup.js --from=<ledger> --to=<ledger> [--workers=5] [--batch=50]",
-    );
+    console.error("Usage: node src/catchup.js --from=<ledger> --to=<ledger> [--workers=5] [--batch=50]");
     process.exit(1);
   }
   return { from, to, workers, batch };
@@ -93,18 +90,14 @@ async function worker(id, ledgers) {
       await processLedger(ledger);
       done++;
       if (done % 100 === 0) {
-        console.log(
-          `[worker-${id}] processed ${done}/${ledgers.length} ledgers (last: ${ledger})`,
-        );
+        console.log(`[worker-${id}] processed ${done}/${ledgers.length} ledgers (last: ${ledger})`);
       }
     } catch (err) {
       // Log and continue — a single failed ledger should not abort the whole run
       console.error(`[worker-${id}] ledger ${ledger} failed: ${err.message}`);
     }
   }
-  console.log(
-    `[worker-${id}] done — ${done}/${ledgers.length} ledgers processed`,
-  );
+  console.log(`[worker-${id}] done — ${done}/${ledgers.length} ledgers processed`);
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────

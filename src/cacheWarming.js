@@ -35,22 +35,17 @@ export async function warmCache() {
       try {
         const meta = await db.getContractMeta(contract_id);
         if (meta) {
-          await cacheSet(
-            `contracts:single:${contract_id}`,
-            meta,
-            "contracts_single",
-            0,
-          );
+          await cacheSet(`contracts:single:${contract_id}`, meta, "contracts_single", 0);
           results.warmed++;
         }
-      } catch { /* individual contract warm failure is non-fatal */ }
+      } catch {
+        /* individual contract warm failure is non-fatal */
+      }
     }
   } catch (e) {
     console.warn("[cache:warm] top contracts failed:", e.message);
     results.failed++;
   }
 
-  console.log(
-    `[cache:warm] complete — warmed ${results.warmed}, failed ${results.failed}`,
-  );
+  console.log(`[cache:warm] complete — warmed ${results.warmed}, failed ${results.failed}`);
 }

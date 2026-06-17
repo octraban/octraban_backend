@@ -217,9 +217,7 @@ export const db = {
   },
 
   async getMaxLedger() {
-    const { rows } = await pool.query(
-      "SELECT COALESCE(MAX(ledger), 0) AS max_ledger FROM events",
-    );
+    const { rows } = await pool.query("SELECT COALESCE(MAX(ledger), 0) AS max_ledger FROM events");
     return Number(rows[0].max_ledger);
   },
 
@@ -233,9 +231,7 @@ export const db = {
   },
 
   async loadCursor() {
-    const { rows } = await pool.query(
-      "SELECT value FROM daemon_state WHERE key = 'cursor'",
-    );
+    const { rows } = await pool.query("SELECT value FROM daemon_state WHERE key = 'cursor'");
     return rows[0] ? Number(rows[0].value) : null;
   },
 
@@ -250,13 +246,7 @@ export const db = {
    *               Omit (or pass 0) for the first page.
    * @returns {{ data: object[], next_cursor: number|null }}
    */
-  async getEventsCursor({
-    contract,
-    fn,
-    type,
-    after_seq = 0,
-    limit = 25,
-  } = {}) {
+  async getEventsCursor({ contract, fn, type, after_seq = 0, limit = 25 } = {}) {
     const conditions = [];
     const params = [];
 
@@ -359,9 +349,7 @@ export const db = {
   },
 
   async getEvent(seq) {
-    const { rows } = await pool.query("SELECT * FROM events WHERE seq = $1", [
-      seq,
-    ]);
+    const { rows } = await pool.query("SELECT * FROM events WHERE seq = $1", [seq]);
     return rows[0] ?? null;
   },
 
@@ -374,9 +362,7 @@ export const db = {
   },
 
   async getContractMeta(id) {
-    const { rows } = await pool.query("SELECT * FROM contracts WHERE id = $1", [
-      id,
-    ]);
+    const { rows } = await pool.query("SELECT * FROM contracts WHERE id = $1", [id]);
     return rows[0] ?? null;
   },
 
@@ -385,10 +371,7 @@ export const db = {
    * @param {string} contractId
    * @param {{ function_name?: string, start_ledger?: number, end_ledger?: number, page?: number, limit?: number }} opts
    */
-  async getContractTransactions(
-    contractId,
-    { function_name, start_ledger, end_ledger, page = 1, limit = 25 } = {},
-  ) {
+  async getContractTransactions(contractId, { function_name, start_ledger, end_ledger, page = 1, limit = 25 } = {}) {
     const params = [contractId];
     const conditions = ["contract_id = $1"];
 
@@ -413,10 +396,7 @@ export const db = {
         `SELECT * FROM events WHERE ${where} ORDER BY ledger DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
         [...params, limit, offset],
       ),
-      pool.query(
-        `SELECT COUNT(*)::INT AS total FROM events WHERE ${where}`,
-        params,
-      ),
+      pool.query(`SELECT COUNT(*)::INT AS total FROM events WHERE ${where}`, params),
     ]);
 
     const total = countRows[0].total;
@@ -492,10 +472,11 @@ export const db = {
 
   // Issue #86: Circuit breaker status tracking
   async updateCircuitBreakerStatus(contractId, isPaused, ledger) {
-    await pool.query(
-      `UPDATE contracts SET is_paused = $1, pause_status_ledger = $2 WHERE id = $3`,
-      [isPaused, ledger, contractId],
-    );
+    await pool.query(`UPDATE contracts SET is_paused = $1, pause_status_ledger = $2 WHERE id = $3`, [
+      isPaused,
+      ledger,
+      contractId,
+    ]);
   },
 
   async getCircuitBreakerStatus(contractId) {
@@ -523,16 +504,11 @@ export const db = {
     const { last_upgrade_ledger, last_migrate_ledger } = rows[0];
     const pending =
       last_upgrade_ledger != null &&
-      (last_migrate_ledger == null ||
-        Number(last_upgrade_ledger) > Number(last_migrate_ledger));
+      (last_migrate_ledger == null || Number(last_upgrade_ledger) > Number(last_migrate_ledger));
     return {
       pending,
-      upgradedAtLedger: last_upgrade_ledger
-        ? Number(last_upgrade_ledger)
-        : null,
-      migratedAtLedger: last_migrate_ledger
-        ? Number(last_migrate_ledger)
-        : null,
+      upgradedAtLedger: last_upgrade_ledger ? Number(last_upgrade_ledger) : null,
+      migratedAtLedger: last_migrate_ledger ? Number(last_migrate_ledger) : null,
     };
   },
 
@@ -544,12 +520,7 @@ export const db = {
        VALUES ($1,$2,$3,$4)
        ON CONFLICT (contract_id) DO UPDATE
          SET name=$2, underlying_asset=$3, decimals=$4, updated_at=NOW()`,
-      [
-        vault.contract_id,
-        vault.name ?? null,
-        vault.underlying_asset ?? null,
-        vault.decimals ?? 7,
-      ],
+      [vault.contract_id, vault.name ?? null, vault.underlying_asset ?? null, vault.decimals ?? 7],
     );
   },
 
@@ -579,9 +550,7 @@ export const db = {
   },
 
   async getActiveVaultIds() {
-    const { rows } = await pool.query(
-      "SELECT contract_id FROM vaults WHERE active = TRUE",
-    );
+    const { rows } = await pool.query("SELECT contract_id FROM vaults WHERE active = TRUE");
     return rows.map((r) => r.contract_id);
   },
 
@@ -589,13 +558,7 @@ export const db = {
     await pool.query(
       `INSERT INTO vault_snapshots (contract_id, ledger, total_assets, total_supply, ratio)
        VALUES ($1,$2,$3,$4,$5)`,
-      [
-        snapshot.contract_id,
-        snapshot.ledger,
-        snapshot.total_assets,
-        snapshot.total_supply,
-        snapshot.ratio,
-      ],
+      [snapshot.contract_id, snapshot.ledger, snapshot.total_assets, snapshot.total_supply, snapshot.ratio],
     );
   },
 
@@ -612,13 +575,7 @@ export const db = {
   // ── Privileged roles ───────────────────────────────────────────────────────
 
   /** Upsert a role assignment (or revocation) for a contract. */
-  async upsertRole({
-    contract_id,
-    role,
-    address,
-    revoked = false,
-    ledger = null,
-  }) {
+  async upsertRole({ contract_id, role, address, revoked = false, ledger = null }) {
     await pool.query(
       `INSERT INTO privileged_roles (contract_id, role, address, revoked, ledger, updated_at)
        VALUES ($1, $2, $3, $4, $5, NOW())
@@ -648,13 +605,7 @@ export const db = {
   // ── Issue #135: multi-signature source verification ────────────────────────
 
   /** Submit a verification signature for a contract's WASM hash. */
-  async addSourceVerification({
-    contract_id,
-    wasm_hash,
-    signer,
-    signature,
-    compiler_hash,
-  }) {
+  async addSourceVerification({ contract_id, wasm_hash, signer, signature, compiler_hash }) {
     await pool.query(
       `INSERT INTO source_verifications (contract_id, wasm_hash, signer, signature, compiler_hash)
        VALUES ($1, $2, $3, $4, $5)

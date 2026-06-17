@@ -11,9 +11,7 @@
 
 import { db } from "./db.js";
 
-const REFRESH_INTERVAL_MS = Number(
-  process.env.GAS_GUZZLERS_INTERVAL_MS || 5 * 60 * 1000,
-); // 5 min
+const REFRESH_INTERVAL_MS = Number(process.env.GAS_GUZZLERS_INTERVAL_MS || 5 * 60 * 1000); // 5 min
 const TOP_N = 10;
 
 /** @type {GasGuzzlerEntry[]} */
@@ -52,9 +50,7 @@ async function refresh() {
     );
     _cache = rows;
     _lastUpdated = new Date().toISOString();
-    console.log(
-      `[gasGuzzlers] leaderboard refreshed — ${rows.length} contracts ranked`,
-    );
+    console.log(`[gasGuzzlers] leaderboard refreshed — ${rows.length} contracts ranked`);
   } catch (err) {
     console.error("[gasGuzzlers] refresh failed:", err.message);
   }

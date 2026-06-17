@@ -48,23 +48,15 @@ function decodeTraceEvent(b64, seq) {
     // Extract CPU instructions from data if present (map/struct shape)
     let cpuInstructions = null;
     if (data && typeof data === "object") {
-      cpuInstructions =
-        data.cpu_insns ?? data.cpuInstructions ?? data.instructions ?? null;
+      cpuInstructions = data.cpu_insns ?? data.cpuInstructions ?? data.instructions ?? null;
     }
 
     let kind = "event";
-    if (
-      eventType === "fn_call" ||
-      eventType === "call" ||
-      eventType === "invoke_contract"
-    )
-      kind = "call";
-    else if (eventType === "fn_return" || eventType === "return")
-      kind = "return";
+    if (eventType === "fn_call" || eventType === "call" || eventType === "invoke_contract") kind = "call";
+    else if (eventType === "fn_return" || eventType === "return") kind = "return";
     else if (eventType === "auth_check") kind = "auth";
     else if (eventType === "wasm_trap" || eventType === "error") kind = "trap";
-    else if (topicStrings.some((s) => /trap|panic|abort/i.test(s)))
-      kind = "trap";
+    else if (topicStrings.some((s) => /trap|panic|abort/i.test(s))) kind = "trap";
 
     return {
       seq,
@@ -164,9 +156,7 @@ export function parseExecutionTrace(diagnosticEventsXdr) {
     };
   }
 
-  const flatEvents = diagnosticEventsXdr
-    .map((b64, i) => decodeTraceEvent(b64, i))
-    .filter(Boolean);
+  const flatEvents = diagnosticEventsXdr.map((b64, i) => decodeTraceEvent(b64, i)).filter(Boolean);
 
   const callTree = buildCallTree(flatEvents);
 
@@ -174,8 +164,7 @@ export function parseExecutionTrace(diagnosticEventsXdr) {
   let hasTrap = false;
   for (const ev of flatEvents) {
     if (ev.cpuInstructions != null) {
-      totalCpuInstructions =
-        (totalCpuInstructions ?? 0) + Number(ev.cpuInstructions);
+      totalCpuInstructions = (totalCpuInstructions ?? 0) + Number(ev.cpuInstructions);
     }
     if (ev.kind === "trap") hasTrap = true;
   }
@@ -195,14 +184,8 @@ export function flattenInvocationTree(invocationNode, depth = 0) {
   if (!invocationNode) return [];
 
   const events = [];
-  const contractId =
-    invocationNode?.function?.contractAddress?.toString?.() ??
-    invocationNode?.contractId ??
-    null;
-  const fnName =
-    invocationNode?.function?.functionName?.toString?.() ??
-    invocationNode?.functionName ??
-    "unknown";
+  const contractId = invocationNode?.function?.contractAddress?.toString?.() ?? invocationNode?.contractId ?? null;
+  const fnName = invocationNode?.function?.functionName?.toString?.() ?? invocationNode?.functionName ?? "unknown";
 
   events.push({
     seq: depth,

@@ -14,20 +14,10 @@
 export function hasCircuitBreaker(meta) {
   if (!meta || !meta.functions) return false;
 
-  const pauseKeywords = [
-    "pause",
-    "unpause",
-    "is_paused",
-    "paused",
-    "emergency",
-    "halt",
-    "stop",
-  ];
+  const pauseKeywords = ["pause", "unpause", "is_paused", "paused", "emergency", "halt", "stop"];
   const fnNames = meta.functions.map((f) => f.name.toLowerCase());
 
-  return pauseKeywords.some((keyword) =>
-    fnNames.some((fn) => fn.includes(keyword)),
-  );
+  return pauseKeywords.some((keyword) => fnNames.some((fn) => fn.includes(keyword)));
 }
 
 /**
@@ -56,10 +46,7 @@ export function determinePauseStatus(events) {
       };
     }
 
-    if (
-      fn.includes("unpause") ||
-      (fn.includes("resume") && !fn.includes("pause"))
-    ) {
+    if (fn.includes("unpause") || (fn.includes("resume") && !fn.includes("pause"))) {
       return {
         isPaused: false,
         lastStatusChange: event.ledger,

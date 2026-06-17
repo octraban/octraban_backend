@@ -261,10 +261,7 @@ export async function seed(dbUrl) {
       const txHash = randomHex(64);
 
       const contract = contracts[i % contracts.length];
-      const fnMeta =
-        contract.functions[
-          Math.floor(Math.random() * contract.functions.length)
-        ];
+      const fnMeta = contract.functions[Math.floor(Math.random() * contract.functions.length)];
       const fn = fnMeta.name;
 
       // Random details based on function type
@@ -338,15 +335,7 @@ export async function seed(dbUrl) {
         await client.query(
           `INSERT INTO sub_invocations (parent_tx_hash, depth, contract_id, function, args, ledger, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [
-            txHash,
-            1,
-            subContract.id,
-            subFn,
-            JSON.stringify([alice, bob, "50000000"]),
-            ledger,
-            timestamp,
-          ],
+          [txHash, 1, subContract.id, subFn, JSON.stringify([alice, bob, "50000000"]), ledger, timestamp],
         );
 
         if (i % 6 === 0) {
@@ -356,15 +345,7 @@ export async function seed(dbUrl) {
           await client.query(
             `INSERT INTO sub_invocations (parent_tx_hash, depth, contract_id, function, args, ledger, created_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [
-              txHash,
-              2,
-              subContract2.id,
-              subFn2,
-              JSON.stringify([alice]),
-              ledger,
-              timestamp,
-            ],
+            [txHash, 2, subContract2.id, subFn2, JSON.stringify([alice]), ledger, timestamp],
           );
 
           if (i % 12 === 0) {
@@ -374,15 +355,7 @@ export async function seed(dbUrl) {
             await client.query(
               `INSERT INTO sub_invocations (parent_tx_hash, depth, contract_id, function, args, ledger, created_at)
                VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-              [
-                txHash,
-                3,
-                subContract3.id,
-                subFn3,
-                JSON.stringify(["validate"]),
-                ledger,
-                timestamp,
-              ],
+              [txHash, 3, subContract3.id, subFn3, JSON.stringify(["validate"]), ledger, timestamp],
             );
           }
         }

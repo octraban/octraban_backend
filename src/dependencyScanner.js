@@ -60,12 +60,7 @@ function parseCargoTomlDependencies(content) {
       currentSection = sectionMatch[1].trim();
       continue;
     }
-    if (
-      !/^(dependencies|dev-dependencies|build-dependencies)$/.test(
-        currentSection,
-      )
-    )
-      continue;
+    if (!/^(dependencies|dev-dependencies|build-dependencies)$/.test(currentSection)) continue;
 
     const depMatch = line.match(/^([A-Za-z0-9_-]+)\s*=\s*(.+)$/);
     if (!depMatch) continue;
@@ -86,8 +81,7 @@ function parseCargoTomlDependencies(content) {
 }
 
 async function fetchLatestCrateVersion(crateName) {
-  if (latestVersionCache.has(crateName))
-    return latestVersionCache.get(crateName);
+  if (latestVersionCache.has(crateName)) return latestVersionCache.get(crateName);
 
   try {
     const res = await fetch(`${CRATES_API_BASE}/${crateName}`);
@@ -99,10 +93,7 @@ async function fetchLatestCrateVersion(crateName) {
       return latest;
     }
   } catch (err) {
-    console.warn(
-      `Unable to fetch latest version for ${crateName}:`,
-      err?.message ?? err,
-    );
+    console.warn(`Unable to fetch latest version for ${crateName}:`, err?.message ?? err);
   }
 
   return null;
@@ -111,9 +102,7 @@ async function fetchLatestCrateVersion(crateName) {
 export async function analyzeSourceDependencies(sourceFiles = []) {
   if (!Array.isArray(sourceFiles) || sourceFiles.length === 0) return null;
 
-  const cargoFiles = sourceFiles.filter((file) =>
-    file.path.toLowerCase().endsWith("cargo.toml"),
-  );
+  const cargoFiles = sourceFiles.filter((file) => file.path.toLowerCase().endsWith("cargo.toml"));
   if (!cargoFiles.length) return null;
 
   const packages = [];

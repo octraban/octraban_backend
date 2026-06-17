@@ -16,8 +16,7 @@ import { db } from "./db.js";
 import { publishVaultRatio } from "./wsEvents.js";
 import { withRetry } from "./rpcRetry.js";
 
-const RPC_URL =
-  process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
+const RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const rpc = new SorobanRpc.Server(RPC_URL, { allowHttp: true });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────
@@ -52,12 +51,9 @@ async function simulateView(contractId, fn, ...args) {
   const scArgs = args.map((a) => nativeToScVal(a, { type: { type: "val" } }));
   const op = contract.call(fn, ...scArgs);
 
-  const source =
-    process.env.SIMULATE_SOURCE ||
-    "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
+  const source = process.env.SIMULATE_SOURCE || "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
   const account = await withRetry(() => rpc.getAccount(source));
-  const { TransactionBuilder, Networks, BASE_FEE, scValToNative } =
-    await import("@stellar/stellar-sdk");
+  const { TransactionBuilder, Networks, BASE_FEE, scValToNative } = await import("@stellar/stellar-sdk");
 
   const tx = new TransactionBuilder(account, {
     fee: BASE_FEE,
@@ -162,10 +158,7 @@ export async function handleVaultEvent(decoded) {
  */
 export async function refreshVaultRatio(contractId, ledger) {
   try {
-    const [totalAssets, totalSupply] = await Promise.all([
-      fetchTotalAssets(contractId),
-      fetchTotalSupply(contractId),
-    ]);
+    const [totalAssets, totalSupply] = await Promise.all([fetchTotalAssets(contractId), fetchTotalSupply(contractId)]);
 
     if (totalAssets == null || totalSupply == null) return;
 
@@ -187,9 +180,7 @@ export async function refreshVaultRatio(contractId, ledger) {
         `assets=${totalAssets} supply=${totalSupply} @ ledger=${ledger}`,
     );
   } catch (err) {
-    console.error(
-      `[vault] Failed to refresh ratio for ${contractId}: ${err.message}`,
-    );
+    console.error(`[vault] Failed to refresh ratio for ${contractId}: ${err.message}`);
   }
 }
 

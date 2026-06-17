@@ -20,8 +20,7 @@ import {
   Address,
 } from "@stellar/stellar-sdk";
 
-const RPC_URL =
-  process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
+const RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
 const DUMMY_SOURCE = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
 
@@ -46,12 +45,7 @@ const SEP41_FUNCTIONS = [
   },
   {
     name: "approve",
-    args: [
-      DUMMY_ADDR,
-      DUMMY_ADDR,
-      DUMMY_I128,
-      nativeToScVal(0, { type: "u32" }),
-    ],
+    args: [DUMMY_ADDR, DUMMY_ADDR, DUMMY_I128, nativeToScVal(0, { type: "u32" })],
   },
   { name: "burn", args: [DUMMY_ADDR, DUMMY_I128] },
   { name: "burn_from", args: [DUMMY_ADDR, DUMMY_ADDR, DUMMY_I128] },

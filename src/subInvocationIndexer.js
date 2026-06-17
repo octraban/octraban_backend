@@ -25,16 +25,8 @@ function collectSubInvocations(node, txHash, ledger, depth = 0) {
 
   const subCalls = node?.subInvocations ?? node?.sub_invocations ?? [];
   for (const child of subCalls) {
-    const contractId =
-      child?.function?.contractAddress?.toString?.() ??
-      child?.contractId ??
-      child?.contract_id ??
-      "";
-    const fnName =
-      child?.function?.functionName?.toString?.() ??
-      child?.functionName ??
-      child?.function_name ??
-      "";
+    const contractId = child?.function?.contractAddress?.toString?.() ?? child?.contractId ?? child?.contract_id ?? "";
+    const fnName = child?.function?.functionName?.toString?.() ?? child?.functionName ?? child?.function_name ?? "";
 
     if (contractId) {
       records.push({
@@ -65,10 +57,7 @@ export async function indexSubInvocations(txHash, ledger, txMeta) {
   if (!txMeta || !txHash) return;
 
   // The invocation tree root may live at different paths depending on SDK version
-  const root =
-    txMeta?.sorobanMeta?.invokeResult?.invocation ??
-    txMeta?.invocation ??
-    txMeta;
+  const root = txMeta?.sorobanMeta?.invokeResult?.invocation ?? txMeta?.invocation ?? txMeta;
 
   const records = collectSubInvocations(root, txHash, ledger, 0);
   if (records.length) {
