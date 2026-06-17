@@ -75,7 +75,12 @@ export async function indexSubInvocations(txHash, ledger, txMeta) {
     await db.upsertSubInvocations(records);
     // Issue #142: stream each new cross-contract link live
     for (const r of records) {
-      publishContractLink({ caller: txHash, callee: r.contract_id, fn: r.function, ledger });
+      publishContractLink({
+        caller: txHash,
+        callee: r.contract_id,
+        fn: r.function,
+        ledger,
+      });
     }
   }
 }

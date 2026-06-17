@@ -12,9 +12,13 @@
 
 import { SorobanRpc } from "@stellar/stellar-sdk";
 
-const RPC_URLS = (process.env.SOROBAN_RPC_URLS || process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org")
+const RPC_URLS = (
+  process.env.SOROBAN_RPC_URLS ||
+  process.env.SOROBAN_RPC_URL ||
+  "https://soroban-testnet.stellar.org"
+)
   .split(",")
-  .map(u => u.trim())
+  .map((u) => u.trim())
   .filter(Boolean);
 
 // How many ledgers behind consensus before we consider a node lagging
@@ -22,7 +26,7 @@ const LAG_THRESHOLD = Number(process.env.RPC_LAG_THRESHOLD || 5);
 // Timeout (ms) for a single RPC call before we try the next node
 const CALL_TIMEOUT_MS = Number(process.env.RPC_CALL_TIMEOUT_MS || 1000);
 
-const nodes = RPC_URLS.map(url => ({
+const nodes = RPC_URLS.map((url) => ({
   url,
   server: new SorobanRpc.Server(url, { allowHttp: true }),
   healthy: true,
@@ -37,14 +41,19 @@ function nextHealthy(startIndex) {
     if (nodes[idx].healthy) return idx;
   }
   // All nodes unhealthy — reset and try primary anyway
-  nodes.forEach(n => { n.healthy = true; });
+  nodes.forEach((n) => {
+    n.healthy = true;
+  });
   return 0;
 }
 
 async function withTimeout(promise, ms) {
   let timer;
   const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`RPC timeout after ${ms}ms`)), ms);
+    timer = setTimeout(
+      () => reject(new Error(`RPC timeout after ${ms}ms`)),
+      ms,
+    );
   });
   try {
     return await Promise.race([promise, timeout]);
@@ -59,16 +68,21 @@ async function callWithFailover(method, ...args) {
   for (let attempt = 0; attempt < nodes.length; attempt++) {
     const node = nodes[idx];
     try {
-      const result = await withTimeout(node.server[method](...args), CALL_TIMEOUT_MS);
+      const result = await withTimeout(
+        node.server[method](...args),
+        CALL_TIMEOUT_MS,
+      );
 
       // Update latest ledger knowledge for lag detection
       const ledger = result?.latestLedger ?? result?.sequence;
       if (ledger) node.latestLedger = ledger;
 
       // Check if this node is lagging behind the best known ledger
-      const bestLedger = Math.max(...nodes.map(n => n.latestLedger));
+      const bestLedger = Math.max(...nodes.map((n) => n.latestLedger));
       if (bestLedger - node.latestLedger > LAG_THRESHOLD) {
-        console.warn(`[rpc-multi] node ${node.url} is ${bestLedger - node.latestLedger} ledgers behind, switching`);
+        console.warn(
+          `[rpc-multi] node ${node.url} is ${bestLedger - node.latestLedger} ledgers behind, switching`,
+        );
         node.healthy = false;
         primaryIndex = nextHealthy(idx);
         idx = primaryIndex;
@@ -83,7 +97,9 @@ async function callWithFailover(method, ...args) {
 
       return result;
     } catch (err) {
-      console.warn(`[rpc-multi] node ${node.url} failed (${err.message}), trying next`);
+      console.warn(
+        `[rpc-multi] node ${node.url} failed (${err.message}), trying next`,
+      );
       node.healthy = false;
       idx = nextHealthy(idx);
     }
@@ -97,7 +113,10 @@ setInterval(async () => {
   for (const node of nodes) {
     if (!node.healthy) {
       try {
-        const res = await withTimeout(node.server.getLatestLedger(), CALL_TIMEOUT_MS);
+        const res = await withTimeout(
+          node.server.getLatestLedger(),
+          CALL_TIMEOUT_MS,
+        );
         node.latestLedger = res.sequence;
         node.healthy = true;
         console.log(`[rpc-multi] node ${node.url} recovered`);
@@ -108,12 +127,19 @@ setInterval(async () => {
   }
 }, 10_000);
 
-export const multiNodeRpc = new Proxy({}, {
-  get(_, method) {
-    return (...args) => callWithFailover(method, ...args);
+export const multiNodeRpc = new Proxy(
+  {},
+  {
+    get(_, method) {
+      return (...args) => callWithFailover(method, ...args);
+    },
   },
-});
+);
 
 export function getRpcNodeStatus() {
-  return nodes.map(({ url, healthy, latestLedger }) => ({ url, healthy, latestLedger }));
+  return nodes.map(({ url, healthy, latestLedger }) => ({
+    url,
+    healthy,
+    latestLedger,
+  }));
 }

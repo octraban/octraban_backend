@@ -217,7 +217,9 @@ export const db = {
   },
 
   async getMaxLedger() {
-    const { rows } = await pool.query("SELECT COALESCE(MAX(ledger), 0) AS max_ledger FROM events");
+    const { rows } = await pool.query(
+      "SELECT COALESCE(MAX(ledger), 0) AS max_ledger FROM events",
+    );
     return Number(rows[0].max_ledger);
   },
 
@@ -226,13 +228,13 @@ export const db = {
     await pool.query(
       `INSERT INTO daemon_state (key, value) VALUES ('cursor', $1)
        ON CONFLICT (key) DO UPDATE SET value = $1`,
-      [String(ledger)]
+      [String(ledger)],
     );
   },
 
   async loadCursor() {
     const { rows } = await pool.query(
-      "SELECT value FROM daemon_state WHERE key = 'cursor'"
+      "SELECT value FROM daemon_state WHERE key = 'cursor'",
     );
     return rows[0] ? Number(rows[0].value) : null;
   },
@@ -248,14 +250,30 @@ export const db = {
    *               Omit (or pass 0) for the first page.
    * @returns {{ data: object[], next_cursor: number|null }}
    */
-  async getEventsCursor({ contract, fn, type, after_seq = 0, limit = 25 } = {}) {
+  async getEventsCursor({
+    contract,
+    fn,
+    type,
+    after_seq = 0,
+    limit = 25,
+  } = {}) {
     const conditions = [];
     const params = [];
 
-    if (contract) { params.push(contract); conditions.push(`contract_id = $${params.length}`); }
-    if (fn)       { params.push(fn);       conditions.push(`function = $${params.length}`); }
-    if (type === "soroban") { conditions.push(`contract_id IS NOT NULL AND contract_id <> ''`); }
-    if (type === "classic") { conditions.push(`(contract_id IS NULL OR contract_id = '')`); }
+    if (contract) {
+      params.push(contract);
+      conditions.push(`contract_id = $${params.length}`);
+    }
+    if (fn) {
+      params.push(fn);
+      conditions.push(`function = $${params.length}`);
+    }
+    if (type === "soroban") {
+      conditions.push(`contract_id IS NOT NULL AND contract_id <> ''`);
+    }
+    if (type === "classic") {
+      conditions.push(`(contract_id IS NULL OR contract_id = '')`);
+    }
 
     // Keyset: fetch rows with seq < after_seq (descending) or all rows for first page
     if (after_seq > 0) {
@@ -268,7 +286,7 @@ export const db = {
 
     const { rows } = await pool.query(
       `SELECT * FROM events ${where} ORDER BY seq DESC LIMIT $${params.length}`,
-      params
+      params,
     );
 
     const hasMore = rows.length > limit;
@@ -287,9 +305,16 @@ export const db = {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
        ON CONFLICT DO NOTHING`,
       [
-        ev.contract_id, ev.function, ev.ledger, ev.tx_hash,
-        ev.description, JSON.stringify(ev.raw_topics), ev.raw_data,
-        ev.cpu_instructions ?? null, ev.mem_bytes ?? null, ev.fee_charged ?? null,
+        ev.contract_id,
+        ev.function,
+        ev.ledger,
+        ev.tx_hash,
+        ev.description,
+        JSON.stringify(ev.raw_topics),
+        ev.raw_data,
+        ev.cpu_instructions ?? null,
+        ev.mem_bytes ?? null,
+        ev.fee_charged ?? null,
         ev.is_high_bloat_risk ?? false,
         ev.upgrade ? JSON.stringify(ev.upgrade) : null,
         ev.storage_tiers ? JSON.stringify(ev.storage_tiers) : null,
@@ -299,45 +324,59 @@ export const db = {
         ev.fee_bump ? JSON.stringify(ev.fee_bump) : null,
         ev.archival_info ? JSON.stringify(ev.archival_info) : null,
         ev.zk_host_calls ? JSON.stringify(ev.zk_host_calls) : null,
-      ]
+      ],
     );
   },
 
   async getEvents({ contract, fn, page = 1, limit = 25, type } = {}) {
     const conditions = [];
     const params = [];
-    if (contract) { params.push(contract); conditions.push(`contract_id = $${params.length}`); }
-    if (fn)       { params.push(fn);       conditions.push(`function = $${params.length}`); }
+    if (contract) {
+      params.push(contract);
+      conditions.push(`contract_id = $${params.length}`);
+    }
+    if (fn) {
+      params.push(fn);
+      conditions.push(`function = $${params.length}`);
+    }
     // Issue #48: filter by transaction type
     // "soroban"  → contract_id is non-empty (Soroban invocations/deployments)
     // "classic"  → contract_id is empty string or NULL
-    if (type === "soroban") { conditions.push(`contract_id IS NOT NULL AND contract_id <> ''`); }
-    if (type === "classic") { conditions.push(`(contract_id IS NULL OR contract_id = '')`); }
+    if (type === "soroban") {
+      conditions.push(`contract_id IS NOT NULL AND contract_id <> ''`);
+    }
+    if (type === "classic") {
+      conditions.push(`(contract_id IS NULL OR contract_id = '')`);
+    }
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
     const offset = (page - 1) * limit;
     params.push(limit, offset);
     const { rows } = await pool.query(
       `SELECT * FROM events ${where} ORDER BY ledger DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
-      params
+      params,
     );
     return rows;
   },
 
   async getEvent(seq) {
-    const { rows } = await pool.query("SELECT * FROM events WHERE seq = $1", [seq]);
+    const { rows } = await pool.query("SELECT * FROM events WHERE seq = $1", [
+      seq,
+    ]);
     return rows[0] ?? null;
   },
 
   async getWalletEvents(address) {
     const { rows } = await pool.query(
       `SELECT * FROM events WHERE raw_topics::text ILIKE $1 ORDER BY ledger DESC LIMIT 100`,
-      [`%${address}%`]
+      [`%${address}%`],
     );
     return rows;
   },
 
   async getContractMeta(id) {
-    const { rows } = await pool.query("SELECT * FROM contracts WHERE id = $1", [id]);
+    const { rows } = await pool.query("SELECT * FROM contracts WHERE id = $1", [
+      id,
+    ]);
     return rows[0] ?? null;
   },
 
@@ -346,23 +385,38 @@ export const db = {
    * @param {string} contractId
    * @param {{ function_name?: string, start_ledger?: number, end_ledger?: number, page?: number, limit?: number }} opts
    */
-  async getContractTransactions(contractId, { function_name, start_ledger, end_ledger, page = 1, limit = 25 } = {}) {
+  async getContractTransactions(
+    contractId,
+    { function_name, start_ledger, end_ledger, page = 1, limit = 25 } = {},
+  ) {
     const params = [contractId];
     const conditions = ["contract_id = $1"];
 
-    if (function_name) { params.push(function_name);  conditions.push(`function = $${params.length}`); }
-    if (start_ledger)  { params.push(start_ledger);   conditions.push(`ledger >= $${params.length}`); }
-    if (end_ledger)    { params.push(end_ledger);      conditions.push(`ledger <= $${params.length}`); }
+    if (function_name) {
+      params.push(function_name);
+      conditions.push(`function = $${params.length}`);
+    }
+    if (start_ledger) {
+      params.push(start_ledger);
+      conditions.push(`ledger >= $${params.length}`);
+    }
+    if (end_ledger) {
+      params.push(end_ledger);
+      conditions.push(`ledger <= $${params.length}`);
+    }
 
-    const where  = conditions.join(" AND ");
+    const where = conditions.join(" AND ");
     const offset = (page - 1) * limit;
 
     const [{ rows }, { rows: countRows }] = await Promise.all([
       pool.query(
         `SELECT * FROM events WHERE ${where} ORDER BY ledger DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-        [...params, limit, offset]
+        [...params, limit, offset],
       ),
-      pool.query(`SELECT COUNT(*)::INT AS total FROM events WHERE ${where}`, params),
+      pool.query(
+        `SELECT COUNT(*)::INT AS total FROM events WHERE ${where}`,
+        params,
+      ),
     ]);
 
     const total = countRows[0].total;
@@ -393,13 +447,13 @@ export const db = {
        WHERE contract_id = $1
          AND function    = 'transfer'
          AND created_at >= NOW() - INTERVAL '24 hours'`,
-      [contractId]
+      [contractId],
     );
     const raw = rows[0].volume_raw ?? "0";
     // Scale using integer arithmetic via BigInt to avoid float rounding
-    const rawBig   = BigInt(raw.split(".")[0]); // NUMERIC may have no decimals
-    const divisor  = 10n ** BigInt(decimals);
-    const whole    = rawBig / divisor;
+    const rawBig = BigInt(raw.split(".")[0]); // NUMERIC may have no decimals
+    const divisor = 10n ** BigInt(decimals);
+    const whole = rawBig / divisor;
     const fraction = rawBig % divisor;
     const volume_scaled = `${whole}.${fraction.toString().padStart(decimals, "0")}`;
     return { volume_raw: raw, volume_scaled, decimals };
@@ -412,7 +466,7 @@ export const db = {
        FROM events
        WHERE contract_id = $1 AND upgrade_info IS NOT NULL
        ORDER BY ledger ASC`,
-      [contractId]
+      [contractId],
     );
     return rows;
   },
@@ -423,12 +477,16 @@ export const db = {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        ON CONFLICT (id) DO UPDATE SET name=$2, description=$3, functions=$4, source_files=$6, has_circuit_breaker=$7, is_rwa=$8, rwa_type=$9`,
       [
-        meta.id, meta.name, meta.description, JSON.stringify(meta.functions), meta.registered_by,
+        meta.id,
+        meta.name,
+        meta.description,
+        JSON.stringify(meta.functions),
+        meta.registered_by,
         meta.source_files ? JSON.stringify(meta.source_files) : null,
         meta.has_circuit_breaker ?? false,
         meta.is_rwa ?? false,
         meta.rwa_type ?? null,
-      ]
+      ],
     );
   },
 
@@ -436,16 +494,22 @@ export const db = {
   async updateCircuitBreakerStatus(contractId, isPaused, ledger) {
     await pool.query(
       `UPDATE contracts SET is_paused = $1, pause_status_ledger = $2 WHERE id = $3`,
-      [isPaused, ledger, contractId]
+      [isPaused, ledger, contractId],
     );
   },
 
   async getCircuitBreakerStatus(contractId) {
     const { rows } = await pool.query(
       `SELECT has_circuit_breaker, is_paused, pause_status_ledger FROM contracts WHERE id = $1`,
-      [contractId]
+      [contractId],
     );
-    return rows[0] ?? { has_circuit_breaker: false, is_paused: false, pause_status_ledger: null };
+    return (
+      rows[0] ?? {
+        has_circuit_breaker: false,
+        is_paused: false,
+        pause_status_ledger: null,
+      }
+    );
   },
 
   async getMigrationStatus(contractId) {
@@ -454,16 +518,21 @@ export const db = {
          MAX(CASE WHEN upgrade_info IS NOT NULL THEN ledger END) AS last_upgrade_ledger,
          MAX(CASE WHEN function = 'migrate' THEN ledger END)     AS last_migrate_ledger
        FROM events WHERE contract_id = $1`,
-      [contractId]
+      [contractId],
     );
     const { last_upgrade_ledger, last_migrate_ledger } = rows[0];
     const pending =
       last_upgrade_ledger != null &&
-      (last_migrate_ledger == null || Number(last_upgrade_ledger) > Number(last_migrate_ledger));
+      (last_migrate_ledger == null ||
+        Number(last_upgrade_ledger) > Number(last_migrate_ledger));
     return {
       pending,
-      upgradedAtLedger: last_upgrade_ledger ? Number(last_upgrade_ledger) : null,
-      migratedAtLedger: last_migrate_ledger ? Number(last_migrate_ledger) : null,
+      upgradedAtLedger: last_upgrade_ledger
+        ? Number(last_upgrade_ledger)
+        : null,
+      migratedAtLedger: last_migrate_ledger
+        ? Number(last_migrate_ledger)
+        : null,
     };
   },
 
@@ -475,7 +544,12 @@ export const db = {
        VALUES ($1,$2,$3,$4)
        ON CONFLICT (contract_id) DO UPDATE
          SET name=$2, underlying_asset=$3, decimals=$4, updated_at=NOW()`,
-      [vault.contract_id, vault.name ?? null, vault.underlying_asset ?? null, vault.decimals ?? 7]
+      [
+        vault.contract_id,
+        vault.name ?? null,
+        vault.underlying_asset ?? null,
+        vault.decimals ?? 7,
+      ],
     );
   },
 
@@ -488,7 +562,7 @@ export const db = {
       `SELECT v.*,
         (SELECT ratio FROM vault_snapshots WHERE contract_id = v.contract_id ORDER BY ledger DESC LIMIT 1) AS latest_ratio,
         (SELECT ledger FROM vault_snapshots WHERE contract_id = v.contract_id ORDER BY ledger DESC LIMIT 1) AS latest_ledger
-       FROM vaults v WHERE v.active = TRUE ORDER BY v.created_at DESC`
+       FROM vaults v WHERE v.active = TRUE ORDER BY v.created_at DESC`,
     );
     return rows;
   },
@@ -499,14 +573,16 @@ export const db = {
         (SELECT ratio FROM vault_snapshots WHERE contract_id = v.contract_id ORDER BY ledger DESC LIMIT 1) AS latest_ratio,
         (SELECT ledger FROM vault_snapshots WHERE contract_id = v.contract_id ORDER BY ledger DESC LIMIT 1) AS latest_ledger
        FROM vaults v WHERE v.contract_id = $1`,
-      [contractId]
+      [contractId],
     );
     return rows[0] ?? null;
   },
 
   async getActiveVaultIds() {
-    const { rows } = await pool.query("SELECT contract_id FROM vaults WHERE active = TRUE");
-    return rows.map(r => r.contract_id);
+    const { rows } = await pool.query(
+      "SELECT contract_id FROM vaults WHERE active = TRUE",
+    );
+    return rows.map((r) => r.contract_id);
   },
 
   async upsertVaultSnapshot(snapshot) {
@@ -519,7 +595,7 @@ export const db = {
         snapshot.total_assets,
         snapshot.total_supply,
         snapshot.ratio,
-      ]
+      ],
     );
   },
 
@@ -528,7 +604,7 @@ export const db = {
       `SELECT * FROM vault_snapshots
        WHERE contract_id = $1
        ORDER BY ledger DESC LIMIT $2`,
-      [contractId, limit]
+      [contractId, limit],
     );
     return rows;
   },
@@ -536,13 +612,19 @@ export const db = {
   // ── Privileged roles ───────────────────────────────────────────────────────
 
   /** Upsert a role assignment (or revocation) for a contract. */
-  async upsertRole({ contract_id, role, address, revoked = false, ledger = null }) {
+  async upsertRole({
+    contract_id,
+    role,
+    address,
+    revoked = false,
+    ledger = null,
+  }) {
     await pool.query(
       `INSERT INTO privileged_roles (contract_id, role, address, revoked, ledger, updated_at)
        VALUES ($1, $2, $3, $4, $5, NOW())
        ON CONFLICT (contract_id, role, address)
        DO UPDATE SET revoked = $4, ledger = $5, updated_at = NOW()`,
-      [contract_id, role, address, revoked, ledger]
+      [contract_id, role, address, revoked, ledger],
     );
   },
 
@@ -553,7 +635,7 @@ export const db = {
        FROM privileged_roles
        WHERE contract_id = $1 AND revoked = FALSE
        ORDER BY role, updated_at DESC`,
-      [contractId]
+      [contractId],
     );
     return rows;
   },
@@ -566,13 +648,19 @@ export const db = {
   // ── Issue #135: multi-signature source verification ────────────────────────
 
   /** Submit a verification signature for a contract's WASM hash. */
-  async addSourceVerification({ contract_id, wasm_hash, signer, signature, compiler_hash }) {
+  async addSourceVerification({
+    contract_id,
+    wasm_hash,
+    signer,
+    signature,
+    compiler_hash,
+  }) {
     await pool.query(
       `INSERT INTO source_verifications (contract_id, wasm_hash, signer, signature, compiler_hash)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (contract_id, wasm_hash, signer) DO UPDATE
          SET signature = $4, compiler_hash = $5, submitted_at = NOW()`,
-      [contract_id, wasm_hash, signer, signature, compiler_hash]
+      [contract_id, wasm_hash, signer, signature, compiler_hash],
     );
   },
 
@@ -586,7 +674,7 @@ export const db = {
        FROM source_verifications
        WHERE contract_id = $1${extra}
        ORDER BY submitted_at ASC`,
-      params
+      params,
     );
     return rows;
   },
@@ -596,20 +684,28 @@ export const db = {
   /** Persist a batch of storage state diffs for a transaction. */
   async insertStateDiffs(diffs) {
     if (!diffs.length) return;
-    const values = diffs.map((_, i) => {
-      const b = i * 8;
-      return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8})`;
-    }).join(",");
-    const params = diffs.flatMap(d => [
-      d.contract_id, d.ledger, d.tx_hash, d.key, d.tier,
-      d.old_value ?? null, d.new_value ?? null, d.change_type,
+    const values = diffs
+      .map((_, i) => {
+        const b = i * 8;
+        return `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8})`;
+      })
+      .join(",");
+    const params = diffs.flatMap((d) => [
+      d.contract_id,
+      d.ledger,
+      d.tx_hash,
+      d.key,
+      d.tier,
+      d.old_value ?? null,
+      d.new_value ?? null,
+      d.change_type,
     ]);
     await pool.query(
       `INSERT INTO storage_state_diffs
          (contract_id, ledger, tx_hash, key, tier, old_value, new_value, change_type)
        VALUES ${values}
        ON CONFLICT DO NOTHING`,
-      params
+      params,
     );
   },
 
@@ -625,14 +721,25 @@ export const db = {
        WHERE contract_id = $1${extra}
        ORDER BY ledger ASC
        LIMIT $${params.length}`,
-      params
+      params,
     );
     return rows;
   },
 
   // ── WASM build metadata ────────────────────────────────────────────────────
 
-  async upsertWasmBuildMetadata({ wasm_hash, contract_id, sdk_version, compiler, optimizer, repository, commit, producers, ledger, tx_hash }) {
+  async upsertWasmBuildMetadata({
+    wasm_hash,
+    contract_id,
+    sdk_version,
+    compiler,
+    optimizer,
+    repository,
+    commit,
+    producers,
+    ledger,
+    tx_hash,
+  }) {
     await pool.query(
       `INSERT INTO wasm_build_metadata
          (wasm_hash, contract_id, sdk_version, compiler, optimizer, repository, commit, producers, ledger, tx_hash)
@@ -645,16 +752,25 @@ export const db = {
          repository  = COALESCE(EXCLUDED.repository,  wasm_build_metadata.repository),
          commit      = COALESCE(EXCLUDED.commit,      wasm_build_metadata.commit),
          producers   = COALESCE(EXCLUDED.producers,   wasm_build_metadata.producers)`,
-      [wasm_hash, contract_id ?? null, sdk_version ?? null, compiler ?? null,
-       optimizer ?? null, repository ?? null, commit ?? null,
-       producers ? JSON.stringify(producers) : null, ledger ?? null, tx_hash ?? null]
+      [
+        wasm_hash,
+        contract_id ?? null,
+        sdk_version ?? null,
+        compiler ?? null,
+        optimizer ?? null,
+        repository ?? null,
+        commit ?? null,
+        producers ? JSON.stringify(producers) : null,
+        ledger ?? null,
+        tx_hash ?? null,
+      ],
     );
   },
 
   async getWasmBuildMetadata(contract_id) {
     const { rows } = await pool.query(
       `SELECT * FROM wasm_build_metadata WHERE contract_id = $1 ORDER BY ledger DESC LIMIT 1`,
-      [contract_id]
+      [contract_id],
     );
     return rows[0] ?? null;
   },
@@ -662,18 +778,24 @@ export const db = {
   /** Issue #117: persist sub-invocation records. */
   async upsertSubInvocations(records) {
     if (!records.length) return;
-    const values = records.map((r, i) => {
-      const base = i * 6;
-      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`;
-    }).join(", ");
-    const params = records.flatMap(r => [
-      r.parent_tx_hash, r.depth, r.contract_id, r.function,
-      r.args ? JSON.stringify(r.args) : null, r.ledger,
+    const values = records
+      .map((r, i) => {
+        const base = i * 6;
+        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`;
+      })
+      .join(", ");
+    const params = records.flatMap((r) => [
+      r.parent_tx_hash,
+      r.depth,
+      r.contract_id,
+      r.function,
+      r.args ? JSON.stringify(r.args) : null,
+      r.ledger,
     ]);
     await pool.query(
       `INSERT INTO sub_invocations (parent_tx_hash, depth, contract_id, function, args, ledger)
        VALUES ${values} ON CONFLICT DO NOTHING`,
-      params
+      params,
     );
   },
 
@@ -687,9 +809,13 @@ export const db = {
        GROUP BY e.contract_id, s.contract_id
        ORDER BY call_count DESC
        LIMIT $1`,
-      [limit]
+      [limit],
     );
-    return rows.map(r => ({ caller: r.caller, callee: r.callee, call_count: Number(r.call_count) }));
+    return rows.map((r) => ({
+      caller: r.caller,
+      callee: r.callee,
+      call_count: Number(r.call_count),
+    }));
   },
 
   // ── Token holders ──────────────────────────────────────────────────────────
@@ -699,7 +825,7 @@ export const db = {
       `SELECT address, balance_raw FROM token_holders
        WHERE contract_id = $1
        ORDER BY balance_raw::NUMERIC DESC`,
-      [contractId]
+      [contractId],
     );
     return rows;
   },
@@ -713,14 +839,14 @@ export const db = {
          VALUES ($1, $2, $3)
          ON CONFLICT (contract_id, address)
          DO UPDATE SET balance_raw = (COALESCE(NULLIF(token_holders.balance_raw, ''), '0')::NUMERIC - $3::NUMERIC)::TEXT`,
-        [contractId, from, amount]
+        [contractId, from, amount],
       );
       await client.query(
         `INSERT INTO token_holders (contract_id, address, balance_raw)
          VALUES ($1, $2, $3)
          ON CONFLICT (contract_id, address)
          DO UPDATE SET balance_raw = (COALESCE(NULLIF(token_holders.balance_raw, ''), '0')::NUMERIC + $3::NUMERIC)::TEXT`,
-        [contractId, to, amount]
+        [contractId, to, amount],
       );
       await client.query("COMMIT");
     } catch (err) {
@@ -735,7 +861,7 @@ export const db = {
        VALUES ($1, $2, $3)
        ON CONFLICT (contract_id, address)
        DO UPDATE SET balance_raw = (COALESCE(NULLIF(token_holders.balance_raw, ''), '0')::NUMERIC + $3::NUMERIC)::TEXT`,
-      [contractId, to, amount]
+      [contractId, to, amount],
     );
   },
 
@@ -745,7 +871,7 @@ export const db = {
        VALUES ($1, $2, $3)
        ON CONFLICT (contract_id, address)
        DO UPDATE SET balance_raw = (COALESCE(NULLIF(token_holders.balance_raw, ''), '0')::NUMERIC - $3::NUMERIC)::TEXT`,
-      [contractId, from, amount]
+      [contractId, from, amount],
     );
   },
 
@@ -753,17 +879,27 @@ export const db = {
   async getEventsForExport({ contract, fn, type, limit = 10000 } = {}) {
     const conditions = [];
     const params = [];
-    if (contract) { params.push(contract); conditions.push(`contract_id = $${params.length}`); }
-    if (fn)       { params.push(fn);       conditions.push(`function = $${params.length}`); }
-    if (type === "soroban") { conditions.push(`contract_id IS NOT NULL AND contract_id <> ''`); }
-    if (type === "classic") { conditions.push(`(contract_id IS NULL OR contract_id = '')`); }
+    if (contract) {
+      params.push(contract);
+      conditions.push(`contract_id = $${params.length}`);
+    }
+    if (fn) {
+      params.push(fn);
+      conditions.push(`function = $${params.length}`);
+    }
+    if (type === "soroban") {
+      conditions.push(`contract_id IS NOT NULL AND contract_id <> ''`);
+    }
+    if (type === "classic") {
+      conditions.push(`(contract_id IS NULL OR contract_id = '')`);
+    }
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
     params.push(Math.min(limit, 10000));
     const { rows } = await pool.query(
       `SELECT seq, contract_id, function, ledger, tx_hash, description,
               cpu_instructions, mem_bytes, fee_charged, is_clawback, is_high_bloat_risk
        FROM events ${where} ORDER BY seq DESC LIMIT $${params.length}`,
-      params
+      params,
     );
     return rows;
   },
@@ -772,7 +908,7 @@ export const db = {
   async getContractsForExport() {
     const { rows } = await pool.query(
       `SELECT id, name, description, registered_by, has_circuit_breaker, is_paused, is_rwa, rwa_type, created_at
-       FROM contracts ORDER BY created_at DESC`
+       FROM contracts ORDER BY created_at DESC`,
     );
     return rows;
   },

@@ -14,9 +14,11 @@ function classifyRestoredKey(key) {
     case "contractData": {
       const cd = key.contractData();
       const contractId = StrKey.encodeContract(cd.contract().contractId());
-      const durability = cd.durability().name === "persistent" ? "persistent" : "temporary";
+      const durability =
+        cd.durability().name === "persistent" ? "persistent" : "temporary";
       const keyVal = cd.key();
-      const isInstance = keyVal.switch().name === "scvLedgerKeyContractInstance";
+      const isInstance =
+        keyVal.switch().name === "scvLedgerKeyContractInstance";
       if (isInstance) {
         return {
           type: "contractInstance",
@@ -26,7 +28,11 @@ function classifyRestoredKey(key) {
         };
       }
       let dataKey;
-      try { dataKey = String(scValToNative(keyVal)); } catch { dataKey = keyVal.switch().name; }
+      try {
+        dataKey = String(scValToNative(keyVal));
+      } catch {
+        dataKey = keyVal.switch().name;
+      }
       return {
         type: "contractData",
         label: `Contract data key "${dataKey}" (${contractId.slice(0, 8)}…)`,
@@ -46,13 +52,25 @@ function classifyRestoredKey(key) {
     }
 
     case "account": {
-      const accountId = StrKey.encodeEd25519PublicKey(key.account().accountId().ed25519());
-      return { type: "account", label: `Account ${accountId.slice(0, 8)}…`, accountId };
+      const accountId = StrKey.encodeEd25519PublicKey(
+        key.account().accountId().ed25519(),
+      );
+      return {
+        type: "account",
+        label: `Account ${accountId.slice(0, 8)}…`,
+        accountId,
+      };
     }
 
     case "trustline": {
-      const accountId = StrKey.encodeEd25519PublicKey(key.trustLine().accountId().ed25519());
-      return { type: "trustline", label: `Trustline for ${accountId.slice(0, 8)}…`, accountId };
+      const accountId = StrKey.encodeEd25519PublicKey(
+        key.trustLine().accountId().ed25519(),
+      );
+      return {
+        type: "trustline",
+        label: `Trustline for ${accountId.slice(0, 8)}…`,
+        accountId,
+      };
     }
 
     default:
@@ -90,7 +108,8 @@ export function parseRestoreFootprintOp(txEnvelopeXdr) {
       if (body.switch().name !== "restoreFootprint") continue;
 
       const restore = body.restoreFootprint();
-      const footprint = restore.ext?.().v1?.().footprint?.() ?? restore.footprint?.();
+      const footprint =
+        restore.ext?.().v1?.().footprint?.() ?? restore.footprint?.();
       if (!footprint) continue;
 
       // readWrite keys are the ones being restored
@@ -101,7 +120,9 @@ export function parseRestoreFootprintOp(txEnvelopeXdr) {
       for (const key of footprint.readOnly()) {
         revivedKeys.push(classifyRestoredKey(key));
       }
-    } catch { /* skip non-restore ops */ }
+    } catch {
+      /* skip non-restore ops */
+    }
   }
 
   return {

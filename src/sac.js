@@ -18,8 +18,13 @@ function buildSacMap(assets) {
   for (const { code, issuer } of assets) {
     try {
       const asset = issuer ? new Asset(code, issuer) : Asset.native();
-      const contractId = new Contract(asset.contractId(NETWORK_PASSPHRASE)).contractId();
-      map.set(contractId, { code: issuer ? code : "XLM", issuer: issuer ?? null });
+      const contractId = new Contract(
+        asset.contractId(NETWORK_PASSPHRASE),
+      ).contractId();
+      map.set(contractId, {
+        code: issuer ? code : "XLM",
+        issuer: issuer ?? null,
+      });
     } catch {
       // skip malformed entries
     }
@@ -29,7 +34,7 @@ function buildSacMap(assets) {
 
 // Well-known SAC assets (extend as needed via env or config)
 const KNOWN_ASSETS = [
-  { code: "native" },   // XLM
+  { code: "native" }, // XLM
   ...(process.env.SAC_ASSETS ? JSON.parse(process.env.SAC_ASSETS) : []),
 ];
 

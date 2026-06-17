@@ -52,11 +52,11 @@ const resolvers = {
   Query: {
     events: async (_root, args) => {
       return db.getEventsCursor({
-        contract:  args.contract  || undefined,
-        fn:        args.fn        || undefined,
-        type:      args.type      || undefined,
-        after_seq: args.after     || 0,
-        limit:     args.limit     ? Math.min(args.limit, 200) : 25,
+        contract: args.contract || undefined,
+        fn: args.fn || undefined,
+        type: args.type || undefined,
+        after_seq: args.after || 0,
+        limit: args.limit ? Math.min(args.limit, 200) : 25,
       });
     },
     event: async (_root, args) => {
@@ -126,9 +126,12 @@ async function execute(parsed) {
     if (!parsed.topFields || parsed.topFields.includes("next_cursor")) {
       out.next_cursor = page.next_cursor;
     }
-    if (!parsed.topFields || parsed.topFields.some(f => f === "data" || parsed.dataFields)) {
-      out.data = (page.data || []).map(ev =>
-        parsed.dataFields ? project(ev, parsed.dataFields) : ev
+    if (
+      !parsed.topFields ||
+      parsed.topFields.some((f) => f === "data" || parsed.dataFields)
+    ) {
+      out.data = (page.data || []).map((ev) =>
+        parsed.dataFields ? project(ev, parsed.dataFields) : ev,
       );
     }
     return out;
@@ -136,7 +139,7 @@ async function execute(parsed) {
 
   // Single event
   if (parsed.dataFields) return project(result, parsed.dataFields);
-  if (parsed.topFields)  return project(result, parsed.topFields);
+  if (parsed.topFields) return project(result, parsed.topFields);
   return result;
 }
 
@@ -150,7 +153,8 @@ export function attachGraphQL(app) {
   // POST /graphql — standard GraphQL over HTTP
   app.post("/graphql", async (req, res) => {
     const { query, variables } = req.body;
-    if (!query) return res.status(400).json({ errors: [{ message: "Missing query" }] });
+    if (!query)
+      return res.status(400).json({ errors: [{ message: "Missing query" }] });
 
     try {
       const parsed = parseQuery(query);
@@ -167,7 +171,9 @@ export function attachGraphQL(app) {
   app.get("/graphql", async (req, res) => {
     const query = req.query.query;
     if (!query) {
-      return res.json({ info: "POST a JSON body with { query } to use GraphQL" });
+      return res.json({
+        info: "POST a JSON body with { query } to use GraphQL",
+      });
     }
     try {
       const parsed = parseQuery(String(query));

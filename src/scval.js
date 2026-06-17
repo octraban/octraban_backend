@@ -29,7 +29,7 @@ export function scValToJsTyped(val, typeHint, typeIndex) {
         const rawKey = scValToJs(entry.key());
         const fieldName = String(rawKey);
         // Find the field definition to get its type for recursive decoding
-        const fieldDef = typeDef.fields?.find(f => f.name === fieldName);
+        const fieldDef = typeDef.fields?.find((f) => f.name === fieldName);
         result[fieldName] = fieldDef
           ? scValToJsTyped(entry.val(), fieldDef.type, typeIndex)
           : scValToJs(entry.val());
@@ -44,12 +44,16 @@ export function scValToJsTyped(val, typeHint, typeIndex) {
         const result = {};
         items.forEach((item, i) => {
           const fieldDef = fields[i];
-          result[fieldDef.name] = scValToJsTyped(item, fieldDef.type, typeIndex);
+          result[fieldDef.name] = scValToJsTyped(
+            item,
+            fieldDef.type,
+            typeIndex,
+          );
         });
         return result;
       }
       // Fallback: decode as plain array
-      return items.map(item => scValToJs(item));
+      return items.map((item) => scValToJs(item));
     }
   }
 
@@ -57,11 +61,19 @@ export function scValToJsTyped(val, typeHint, typeIndex) {
   if (typeDef.kind === "enum") {
     if (scType === "scvU32") {
       const discriminant = val.u32();
-      const matchedCase = typeDef.cases?.find(c => c.value === discriminant);
+      const matchedCase = typeDef.cases?.find((c) => c.value === discriminant);
       if (matchedCase) {
-        return { _type: typeHint, variant: matchedCase.name, value: discriminant };
+        return {
+          _type: typeHint,
+          variant: matchedCase.name,
+          value: discriminant,
+        };
       }
-      return { _type: typeHint, variant: `Unknown(${discriminant})`, value: discriminant };
+      return {
+        _type: typeHint,
+        variant: `Unknown(${discriminant})`,
+        value: discriminant,
+      };
     }
   }
 
@@ -72,14 +84,19 @@ export function scValToJsTyped(val, typeHint, typeIndex) {
       if (items.length === 0) return scValToJs(val);
 
       const tagVal = items[0];
-      const tag = tagVal.switch().name === "scvSymbol"
-        ? tagVal.sym().toString()
-        : String(scValToJs(tagVal));
+      const tag =
+        tagVal.switch().name === "scvSymbol"
+          ? tagVal.sym().toString()
+          : String(scValToJs(tagVal));
 
-      const matchedCase = typeDef.cases?.find(c => c.name === tag);
+      const matchedCase = typeDef.cases?.find((c) => c.name === tag);
 
       if (!matchedCase) {
-        return { _type: typeHint, variant: tag, data: items.slice(1).map(scValToJs) };
+        return {
+          _type: typeHint,
+          variant: tag,
+          data: items.slice(1).map(scValToJs),
+        };
       }
 
       // Void variant: no payload
@@ -111,11 +128,15 @@ export function scValToJsTyped(val, typeHint, typeIndex) {
   if (typeDef.kind === "error_enum") {
     if (scType === "scvU32") {
       const discriminant = val.u32();
-      const matchedCase = typeDef.cases?.find(c => c.value === discriminant);
+      const matchedCase = typeDef.cases?.find((c) => c.value === discriminant);
       if (matchedCase) {
         return { _type: typeHint, error: matchedCase.name, code: discriminant };
       }
-      return { _type: typeHint, error: `Unknown(${discriminant})`, code: discriminant };
+      return {
+        _type: typeHint,
+        error: `Unknown(${discriminant})`,
+        code: discriminant,
+      };
     }
   }
 
@@ -245,7 +266,10 @@ export function scValToJs(val) {
       return { type: "ledgerKeyContractInstance" };
 
     case "scvLedgerKeyNonce":
-      return { type: "ledgerKeyNonce", nonce: BigInt(val.nonceKey().nonce().toString()) };
+      return {
+        type: "ledgerKeyNonce",
+        nonce: BigInt(val.nonceKey().nonce().toString()),
+      };
 
     case "scvContractInstance":
       return { type: "contractInstance" };

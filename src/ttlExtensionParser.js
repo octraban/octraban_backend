@@ -40,10 +40,15 @@ export function parseTTLHostFunction(operation) {
     };
   }
 
-  if (op.type === "extendContractInstance" || op.type === "extendContractCode" || (op.ext?.v === 1 && (op.contractId || op.codeHash))) {
-    const mappedFn = op.type === "extendContractCode"
-      ? "extend_contract_code_ttl"
-      : "extend_contract_instance_ttl";
+  if (
+    op.type === "extendContractInstance" ||
+    op.type === "extendContractCode" ||
+    (op.ext?.v === 1 && (op.contractId || op.codeHash))
+  ) {
+    const mappedFn =
+      op.type === "extendContractCode"
+        ? "extend_contract_code_ttl"
+        : "extend_contract_instance_ttl";
 
     return {
       fn_name: mappedFn,
@@ -66,26 +71,35 @@ export function extractTTLModifications(transaction) {
   const results = [];
 
   for (const op of transaction.operations) {
-    const parsed = parseTTLHostFunction(op.hostFunction ?? op.host_function ?? op);
+    const parsed = parseTTLHostFunction(
+      op.hostFunction ?? op.host_function ?? op,
+    );
     if (parsed) {
       results.push({
         ...parsed,
-        ledger:    transaction.ledger   ?? null,
-        tx_hash:   transaction.hash     ?? null,
+        ledger: transaction.ledger ?? null,
+        tx_hash: transaction.hash ?? null,
         timestamp: transaction.timestamp ?? null,
       });
       continue;
     }
 
-    if (op.type === "extendContractCode" || op.type === "extendContractInstance" || (op.ext?.v === 1 && (op.contractId || op.codeHash))) {
+    if (
+      op.type === "extendContractCode" ||
+      op.type === "extendContractInstance" ||
+      (op.ext?.v === 1 && (op.contractId || op.codeHash))
+    ) {
       results.push({
-        fn_name:       op.type === "extendContractCode" ? "extend_contract_code_ttl" : "extend_contract_instance_ttl",
-        extend_to:     _num(op.extendTo ?? op.extend_to),
+        fn_name:
+          op.type === "extendContractCode"
+            ? "extend_contract_code_ttl"
+            : "extend_contract_instance_ttl",
+        extend_to: _num(op.extendTo ?? op.extend_to),
         min_extension: null,
         max_extension: null,
-        ledger:        transaction.ledger   ?? null,
-        tx_hash:       transaction.hash     ?? null,
-        timestamp:     transaction.timestamp ?? null,
+        ledger: transaction.ledger ?? null,
+        tx_hash: transaction.hash ?? null,
+        timestamp: transaction.timestamp ?? null,
       });
     }
   }
@@ -95,15 +109,17 @@ export function extractTTLModifications(transaction) {
 
 export function formatTTLExtension(ttlExt) {
   if (!ttlExt) return null;
-  const action = ttlExt.fn_name === "extend_contract_code_ttl"
-    ? "Extended contract code TTL"
-    : ttlExt.fn_name === "extend_contract_instance_ttl"
-      ? "Extended contract instance TTL"
-      : "Extended TTL";
+  const action =
+    ttlExt.fn_name === "extend_contract_code_ttl"
+      ? "Extended contract code TTL"
+      : ttlExt.fn_name === "extend_contract_instance_ttl"
+        ? "Extended contract instance TTL"
+        : "Extended TTL";
 
   const parts = [action];
   if (ttlExt.extend_to !== null) parts.push(`to ledger ${ttlExt.extend_to}`);
-  if (ttlExt.min_extension !== null) parts.push(`requested +${ttlExt.min_extension}`);
+  if (ttlExt.min_extension !== null)
+    parts.push(`requested +${ttlExt.min_extension}`);
   if (ttlExt.max_extension !== null) parts.push(`max +${ttlExt.max_extension}`);
 
   return parts.join(" ");

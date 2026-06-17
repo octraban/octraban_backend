@@ -2,7 +2,8 @@ import { SorobanRpc, xdr, StrKey } from "@stellar/stellar-sdk";
 import { withRetry } from "./rpcRetry.js";
 import { parseContractSpec } from "./wasmContractSpec.js";
 
-const RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
+const RPC_URL =
+  process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const rpc = new SorobanRpc.Server(RPC_URL, { allowHttp: true });
 
 /**
@@ -22,10 +23,12 @@ async function fetchContractWasm(contractId) {
       }),
       key: xdr.ScVal.scvLedgerKeyContractInstance(),
       durability: xdr.ContractDataDurability.persistent(),
-    })
+    }),
   );
 
-  const instanceRes = await withRetry(() => rpc.getLedgerEntries([instanceKey]));
+  const instanceRes = await withRetry(() =>
+    rpc.getLedgerEntries([instanceKey]),
+  );
   if (!instanceRes?.entries?.length) return null;
 
   const instanceEntry = instanceRes.entries[0].val;
@@ -40,7 +43,7 @@ async function fetchContractWasm(contractId) {
 
   // Step 2: fetch the WASM code entry by hash
   const codeKey = xdr.LedgerKey.contractCode(
-    new xdr.LedgerKeyContractCode({ hash: wasmHash })
+    new xdr.LedgerKeyContractCode({ hash: wasmHash }),
   );
 
   const codeRes = await withRetry(() => rpc.getLedgerEntries([codeKey]));
@@ -88,9 +91,9 @@ export async function fetchContractSpec(contractId) {
     if (full === null) return null;
 
     // Map to the legacy shape expected by verifyAbi and the /api/spec/:id endpoint
-    return full.functions.map(fn => ({
+    return full.functions.map((fn) => ({
       name: fn.name,
-      args: (fn.inputs ?? []).map(i => ({ name: i.name, type: i.type })),
+      args: (fn.inputs ?? []).map((i) => ({ name: i.name, type: i.type })),
     }));
   } catch (err) {
     console.error("Failed to fetch contract spec:", err.message);
@@ -156,7 +159,7 @@ export async function verifyAbi(contractId, abiFunctions) {
         actual: actualArgs,
       });
       errors.push(
-        `Function "${abiFn.name}" has ${actualArgs} parameters but on-chain expects ${expectedArgs}`
+        `Function "${abiFn.name}" has ${actualArgs} parameters but on-chain expects ${expectedArgs}`,
       );
     }
   }
@@ -174,7 +177,7 @@ export async function verifyAbi(contractId, abiFunctions) {
  * @returns {boolean} true if valid
  */
 export function validateFunctionName(spec, functionName) {
-  return spec.some(fn => fn.name === functionName);
+  return spec.some((fn) => fn.name === functionName);
 }
 
 /**
@@ -182,7 +185,7 @@ export function validateFunctionName(spec, functionName) {
  * @returns {boolean} true if counts match
  */
 export function validateArgCount(spec, functionName, argCount) {
-  const fn = spec.find(f => f.name === functionName);
+  const fn = spec.find((f) => f.name === functionName);
   if (!fn) return false;
   return fn.args.length === argCount;
 }

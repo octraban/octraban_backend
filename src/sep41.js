@@ -78,7 +78,8 @@ export function extractApprove(event) {
   const { topics, value } = event;
   if (topics[0] !== "approve") return null;
   const [, from, spender] = topics;
-  const amount = value?.amount !== undefined ? String(value.amount) : String(value);
+  const amount =
+    value?.amount !== undefined ? String(value.amount) : String(value);
   const expiration_ledger = value?.expiration_ledger ?? null;
   return {
     type: "approve",

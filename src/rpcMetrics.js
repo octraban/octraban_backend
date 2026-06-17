@@ -8,18 +8,27 @@
 
 import { SorobanRpc } from "@stellar/stellar-sdk";
 
-const RPC_URLS = (process.env.SOROBAN_RPC_URLS || process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org")
+const RPC_URLS = (
+  process.env.SOROBAN_RPC_URLS ||
+  process.env.SOROBAN_RPC_URL ||
+  "https://soroban-testnet.stellar.org"
+)
   .split(",")
-  .map(u => u.trim())
+  .map((u) => u.trim())
   .filter(Boolean);
 
-const PROBE_INTERVAL_MS = Number(process.env.METRICS_PROBE_INTERVAL_MS || 15_000);
+const PROBE_INTERVAL_MS = Number(
+  process.env.METRICS_PROBE_INTERVAL_MS || 15_000,
+);
 // Keep last N samples per node
 const MAX_SAMPLES = Number(process.env.METRICS_MAX_SAMPLES || 120);
 
 /** @type {Map<string, { latencies: number[], errors: number, total: number, lastLedger: number }>} */
 const store = new Map(
-  RPC_URLS.map(url => [url, { latencies: [], errors: 0, total: 0, lastLedger: 0 }])
+  RPC_URLS.map((url) => [
+    url,
+    { latencies: [], errors: 0, total: 0, lastLedger: 0 },
+  ]),
 );
 
 async function probe(url) {
@@ -44,10 +53,14 @@ async function probe(url) {
 function summarise(url) {
   const { latencies, errors, total, lastLedger } = store.get(url);
   const sorted = [...latencies].sort((a, b) => a - b);
-  const avg = sorted.length ? Math.round(sorted.reduce((s, v) => s + v, 0) / sorted.length) : null;
+  const avg = sorted.length
+    ? Math.round(sorted.reduce((s, v) => s + v, 0) / sorted.length)
+    : null;
   const p95 = sorted.length ? sorted[Math.floor(sorted.length * 0.95)] : null;
   const errorRate = total ? Number(((errors / total) * 100).toFixed(2)) : 0;
-  const uptime    = total ? Number((((total - errors) / total) * 100).toFixed(2)) : 100;
+  const uptime = total
+    ? Number((((total - errors) / total) * 100).toFixed(2))
+    : 100;
 
   return {
     url,
@@ -66,7 +79,9 @@ export function startMetricsCollector() {
   RPC_URLS.forEach(probe);
 
   setInterval(() => RPC_URLS.forEach(probe), PROBE_INTERVAL_MS);
-  console.log(`[rpc-metrics] probing ${RPC_URLS.length} node(s) every ${PROBE_INTERVAL_MS}ms`);
+  console.log(
+    `[rpc-metrics] probing ${RPC_URLS.length} node(s) every ${PROBE_INTERVAL_MS}ms`,
+  );
 }
 
 export function getMetrics() {

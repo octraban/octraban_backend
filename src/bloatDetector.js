@@ -59,7 +59,9 @@ export function countNewPersistentKeys(ev, contractId) {
         if (!Buffer.from(entryBytes).equals(Buffer.from(targetBytes))) continue;
 
         count++;
-      } catch { /* skip malformed entry */ }
+      } catch {
+        /* skip malformed entry */
+      }
     }
 
     return count;

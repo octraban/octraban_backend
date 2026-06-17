@@ -1,5 +1,3 @@
-
-
 /**
  * Parse a Soroban i128 ScVal into a native BigInt without precision loss.
  *

@@ -18,7 +18,11 @@ export function compareInterfaces(oldAbi, newAbi) {
     } else {
       const newFn = newFns.get(name);
       if (!signaturesEqual(oldFn, newFn)) {
-        modified.push({ name, oldInputs: oldFn.inputs, newInputs: newFn.inputs });
+        modified.push({
+          name,
+          oldInputs: oldFn.inputs,
+          newInputs: newFn.inputs,
+        });
       }
     }
   });
@@ -87,8 +91,13 @@ export function generateCompatibilityReport(comparison) {
   const breakingChanges = detectBreakingChanges(comparison);
   const isCompatible = breakingChanges.length === 0;
 
-  const totalChanges = comparison.removed.length + comparison.added.length + comparison.modified.length;
-  const compatibilityScore = isCompatible ? 100 : Math.max(0, 100 - breakingChanges.length * 25);
+  const totalChanges =
+    comparison.removed.length +
+    comparison.added.length +
+    comparison.modified.length;
+  const compatibilityScore = isCompatible
+    ? 100
+    : Math.max(0, 100 - breakingChanges.length * 25);
 
   return {
     isCompatible,
@@ -96,7 +105,9 @@ export function generateCompatibilityReport(comparison) {
     removals: comparison.removed,
     additions: comparison.added,
     modifications: comparison.modified,
-    summary: isCompatible ? "No breaking changes" : `${breakingChanges.length} breaking change${breakingChanges.length > 1 ? "s" : ""} detected`,
+    summary: isCompatible
+      ? "No breaking changes"
+      : `${breakingChanges.length} breaking change${breakingChanges.length > 1 ? "s" : ""} detected`,
     compatibilityScore,
     totalChanges,
   };

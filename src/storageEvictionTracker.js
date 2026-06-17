@@ -10,8 +10,8 @@
  */
 
 // Soroban network constants (Testnet / Mainnet defaults)
-const LEDGER_CLOSE_SECONDS = 5;          // ~5 s per ledger
-const BYTES_PER_LEDGER_STROOP = 0.0001;  // rough rent per byte per ledger (in XLM)
+const LEDGER_CLOSE_SECONDS = 5; // ~5 s per ledger
+const BYTES_PER_LEDGER_STROOP = 0.0001; // rough rent per byte per ledger (in XLM)
 const STROOPS_PER_XLM = 10_000_000;
 
 /**
@@ -61,7 +61,7 @@ export function classifyEntryState(liveUntilLedger, currentLedger) {
  * @returns {object[]}  same entries with `state`, `ledgersUntilEviction`, `estimatedRestoreFeeStroops` added
  */
 export function annotateEvictionStates(entries, currentLedger) {
-  return entries.map(entry => {
+  return entries.map((entry) => {
     const state = classifyEntryState(entry.liveUntilLedger, currentLedger);
     const ledgersUntilEviction =
       state === "evicted" ? 0 : entry.liveUntilLedger - currentLedger;
@@ -90,7 +90,7 @@ export function annotateEvictionStates(entries, currentLedger) {
  * @returns {object[]}
  */
 export function getEvictedEntries(annotatedEntries) {
-  return annotatedEntries.filter(e => e.state === "evicted");
+  return annotatedEntries.filter((e) => e.state === "evicted");
 }
 
 /**
@@ -106,7 +106,10 @@ export function getEvictedEntries(annotatedEntries) {
  * }}
  */
 export function summariseEvictionStats(annotatedEntries) {
-  let live = 0, expiringSoon = 0, evicted = 0, totalFee = 0;
+  let live = 0,
+    expiringSoon = 0,
+    evicted = 0,
+    totalFee = 0;
 
   for (const e of annotatedEntries) {
     if (e.state === "live") live++;
@@ -151,23 +154,37 @@ export async function parseRpcLedgerEntries(rpcEntries, keySerializer = null) {
       // Try to extract contractId and key from the XDR string
       if (typeof xdrEntry === "string") {
         try {
-          const { xdr: xdrSdk, StrKey, scValToNative } = await import("@stellar/stellar-sdk").catch(() => ({}));
+          const {
+            xdr: xdrSdk,
+            StrKey,
+            scValToNative,
+          } = await import("@stellar/stellar-sdk").catch(() => ({}));
           if (xdrSdk) {
             const le = xdrSdk.LedgerEntry.fromXDR(xdrEntry, "base64");
             const data = le.data();
             if (data.switch().name === "contractData") {
               const cd = data.contractData();
               contractId = StrKey.encodeContract(cd.contract().contractId());
-              try { key = String(scValToNative(cd.key())); } catch { key = cd.key().switch().name; }
+              try {
+                key = String(scValToNative(cd.key()));
+              } catch {
+                key = cd.key().switch().name;
+              }
               durability = cd.durability().name ?? "persistent";
             }
           }
-        } catch { /* fallback below */ }
+        } catch {
+          /* fallback below */
+        }
       }
 
       // Fallback shapes from simplified/mock data
       contractId = contractId ?? entry.contractId ?? entry.contract_id ?? null;
-      key = key ?? (keySerializer ? keySerializer(entry) : entry.key ?? entry.keyXdr ?? null);
+      key =
+        key ??
+        (keySerializer
+          ? keySerializer(entry)
+          : (entry.key ?? entry.keyXdr ?? null));
 
       if (!contractId || !key) continue;
 
@@ -177,9 +194,12 @@ export async function parseRpcLedgerEntries(rpcEntries, keySerializer = null) {
         durability,
         liveUntilLedger: Number(liveUntilLedger),
         valueSizeBytes: entry.valueSizeBytes ?? entry.value_size_bytes ?? 256,
-        lastModifiedLedger: entry.lastModifiedLedgerSeq ?? entry.last_modified_ledger_seq ?? null,
+        lastModifiedLedger:
+          entry.lastModifiedLedgerSeq ?? entry.last_modified_ledger_seq ?? null,
       });
-    } catch { /* skip malformed entries */ }
+    } catch {
+      /* skip malformed entries */
+    }
   }
 
   return results;

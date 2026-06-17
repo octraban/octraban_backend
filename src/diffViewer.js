@@ -89,7 +89,8 @@ export function formatDiffOutput(diff, options = {}) {
 function formatUnified(diff) {
   return diff
     .map((item, idx) => {
-      const marker = item.type === "added" ? "+" : item.type === "removed" ? "-" : " ";
+      const marker =
+        item.type === "added" ? "+" : item.type === "removed" ? "-" : " ";
       const lineNum = item.lineNum || idx + 1;
       return `${marker} ${lineNum.toString().padStart(4)} | ${item.content}`;
     })
@@ -108,13 +109,19 @@ function formatSideBySide(diff) {
 
   diff.forEach((item) => {
     if (item.type === "removed") {
-      lines.push(`${oldIdx.toString().padStart(4)} | ${item.content.padEnd(40)} | `);
+      lines.push(
+        `${oldIdx.toString().padStart(4)} | ${item.content.padEnd(40)} | `,
+      );
       oldIdx++;
     } else if (item.type === "added") {
-      lines.push(`     |${" ".repeat(40)} | ${newIdx.toString().padStart(4)} | ${item.content}`);
+      lines.push(
+        `     |${" ".repeat(40)} | ${newIdx.toString().padStart(4)} | ${item.content}`,
+      );
       newIdx++;
     } else {
-      lines.push(`${oldIdx.toString().padStart(4)} | ${item.content.padEnd(40)} | ${newIdx.toString().padStart(4)} | ${item.content}`);
+      lines.push(
+        `${oldIdx.toString().padStart(4)} | ${item.content.padEnd(40)} | ${newIdx.toString().padStart(4)} | ${item.content}`,
+      );
       oldIdx++;
       newIdx++;
     }

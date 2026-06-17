@@ -29,7 +29,7 @@ export async function recordLedgerHash(ledger, hash) {
     `INSERT INTO ledger_hashes (ledger, hash)
      VALUES ($1, $2)
      ON CONFLICT (ledger) DO NOTHING`,
-    [ledger, hash]
+    [ledger, hash],
   );
 }
 
@@ -37,15 +37,19 @@ export async function recordLedgerHash(ledger, hash) {
 async function getRecentLedgerHashes(limit = 20) {
   const { rows } = await pool.query(
     `SELECT ledger, hash FROM ledger_hashes ORDER BY ledger DESC LIMIT $1`,
-    [limit]
+    [limit],
   );
   return rows; // [{ ledger, hash }, …]
 }
 
 /** Delete all events and ledger_hash records at or above forkLedger. */
 async function rollback(forkLedger) {
-  await pool.query(`DELETE FROM events        WHERE ledger     >= $1`, [forkLedger]);
-  await pool.query(`DELETE FROM ledger_hashes WHERE ledger     >= $1`, [forkLedger]);
+  await pool.query(`DELETE FROM events        WHERE ledger     >= $1`, [
+    forkLedger,
+  ]);
+  await pool.query(`DELETE FROM ledger_hashes WHERE ledger     >= $1`, [
+    forkLedger,
+  ]);
   console.warn(`[reorg] Rolled back ledger ${forkLedger}+`);
 }
 
@@ -73,7 +77,7 @@ export async function checkForReorg(rpc) {
 
     if (networkHash && networkHash !== hash) {
       console.warn(
-        `[reorg] Mismatch at ledger ${ledger}: stored=${hash} network=${networkHash}`
+        `[reorg] Mismatch at ledger ${ledger}: stored=${hash} network=${networkHash}`,
       );
       return ledger;
     }
@@ -102,7 +106,7 @@ export function startReorgWorker(rpc, cursorRef, intervalMs = 30_000) {
     console.log("[reorg] Worker started");
 
     while (running) {
-      await new Promise(r => setTimeout(r, intervalMs));
+      await new Promise((r) => setTimeout(r, intervalMs));
       if (!running) break;
 
       try {
@@ -118,5 +122,7 @@ export function startReorgWorker(rpc, cursorRef, intervalMs = 30_000) {
     }
   })();
 
-  return () => { running = false; };
+  return () => {
+    running = false;
+  };
 }

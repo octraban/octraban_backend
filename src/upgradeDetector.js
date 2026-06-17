@@ -9,8 +9,6 @@
  * or null when the transaction is not an upgrade.
  */
 
-
-
 /**
  * Extract the hex-encoded WASM hash from a ContractDataEntry whose val is
  * scvContractInstance. Returns null if the entry is not a WASM instance.
@@ -50,28 +48,40 @@ export function detectUpgrade(ev) {
     // Collect state (before) and updated (after) contractInstance entries keyed
     // by their contract address hex so we can pair them.
     const before = new Map(); // contractHex → wasmHash
-    const after  = new Map();
+    const after = new Map();
 
     for (const change of changes) {
       try {
         const switchName = change.switch().name;
-        if (switchName !== "ledgerEntryState" && switchName !== "ledgerEntryUpdated") continue;
+        if (
+          switchName !== "ledgerEntryState" &&
+          switchName !== "ledgerEntryUpdated"
+        )
+          continue;
 
-        const entry = switchName === "ledgerEntryState" ? change.state() : change.updated();
+        const entry =
+          switchName === "ledgerEntryState" ? change.state() : change.updated();
         const contractData = entry.data?.().contractData?.();
         if (!contractData) continue;
 
         // Must be the contract instance key
-        if (contractData.key?.().switch().name !== "scvLedgerKeyContractInstance") continue;
+        if (
+          contractData.key?.().switch().name !== "scvLedgerKeyContractInstance"
+        )
+          continue;
 
         const hash = wasmHashFromContractData(contractData);
         if (!hash) continue;
 
-        const contractHex = Buffer.from(contractData.contract().contractId()).toString("hex");
+        const contractHex = Buffer.from(
+          contractData.contract().contractId(),
+        ).toString("hex");
 
-        if (switchName === "ledgerEntryState")   before.set(contractHex, hash);
+        if (switchName === "ledgerEntryState") before.set(contractHex, hash);
         if (switchName === "ledgerEntryUpdated") after.set(contractHex, hash);
-      } catch { /* skip malformed entry */ }
+      } catch {
+        /* skip malformed entry */
+      }
     }
 
     // Find a contract whose hash changed between state and updated

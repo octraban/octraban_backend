@@ -1,5 +1,8 @@
 import { scValToNative } from "@stellar/stellar-sdk";
-import { parseTTLHostFunction, formatTTLExtension } from "./ttlExtensionParser.js";
+import {
+  parseTTLHostFunction,
+  formatTTLExtension,
+} from "./ttlExtensionParser.js";
 import { parseZkHostFunctions, computeZkCostDelta } from "./zkHostFunctions.js";
 
 // Issue #134 — result codes that indicate block compute capacity was exhausted
@@ -45,7 +48,9 @@ function extractGasCosts(ev) {
     let sorobanMeta = null;
     try {
       sorobanMeta = meta.v3?.().sorobanMeta?.() ?? null;
-    } catch { /* not v3 */ }
+    } catch {
+      /* not v3 */
+    }
 
     if (!sorobanMeta) return result;
 
@@ -54,14 +59,20 @@ function extractGasCosts(ev) {
       const extV1 = sorobanMeta.ext?.().v1?.();
       if (extV1) {
         if (extV1.totalNonRefundableResourceFeeCharged != null)
-          result.cpu_instructions = Number(extV1.totalNonRefundableResourceFeeCharged);
+          result.cpu_instructions = Number(
+            extV1.totalNonRefundableResourceFeeCharged,
+          );
         if (extV1.totalRefundableResourceFeeCharged != null)
           result.fee_charged = Number(extV1.totalRefundableResourceFeeCharged);
         if (extV1.rentFeeCharged != null)
           result.mem_bytes = Number(extV1.rentFeeCharged);
       }
-    } catch { /* ext not v1 */ }
-  } catch { /* ignore all extraction errors */ }
+    } catch {
+      /* ext not v1 */
+    }
+  } catch {
+    /* ignore all extraction errors */
+  }
 
   return result;
 }
@@ -84,13 +95,14 @@ const NATIVE_SAC_IDS = new Set([
  */
 export async function decode(ev) {
   const contractId = ev.contractId;
-  const topics     = ev.topic.map(t => scValToNative(t));
-  const data       = scValToNative(ev.value);
+  const topics = ev.topic.map((t) => scValToNative(t));
+  const data = scValToNative(ev.value);
 
   // First topic is typically the function name symbol
-  const fnName = typeof topics[0] === "symbol" || typeof topics[0] === "string"
-    ? String(topics[0])
-    : "unknown";
+  const fnName =
+    typeof topics[0] === "symbol" || typeof topics[0] === "string"
+      ? String(topics[0])
+      : "unknown";
 
   // Detect native XLM wrap/unwrap on the SAC contract
   if (NATIVE_SAC_IDS.has(contractId)) {
@@ -98,12 +110,12 @@ export async function decode(ev) {
     if (wrapUnwrap) {
       return {
         contract_id: contractId,
-        function:    wrapUnwrap.function,
-        ledger:      ev.ledger,
-        tx_hash:     ev.txHash,
+        function: wrapUnwrap.function,
+        ledger: ev.ledger,
+        tx_hash: ev.txHash,
         description: wrapUnwrap.description,
-        raw_topics:  topics.map(String),
-        raw_data:    JSON.stringify(data),
+        raw_topics: topics.map(String),
+        raw_data: JSON.stringify(data),
         ...extractGasCosts(ev),
       };
     }
@@ -111,7 +123,7 @@ export async function decode(ev) {
 
   // Look up registered ABI for richer description
   const meta = await db.getContractMeta(contractId).catch(() => null);
-  const fnAbi = meta?.functions?.find(f => f.name === fnName);
+  const fnAbi = meta?.functions?.find((f) => f.name === fnName);
 
   // Check if this contract is a registered vault
   const vaultMeta = await db.getVault(contractId).catch(() => null);
@@ -139,25 +151,32 @@ export async function decode(ev) {
   // Fall back to standard decoders
   if (!description) {
     description = vaultMeta
-      ? vaultDescription(fnName, topics.slice(1), data, contractLabel, vaultMeta)
+      ? vaultDescription(
+          fnName,
+          topics.slice(1),
+          data,
+          contractLabel,
+          vaultMeta,
+        )
       : fnAbi
         ? buildDescription(fnName, topics.slice(1), data, contractLabel)
         : genericDescription(fnName, topics.slice(1), data, contractLabel);
   }
 
   // Attach heuristic params when no ABI was available (no fnAbi, not a vault, not RWA)
-  const heuristicParams = (!fnAbi && !vaultMeta && !meta)
-    ? parseHeuristic([...topics.slice(1), ...(data != null ? [data] : [])])
-    : undefined;
+  const heuristicParams =
+    !fnAbi && !vaultMeta && !meta
+      ? parseHeuristic([...topics.slice(1), ...(data != null ? [data] : [])])
+      : undefined;
 
   const decoded = {
     contract_id: contractId,
-    function:    fnName,
-    ledger:      ev.ledger,
-    tx_hash:     ev.txHash,
+    function: fnName,
+    ledger: ev.ledger,
+    tx_hash: ev.txHash,
     description,
-    raw_topics:  topics.map(String),
-    raw_data:    JSON.stringify(data),
+    raw_topics: topics.map(String),
+    raw_data: JSON.stringify(data),
     ...(isSac && { sac_asset: assetCode }),
     is_clawback: fnName === "clawback",
     is_resource_limit_exceeded: isResourceLimitExceeded(ev),
@@ -166,7 +185,9 @@ export async function decode(ev) {
   };
 
   // Protocol 26: detect TTL extension host function calls on this event
-  const ttlExt = parseTTLHostFunction(ev.hostFunction ?? ev.host_function ?? ev.operation ?? null);
+  const ttlExt = parseTTLHostFunction(
+    ev.hostFunction ?? ev.host_function ?? ev.operation ?? null,
+  );
   if (ttlExt) {
     decoded.ttl_extension = ttlExt;
     // Enrich description so the ledger history row is self-explanatory
@@ -176,14 +197,22 @@ export async function decode(ev) {
   // Issue #164 — Protocol 26: detect CAP-0080 ZK host function calls
   const zkCalls = parseZkHostFunctions(ev);
   if (zkCalls) {
-    decoded.zk_host_calls = { calls: zkCalls, delta: computeZkCostDelta(zkCalls) };
+    decoded.zk_host_calls = {
+      calls: zkCalls,
+      delta: computeZkCostDelta(zkCalls),
+    };
   }
 
   // Persist role assignment if this event carries one
   const roleAssignment = extractRoleAssignment(decoded);
   if (roleAssignment) {
-    db.upsertRole({ contract_id: contractId, ledger: ev.ledger, ...roleAssignment })
-      .catch(err => console.error("[roleTracker] upsertRole failed:", err.message));
+    db.upsertRole({
+      contract_id: contractId,
+      ledger: ev.ledger,
+      ...roleAssignment,
+    }).catch((err) =>
+      console.error("[roleTracker] upsertRole failed:", err.message),
+    );
   }
 
   return decoded;
@@ -226,7 +255,8 @@ function vaultDescription(fn, args, data, contractName, vaultMeta) {
     }
     case "burn":
     case "withdraw": {
-      const [admin, from, to, assets, shares] = args.length >= 4 ? args : [null, null, args[0], args[1], args[2]];
+      const [admin, from, to, assets, shares] =
+        args.length >= 4 ? args : [null, null, args[0], args[1], args[2]];
       const amt = assets ?? data;
       const shr = shares ?? "?";
       return `Burned ${String(shr)} shares → withdrew ${String(amt)} ${assetLabel} from ${fmt(from ?? admin ?? to)} on ${contractName}`;
@@ -277,5 +307,7 @@ function fmtXlm(amount) {
   if (amount == null) return "?";
   // SAC amounts are in stroops (1 XLM = 10_000_000 stroops)
   const n = Number(amount);
-  return isNaN(n) ? String(amount) : (n / 1e7).toLocaleString(undefined, { maximumFractionDigits: 7 });
+  return isNaN(n)
+    ? String(amount)
+    : (n / 1e7).toLocaleString(undefined, { maximumFractionDigits: 7 });
 }

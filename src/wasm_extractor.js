@@ -11,7 +11,9 @@ export function extractWasm(base64Xdr) {
   const hf = xdr.HostFunction.fromXDR(base64Xdr, "base64");
 
   if (hf.switch().name !== "hostFunctionTypeCreateContract") {
-    throw new Error(`Expected hostFunctionTypeCreateContract, got ${hf.switch().name}`);
+    throw new Error(
+      `Expected hostFunctionTypeCreateContract, got ${hf.switch().name}`,
+    );
   }
 
   const executable = hf.createContract().executable();
@@ -41,7 +43,9 @@ export function extractWasmHash(base64Xdr) {
   const hf = xdr.HostFunction.fromXDR(base64Xdr, "base64");
 
   if (hf.switch().name !== "hostFunctionTypeUploadContractWasm") {
-    throw new Error(`Expected hostFunctionTypeUploadContractWasm, got ${hf.switch().name}`);
+    throw new Error(
+      `Expected hostFunctionTypeUploadContractWasm, got ${hf.switch().name}`,
+    );
   }
 
   const bytes = hf.wasm();

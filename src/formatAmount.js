@@ -20,8 +20,8 @@ export function formatAmount(raw, decimals = 7) {
   const neg = rawBig < 0n;
   const abs = neg ? -rawBig : rawBig;
 
-  const whole   = abs / divisor;
-  const frac    = abs % divisor;
+  const whole = abs / divisor;
+  const frac = abs % divisor;
   const fracStr = frac.toString().padStart(decimals, "0").replace(/0+$/, "");
 
   const magnitude = fracStr.length > 0 ? `${whole}.${fracStr}` : `${whole}`;

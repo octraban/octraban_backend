@@ -16,8 +16,8 @@
 
 import { db } from "./db.js";
 
-const WINDOW_LEDGERS   = 100;   // look-back window
-const BURN_THRESHOLD_PCT = 10;  // flag if ≥10 % of estimated supply burned in one ledger
+const WINDOW_LEDGERS = 100; // look-back window
+const BURN_THRESHOLD_PCT = 10; // flag if ≥10 % of estimated supply burned in one ledger
 const POLL_INTERVAL_MS = 30_000;
 
 /** @type {Map<string, { contractId: string, ledger: number, burnedPct: number, burnedAmount: bigint, flaggedAt: number }[]>} */
@@ -38,7 +38,7 @@ export async function runBurnDetection() {
       `SELECT contract_id, ledger, raw_data
        FROM events
        WHERE function = 'burn' AND ledger >= $1`,
-      [minLedger]
+      [minLedger],
     );
 
     const { rows: mintRows } = await db._query(
@@ -46,13 +46,16 @@ export async function runBurnDetection() {
        FROM events
        WHERE function IN ('mint') AND ledger >= $1
        GROUP BY contract_id`,
-      [minLedger]
+      [minLedger],
     );
 
     // Build supply estimate per contract (minted - burned so far)
     const mintedByContract = new Map();
     for (const r of mintRows) {
-      mintedByContract.set(r.contract_id, BigInt(r.total_minted?.split(".")[0] ?? "0"));
+      mintedByContract.set(
+        r.contract_id,
+        BigInt(r.total_minted?.split(".")[0] ?? "0"),
+      );
     }
 
     // Group burns by contract + ledger
@@ -62,7 +65,9 @@ export async function runBurnDetection() {
       try {
         const parsed = JSON.parse(r.raw_data ?? "{}");
         amount = BigInt(String(parsed?.amount ?? parsed ?? "0").split(".")[0]);
-      } catch { /* skip unparseable */ }
+      } catch {
+        /* skip unparseable */
+      }
 
       const key = `${r.contract_id}:${r.ledger}`;
       burnsByLedger.set(key, {
@@ -111,12 +116,12 @@ export async function runBurnDetection() {
  */
 export function getBurnAlerts(contractId) {
   if (contractId) {
-    return (alerts.get(contractId) ?? []).map(a => ({
+    return (alerts.get(contractId) ?? []).map((a) => ({
       ...a,
       burnedAmount: a.burnedAmount.toString(),
     }));
   }
-  return [...alerts.values()].flat().map(a => ({
+  return [...alerts.values()].flat().map((a) => ({
     ...a,
     burnedAmount: a.burnedAmount.toString(),
   }));
@@ -128,5 +133,9 @@ export function getBurnAlerts(contractId) {
 export function startBurnDetector() {
   runBurnDetection();
   setInterval(runBurnDetection, POLL_INTERVAL_MS);
-  console.log("[burnDetector] started, polling every", POLL_INTERVAL_MS / 1000, "s");
+  console.log(
+    "[burnDetector] started, polling every",
+    POLL_INTERVAL_MS / 1000,
+    "s",
+  );
 }

@@ -69,8 +69,8 @@ export function detectReentrancyTraps(diagnosticEventsXdr) {
     const { error, contractId } = ev;
     if (!error) continue;
 
-    const isReentrancy = REENTRANCY_PATTERNS.some(re => re.test(error));
-    const isDepth = DEPTH_PATTERNS.some(re => re.test(error));
+    const isReentrancy = REENTRANCY_PATTERNS.some((re) => re.test(error));
+    const isDepth = DEPTH_PATTERNS.some((re) => re.test(error));
 
     if (isReentrancy || isDepth) {
       const kind = isReentrancy ? "reentrancy" : "depth";
@@ -89,8 +89,17 @@ export function detectReentrancyTraps(diagnosticEventsXdr) {
   let depth = 0;
   let maxDepth = 0;
   for (const ev of parsed) {
-    const indicator = (ev.type ?? ev.eventType ?? ev.topic0 ?? "").toLowerCase();
-    if (indicator === "fn_call" || indicator === "call" || indicator === "invoke_contract") {
+    const indicator = (
+      ev.type ??
+      ev.eventType ??
+      ev.topic0 ??
+      ""
+    ).toLowerCase();
+    if (
+      indicator === "fn_call" ||
+      indicator === "call" ||
+      indicator === "invoke_contract"
+    ) {
       depth++;
       maxDepth = Math.max(maxDepth, depth);
     } else if (indicator === "fn_return" || indicator === "return") {
@@ -143,8 +152,8 @@ export function detectReentrancyFromParsed(parsedEvents, observedDepth = 0) {
     const { error, contractId } = parsedEvents[i];
     if (!error) continue;
 
-    const isReentrancy = REENTRANCY_PATTERNS.some(re => re.test(error));
-    const isDepth = DEPTH_PATTERNS.some(re => re.test(error));
+    const isReentrancy = REENTRANCY_PATTERNS.some((re) => re.test(error));
+    const isDepth = DEPTH_PATTERNS.some((re) => re.test(error));
 
     if (isReentrancy || isDepth) {
       const kind = isReentrancy ? "reentrancy" : "depth";

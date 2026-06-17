@@ -20,7 +20,11 @@ function scValLabel(scVal) {
     if (typeof native === "bigint") return native.toString();
     return JSON.stringify(native);
   } catch {
-    try { return scVal.switch().name; } catch { return "?"; }
+    try {
+      return scVal.switch().name;
+    } catch {
+      return "?";
+    }
   }
 }
 
@@ -35,7 +39,9 @@ function deriveTier(contractData) {
     if (durability === "temporary") return "temporary";
     const keyType = contractData.key().switch().name;
     if (keyType === "scvLedgerKeyContractInstance") return "instance";
-  } catch { /* fall through */ }
+  } catch {
+    /* fall through */
+  }
   return "persistent";
 }
 
@@ -61,7 +67,7 @@ export function extractStateDiffs(ev) {
 
     // Build before/after maps keyed by (contractId::keyLabel)
     const before = new Map();
-    const after  = new Map();
+    const after = new Map();
 
     for (const change of changes) {
       try {
@@ -71,11 +77,24 @@ export function extractStateDiffs(ev) {
           const key = change.removed();
           const contractData = key.contractData?.();
           if (!contractData) continue;
-          const contractId = StrKey.encodeContract(contractData.contract().contractId());
-          const keyLabel   = scValLabel(contractData.key());
-          const composite  = `${contractId}::${keyLabel}`;
-          before.set(composite, { contractId, keyLabel, valueLabel: "(existed)", tier: deriveTier(contractData) });
-          after.set(composite,  { contractId, keyLabel, valueLabel: null, tier: "persistent", removed: true });
+          const contractId = StrKey.encodeContract(
+            contractData.contract().contractId(),
+          );
+          const keyLabel = scValLabel(contractData.key());
+          const composite = `${contractId}::${keyLabel}`;
+          before.set(composite, {
+            contractId,
+            keyLabel,
+            valueLabel: "(existed)",
+            tier: deriveTier(contractData),
+          });
+          after.set(composite, {
+            contractId,
+            keyLabel,
+            valueLabel: null,
+            tier: "persistent",
+            removed: true,
+          });
           continue;
         }
 
@@ -98,24 +117,28 @@ export function extractStateDiffs(ev) {
         const contractData = entry.data?.().contractData?.();
         if (!contractData) continue;
 
-        const contractId = StrKey.encodeContract(contractData.contract().contractId());
-        const keyLabel   = scValLabel(contractData.key());
+        const contractId = StrKey.encodeContract(
+          contractData.contract().contractId(),
+        );
+        const keyLabel = scValLabel(contractData.key());
         const valueLabel = scValLabel(contractData.val());
-        const tier       = deriveTier(contractData);
-        const composite  = `${contractId}::${keyLabel}`;
+        const tier = deriveTier(contractData);
+        const composite = `${contractId}::${keyLabel}`;
 
         if (phase === "before") {
           before.set(composite, { contractId, keyLabel, valueLabel, tier });
         } else {
-          after.set(composite,  { contractId, keyLabel, valueLabel, tier });
+          after.set(composite, { contractId, keyLabel, valueLabel, tier });
         }
-      } catch { /* skip malformed entry */ }
+      } catch {
+        /* skip malformed entry */
+      }
     }
 
     // Emit diffs
     for (const [composite, afterEntry] of after) {
       const beforeEntry = before.get(composite);
-      const changeType  = afterEntry.removed
+      const changeType = afterEntry.removed
         ? "removed"
         : beforeEntry
           ? "updated"
@@ -123,16 +146,18 @@ export function extractStateDiffs(ev) {
 
       diffs.push({
         contract_id: afterEntry.contractId,
-        ledger:      Number(ev.ledger),
-        tx_hash:     ev.txHash ?? null,
-        key:         afterEntry.keyLabel,
-        tier:        afterEntry.tier ?? "persistent",
-        old_value:   beforeEntry?.valueLabel ?? null,
-        new_value:   afterEntry.removed ? null : afterEntry.valueLabel,
+        ledger: Number(ev.ledger),
+        tx_hash: ev.txHash ?? null,
+        key: afterEntry.keyLabel,
+        tier: afterEntry.tier ?? "persistent",
+        old_value: beforeEntry?.valueLabel ?? null,
+        new_value: afterEntry.removed ? null : afterEntry.valueLabel,
         change_type: changeType,
       });
     }
-  } catch { /* non-fatal */ }
+  } catch {
+    /* non-fatal */
+  }
 
   return diffs;
 }

@@ -19,26 +19,191 @@ function randomHex(length = 64) {
 }
 
 const contractConfigs = [
-  { name: "USDC Token", description: "Fiat-backed stablecoin issued by Circle", is_rwa: false, functions: [{ name: "transfer", description: "Transfer tokens" }, { name: "mint", description: "Mint tokens" }, { name: "burn", description: "Burn tokens" }] },
-  { name: "StellarSwap DEX", description: "Automated market maker pool for XLM/USDC", is_rwa: false, functions: [{ name: "swap", description: "Swap assets" }, { name: "add_liquidity", description: "Add liquidity" }, { name: "remove_liquidity", description: "Remove liquidity" }] },
-  { name: "Aave Lending Pool", description: "Decentralized money market contract", is_rwa: false, functions: [{ name: "deposit", description: "Deposit collateral" }, { name: "borrow", description: "Borrow assets" }, { name: "repay", description: "Repay loan" }, { name: "liquidate", description: "Liquidate position" }] },
-  { name: "Soroban NFT Marketplace", description: "Decentralized NFT trading contract", is_rwa: false, functions: [{ name: "list_nft", description: "List NFT for sale" }, { name: "buy_nft", description: "Purchase NFT" }, { name: "cancel_list", description: "Remove listing" }] },
-  { name: "DAO Treasury", description: "Decentralized autonomous governance treasury", is_rwa: false, functions: [{ name: "propose", description: "Submit proposal" }, { name: "vote", description: "Cast vote" }, { name: "execute", description: "Execute approved proposal" }] },
-  { name: "Tokenized Gold (GLD)", description: "Real-world asset representing physical gold bullion", is_rwa: true, rwa_type: "precious_metal", functions: [{ name: "transfer", description: "Transfer gold weight" }, { name: "mint", description: "Mint physical backed tokens" }] },
-  { name: "Manhattan Real Estate (MRE)", description: "Tokenized fraction of commercial property in NYC", is_rwa: true, rwa_type: "property", functions: [{ name: "transfer", description: "Transfer property share" }, { name: "distribute_yield", description: "Disburse rental yields" }] },
-  { name: "Stellar-Ethereum Bridge", description: "Cross-chain asset locked bridge contract", is_rwa: false, functions: [{ name: "lock", description: "Lock tokens" }, { name: "unlock", description: "Release tokens" }] },
-  { name: "Pyth Oracle Feed", description: "Real-time asset price reference feed", is_rwa: false, functions: [{ name: "update_price", description: "Refresh feed price" }, { name: "get_price", description: "Get asset price" }] },
-  { name: "Governance Token (GOV)", description: "Protocol governance and voting token", is_rwa: false, functions: [{ name: "vote_power", description: "Check voting weight" }, { name: "delegate", description: "Delegate vote" }] },
-  { name: "EURC Stablecoin", description: "Euro-backed stablecoin issued by Circle", is_rwa: false, functions: [{ name: "transfer", description: "Transfer EURC" }, { name: "approve", description: "Allow allowance" }] },
-  { name: "Y-Vault Optimizer", description: "Automated yield farming vaults", is_rwa: false, functions: [{ name: "deposit", description: "Deposit assets" }, { name: "harvest", description: "Compound returns" }] },
-  { name: "Bridge Escrow", description: "Escrow holding contract for bridge settlements", is_rwa: false, functions: [{ name: "settle", description: "Settle transfer" }] },
-  { name: "Streaming Payments", description: "Real-time continuous salary streaming contract", is_rwa: false, functions: [{ name: "create_stream", description: "Initiate pay stream" }, { name: "withdraw_stream", description: "Claim accrued funds" }] },
-  { name: "Stellar Identity ID", description: "Decentralized identity claims contract", is_rwa: false, functions: [{ name: "register_id", description: "Bind ID schema" }, { name: "verify_claim", description: "Validate credential claim" }] },
-  { name: "MultiSig Wallet", description: "Shared multi-signature wallet", is_rwa: false, functions: [{ name: "submit_tx", description: "Submit transaction request" }, { name: "confirm_tx", description: "Approve transaction request" }] },
-  { name: "Limit Order Book", description: "Orderbook DEX matching engine", is_rwa: false, functions: [{ name: "place_order", description: "Submit limit order" }, { name: "cancel_order", description: "Cancel active order" }] },
-  { name: "Yield Farm Manager", description: "Staking farm rewards contract", is_rwa: false, functions: [{ name: "stake", description: "Stake LP tokens" }, { name: "claim_rewards", description: "Claim reward balance" }] },
-  { name: "Options Clearing", description: "European options trading contract", is_rwa: false, functions: [{ name: "purchase_option", description: "Buy call/put option" }, { name: "exercise_option", description: "Exercise active option" }] },
-  { name: "Insurance Mutual Pool", description: "DeFi smart contract cover insurance mutual pool", is_rwa: false, functions: [{ name: "buy_cover", description: "Purchase cover" }, { name: "file_claim", description: "File claim request" }] }
+  {
+    name: "USDC Token",
+    description: "Fiat-backed stablecoin issued by Circle",
+    is_rwa: false,
+    functions: [
+      { name: "transfer", description: "Transfer tokens" },
+      { name: "mint", description: "Mint tokens" },
+      { name: "burn", description: "Burn tokens" },
+    ],
+  },
+  {
+    name: "StellarSwap DEX",
+    description: "Automated market maker pool for XLM/USDC",
+    is_rwa: false,
+    functions: [
+      { name: "swap", description: "Swap assets" },
+      { name: "add_liquidity", description: "Add liquidity" },
+      { name: "remove_liquidity", description: "Remove liquidity" },
+    ],
+  },
+  {
+    name: "Aave Lending Pool",
+    description: "Decentralized money market contract",
+    is_rwa: false,
+    functions: [
+      { name: "deposit", description: "Deposit collateral" },
+      { name: "borrow", description: "Borrow assets" },
+      { name: "repay", description: "Repay loan" },
+      { name: "liquidate", description: "Liquidate position" },
+    ],
+  },
+  {
+    name: "Soroban NFT Marketplace",
+    description: "Decentralized NFT trading contract",
+    is_rwa: false,
+    functions: [
+      { name: "list_nft", description: "List NFT for sale" },
+      { name: "buy_nft", description: "Purchase NFT" },
+      { name: "cancel_list", description: "Remove listing" },
+    ],
+  },
+  {
+    name: "DAO Treasury",
+    description: "Decentralized autonomous governance treasury",
+    is_rwa: false,
+    functions: [
+      { name: "propose", description: "Submit proposal" },
+      { name: "vote", description: "Cast vote" },
+      { name: "execute", description: "Execute approved proposal" },
+    ],
+  },
+  {
+    name: "Tokenized Gold (GLD)",
+    description: "Real-world asset representing physical gold bullion",
+    is_rwa: true,
+    rwa_type: "precious_metal",
+    functions: [
+      { name: "transfer", description: "Transfer gold weight" },
+      { name: "mint", description: "Mint physical backed tokens" },
+    ],
+  },
+  {
+    name: "Manhattan Real Estate (MRE)",
+    description: "Tokenized fraction of commercial property in NYC",
+    is_rwa: true,
+    rwa_type: "property",
+    functions: [
+      { name: "transfer", description: "Transfer property share" },
+      { name: "distribute_yield", description: "Disburse rental yields" },
+    ],
+  },
+  {
+    name: "Stellar-Ethereum Bridge",
+    description: "Cross-chain asset locked bridge contract",
+    is_rwa: false,
+    functions: [
+      { name: "lock", description: "Lock tokens" },
+      { name: "unlock", description: "Release tokens" },
+    ],
+  },
+  {
+    name: "Pyth Oracle Feed",
+    description: "Real-time asset price reference feed",
+    is_rwa: false,
+    functions: [
+      { name: "update_price", description: "Refresh feed price" },
+      { name: "get_price", description: "Get asset price" },
+    ],
+  },
+  {
+    name: "Governance Token (GOV)",
+    description: "Protocol governance and voting token",
+    is_rwa: false,
+    functions: [
+      { name: "vote_power", description: "Check voting weight" },
+      { name: "delegate", description: "Delegate vote" },
+    ],
+  },
+  {
+    name: "EURC Stablecoin",
+    description: "Euro-backed stablecoin issued by Circle",
+    is_rwa: false,
+    functions: [
+      { name: "transfer", description: "Transfer EURC" },
+      { name: "approve", description: "Allow allowance" },
+    ],
+  },
+  {
+    name: "Y-Vault Optimizer",
+    description: "Automated yield farming vaults",
+    is_rwa: false,
+    functions: [
+      { name: "deposit", description: "Deposit assets" },
+      { name: "harvest", description: "Compound returns" },
+    ],
+  },
+  {
+    name: "Bridge Escrow",
+    description: "Escrow holding contract for bridge settlements",
+    is_rwa: false,
+    functions: [{ name: "settle", description: "Settle transfer" }],
+  },
+  {
+    name: "Streaming Payments",
+    description: "Real-time continuous salary streaming contract",
+    is_rwa: false,
+    functions: [
+      { name: "create_stream", description: "Initiate pay stream" },
+      { name: "withdraw_stream", description: "Claim accrued funds" },
+    ],
+  },
+  {
+    name: "Stellar Identity ID",
+    description: "Decentralized identity claims contract",
+    is_rwa: false,
+    functions: [
+      { name: "register_id", description: "Bind ID schema" },
+      { name: "verify_claim", description: "Validate credential claim" },
+    ],
+  },
+  {
+    name: "MultiSig Wallet",
+    description: "Shared multi-signature wallet",
+    is_rwa: false,
+    functions: [
+      { name: "submit_tx", description: "Submit transaction request" },
+      { name: "confirm_tx", description: "Approve transaction request" },
+    ],
+  },
+  {
+    name: "Limit Order Book",
+    description: "Orderbook DEX matching engine",
+    is_rwa: false,
+    functions: [
+      { name: "place_order", description: "Submit limit order" },
+      { name: "cancel_order", description: "Cancel active order" },
+    ],
+  },
+  {
+    name: "Yield Farm Manager",
+    description: "Staking farm rewards contract",
+    is_rwa: false,
+    functions: [
+      { name: "stake", description: "Stake LP tokens" },
+      { name: "claim_rewards", description: "Claim reward balance" },
+    ],
+  },
+  {
+    name: "Options Clearing",
+    description: "European options trading contract",
+    is_rwa: false,
+    functions: [
+      { name: "purchase_option", description: "Buy call/put option" },
+      { name: "exercise_option", description: "Exercise active option" },
+    ],
+  },
+  {
+    name: "Insurance Mutual Pool",
+    description: "DeFi smart contract cover insurance mutual pool",
+    is_rwa: false,
+    functions: [
+      { name: "buy_cover", description: "Purchase cover" },
+      { name: "file_claim", description: "File claim request" },
+    ],
+  },
 ];
 
 export async function seed(dbUrl) {
@@ -73,10 +238,14 @@ export async function seed(dbUrl) {
           JSON.stringify(conf.functions),
           wallets[Math.floor(Math.random() * wallets.length)],
           conf.is_rwa,
-          conf.rwa_type || null
-        ]
+          conf.rwa_type || null,
+        ],
       );
-      contracts.push({ id: contractId, name: conf.name, functions: conf.functions });
+      contracts.push({
+        id: contractId,
+        name: conf.name,
+        functions: conf.functions,
+      });
     }
 
     // Insert 500+ Events
@@ -92,7 +261,10 @@ export async function seed(dbUrl) {
       const txHash = randomHex(64);
 
       const contract = contracts[i % contracts.length];
-      const fnMeta = contract.functions[Math.floor(Math.random() * contract.functions.length)];
+      const fnMeta =
+        contract.functions[
+          Math.floor(Math.random() * contract.functions.length)
+        ];
       const fn = fnMeta.name;
 
       // Random details based on function type
@@ -113,7 +285,10 @@ export async function seed(dbUrl) {
         const amountOut = Math.floor(amountIn * 0.98);
         description = `Address ${alice.slice(0, 8)}… swapped ${amountIn} USDC for ${amountOut} XLM on ${contract.name}`;
         raw_topics = ["swap", alice];
-        raw_data = { amount_in: (amountIn * 10000000).toString(), amount_out: (amountOut * 10000000).toString() };
+        raw_data = {
+          amount_in: (amountIn * 10000000).toString(),
+          amount_out: (amountOut * 10000000).toString(),
+        };
       } else if (fn === "mint") {
         const amount = Math.floor(Math.random() * 1000) + 500;
         description = `Address ${alice.slice(0, 8)}… minted ${amount} ${contract.name.split(" ")[0]}`;
@@ -151,8 +326,8 @@ export async function seed(dbUrl) {
           mem,
           fee,
           cpu > 120000,
-          timestamp
-        ]
+          timestamp,
+        ],
       );
 
       // Insert Sub-invocations for ~30% of the events
@@ -163,7 +338,15 @@ export async function seed(dbUrl) {
         await client.query(
           `INSERT INTO sub_invocations (parent_tx_hash, depth, contract_id, function, args, ledger, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [txHash, 1, subContract.id, subFn, JSON.stringify([alice, bob, "50000000"]), ledger, timestamp]
+          [
+            txHash,
+            1,
+            subContract.id,
+            subFn,
+            JSON.stringify([alice, bob, "50000000"]),
+            ledger,
+            timestamp,
+          ],
         );
 
         if (i % 6 === 0) {
@@ -173,7 +356,15 @@ export async function seed(dbUrl) {
           await client.query(
             `INSERT INTO sub_invocations (parent_tx_hash, depth, contract_id, function, args, ledger, created_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [txHash, 2, subContract2.id, subFn2, JSON.stringify([alice]), ledger, timestamp]
+            [
+              txHash,
+              2,
+              subContract2.id,
+              subFn2,
+              JSON.stringify([alice]),
+              ledger,
+              timestamp,
+            ],
           );
 
           if (i % 12 === 0) {
@@ -183,7 +374,15 @@ export async function seed(dbUrl) {
             await client.query(
               `INSERT INTO sub_invocations (parent_tx_hash, depth, contract_id, function, args, ledger, created_at)
                VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-              [txHash, 3, subContract3.id, subFn3, JSON.stringify(["validate"]), ledger, timestamp]
+              [
+                txHash,
+                3,
+                subContract3.id,
+                subFn3,
+                JSON.stringify(["validate"]),
+                ledger,
+                timestamp,
+              ],
             );
           }
         }

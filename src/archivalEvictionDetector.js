@@ -54,10 +54,12 @@ export function detectEvictions(ev, ledger, txHash) {
 
         if (kind === "contractData") {
           const cd = key.contractData();
-          const durability = cd.durability().name === "persistent" ? "persistent" : "temporary";
+          const durability =
+            cd.durability().name === "persistent" ? "persistent" : "temporary";
           const contract_id = StrKey.encodeContract(cd.contract().contractId());
           const keyVal = cd.key();
-          const isInstance = keyVal.switch().name === "scvLedgerKeyContractInstance";
+          const isInstance =
+            keyVal.switch().name === "scvLedgerKeyContractInstance";
 
           let key_type, key_label, data_key;
           if (isInstance) {
@@ -65,13 +67,27 @@ export function detectEvictions(ev, ledger, txHash) {
             key_label = `Contract instance (${contract_id.slice(0, 8)}…)`;
           } else {
             key_type = "contractData";
-            try { data_key = String(scValToNative(keyVal)); } catch { data_key = keyVal.switch().name; }
+            try {
+              data_key = String(scValToNative(keyVal));
+            } catch {
+              data_key = keyVal.switch().name;
+            }
             key_label = `Contract data key "${data_key}" (${contract_id.slice(0, 8)}…)`;
           }
 
-          evictions.push({ contract_id, ledger, tx_hash: txHash, key_type, key_label, durability, data_key });
+          evictions.push({
+            contract_id,
+            ledger,
+            tx_hash: txHash,
+            key_type,
+            key_label,
+            durability,
+            data_key,
+          });
         } else if (kind === "contractCode") {
-          const wasm_hash = Buffer.from(key.contractCode().hash()).toString("hex");
+          const wasm_hash = Buffer.from(key.contractCode().hash()).toString(
+            "hex",
+          );
           evictions.push({
             contract_id: undefined,
             ledger,
@@ -81,9 +97,13 @@ export function detectEvictions(ev, ledger, txHash) {
             wasm_hash,
           });
         }
-      } catch { /* skip malformed change */ }
+      } catch {
+        /* skip malformed change */
+      }
     }
-  } catch { /* ignore missing txMeta */ }
+  } catch {
+    /* ignore missing txMeta */
+  }
 
   return evictions;
 }

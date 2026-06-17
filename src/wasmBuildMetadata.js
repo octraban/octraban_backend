@@ -15,7 +15,9 @@ const WASM_MAGIC = 0x0061736d;
 
 /** Read an unsigned LEB-128 integer from buf at offset. */
 function readLEB128(buf, offset) {
-  let result = 0, shift = 0, byte;
+  let result = 0,
+    shift = 0,
+    byte;
   do {
     byte = buf[offset++];
     result |= (byte & 0x7f) << shift;
@@ -139,13 +141,13 @@ export function extractBuildMetadata(wasm) {
   const buf = Buffer.isBuffer(wasm) ? wasm : Buffer.from(wasm);
 
   const meta = {
-    wasm_hash:   createHash("sha256").update(buf).digest("hex"),
+    wasm_hash: createHash("sha256").update(buf).digest("hex"),
     sdk_version: null,
-    compiler:    null,
-    optimizer:   null,
-    repository:  null,
-    commit:      null,
-    producers:   {},
+    compiler: null,
+    optimizer: null,
+    repository: null,
+    commit: null,
+    producers: {},
   };
 
   for (const { name, payload } of customSections(buf)) {
@@ -154,10 +156,10 @@ export function extractBuildMetadata(wasm) {
       if (v) meta.sdk_version = `v${v.major}.${v.minor}.${v.patch}`;
     } else if (name === "build_metadata") {
       const bm = parseBuildMetadataSection(payload);
-      if (bm.compiler)   meta.compiler   = bm.compiler;
-      if (bm.optimizer)  meta.optimizer  = bm.optimizer;
+      if (bm.compiler) meta.compiler = bm.compiler;
+      if (bm.optimizer) meta.optimizer = bm.optimizer;
       if (bm.repository) meta.repository = bm.repository;
-      if (bm.commit)     meta.commit     = bm.commit;
+      if (bm.commit) meta.commit = bm.commit;
     } else if (name === "producers") {
       meta.producers = parseProducersSection(payload);
       // Populate compiler from producers if not already set by build_metadata

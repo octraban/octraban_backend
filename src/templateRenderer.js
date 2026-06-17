@@ -38,7 +38,8 @@ function fmtAddr(v) {
  */
 function fmtValue(v) {
   const s = String(v);
-  if ((s.startsWith("G") || s.startsWith("C")) && s.length === 56) return fmtAddr(s);
+  if ((s.startsWith("G") || s.startsWith("C")) && s.length === 56)
+    return fmtAddr(s);
   return s;
 }
 
@@ -60,9 +61,9 @@ export function renderTemplate(template, params = [], args = [], ctx = {}) {
 
   // Special context tokens
   if (ctx.contractName) vars._contract = ctx.contractName;
-  if (ctx.fnName)       vars._fn       = ctx.fnName;
+  if (ctx.fnName) vars._fn = ctx.fnName;
 
   return template.replace(/\{(\w+)\}/g, (match, key) =>
-    key in vars ? vars[key] : match
+    key in vars ? vars[key] : match,
   );
 }

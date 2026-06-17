@@ -25,11 +25,16 @@ async function getRedis() {
     // absent (it is an optional peer dependency).
     const { createClient } = await import("redis");
     _redis = createClient({ url });
-    _redis.on("error", (err) => console.warn("[cache] Redis error:", err.message));
+    _redis.on("error", (err) =>
+      console.warn("[cache] Redis error:", err.message),
+    );
     await _redis.connect();
     console.log("[cache] Connected to Redis at", url);
   } catch (err) {
-    console.warn("[cache] Redis unavailable, using in-process fallback:", err.message);
+    console.warn(
+      "[cache] Redis unavailable, using in-process fallback:",
+      err.message,
+    );
     _redis = null;
   }
   return _redis;
@@ -42,7 +47,10 @@ const _map = new Map(); // key → { value, expiresAt }
 function mapGet(key) {
   const entry = _map.get(key);
   if (!entry) return null;
-  if (Date.now() > entry.expiresAt) { _map.delete(key); return null; }
+  if (Date.now() > entry.expiresAt) {
+    _map.delete(key);
+    return null;
+  }
   return entry.value;
 }
 

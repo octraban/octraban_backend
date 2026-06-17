@@ -42,7 +42,9 @@ function extractActualCaller(innerTx) {
         }
       }
     }
-  } catch { /* auth not present or malformed */ }
+  } catch {
+    /* auth not present or malformed */
+  }
   return null;
 }
 

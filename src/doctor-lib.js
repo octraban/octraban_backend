@@ -9,7 +9,9 @@ import pg from "pg";
 // Helper to run shell commands safely
 function checkCommand(command) {
   try {
-    const stdout = execSync(command, { stdio: "pipe", timeout: 3000 }).toString().trim();
+    const stdout = execSync(command, { stdio: "pipe", timeout: 3000 })
+      .toString()
+      .trim();
     return { available: true, output: stdout };
   } catch (err) {
     return { available: false, output: "", error: err.message };
@@ -42,7 +44,7 @@ export async function runAllChecks(customDbUrl = null) {
     ports: {},
     system: {},
     gitHooks: {},
-    docker: {}
+    docker: {},
   };
 
   // 1. Runtime Version Checks
@@ -53,7 +55,7 @@ export async function runAllChecks(customDbUrl = null) {
   results.runtimes.node = {
     status: nodeMajor >= 20 ? "pass" : "fail",
     version: nodeVersionStr,
-    message: nodeMajor >= 20 ? "Node.js 20+ detected" : "Node.js 20+ required"
+    message: nodeMajor >= 20 ? "Node.js 20+ detected" : "Node.js 20+ required",
   };
 
   // npm
@@ -63,13 +65,16 @@ export async function runAllChecks(customDbUrl = null) {
     results.runtimes.npm = {
       status: npmMajor >= 10 ? "pass" : "warn",
       version: npmCheck.output,
-      message: npmMajor >= 10 ? "npm 10+ detected" : "npm 10+ recommended (detected " + npmCheck.output + ")"
+      message:
+        npmMajor >= 10
+          ? "npm 10+ detected"
+          : "npm 10+ recommended (detected " + npmCheck.output + ")",
     };
   } else {
     results.runtimes.npm = {
       status: "fail",
       version: "Not found",
-      message: "npm not found in PATH"
+      message: "npm not found in PATH",
     };
   }
 
@@ -78,17 +83,24 @@ export async function runAllChecks(customDbUrl = null) {
   if (rustCheck.available) {
     // rustc 1.80.0 (37835f65a 2024-07-22)
     const rustVersionMatch = rustCheck.output.match(/rustc (\d+)\.(\d+)\./);
-    const isRustOld = rustVersionMatch && (parseInt(rustVersionMatch[1], 10) < 1 || (parseInt(rustVersionMatch[1], 10) === 1 && parseInt(rustVersionMatch[2], 10) < 80));
+    const isRustOld =
+      rustVersionMatch &&
+      (parseInt(rustVersionMatch[1], 10) < 1 ||
+        (parseInt(rustVersionMatch[1], 10) === 1 &&
+          parseInt(rustVersionMatch[2], 10) < 80));
     results.runtimes.rust = {
       status: isRustOld ? "warn" : "pass",
       version: rustCheck.output.split(" ")[1] || rustCheck.output,
-      message: isRustOld ? "Rust 1.80+ recommended" : `Rust ${rustCheck.output.split(" ")[1]} detected`
+      message: isRustOld
+        ? "Rust 1.80+ recommended"
+        : `Rust ${rustCheck.output.split(" ")[1]} detected`,
     };
   } else {
     results.runtimes.rust = {
       status: "fail",
       version: "Not found",
-      message: "Rust compiler (rustc) not found. Install from https://rustup.rs/"
+      message:
+        "Rust compiler (rustc) not found. Install from https://rustup.rs/",
     };
   }
 
@@ -96,23 +108,26 @@ export async function runAllChecks(customDbUrl = null) {
   if (rustCheck.available) {
     const targetCheck = checkCommand("rustup target list --installed");
     if (targetCheck.available) {
-      const isWasmInstalled = targetCheck.output.includes("wasm32-unknown-unknown");
+      const isWasmInstalled = targetCheck.output.includes(
+        "wasm32-unknown-unknown",
+      );
       results.runtimes.wasm32 = {
         status: isWasmInstalled ? "pass" : "fail",
         message: isWasmInstalled
           ? "wasm32-unknown-unknown target installed"
-          : "wasm32-unknown-unknown target missing. Install via: rustup target add wasm32-unknown-unknown"
+          : "wasm32-unknown-unknown target missing. Install via: rustup target add wasm32-unknown-unknown",
       };
     } else {
       results.runtimes.wasm32 = {
         status: "warn",
-        message: "Could not verify installed Rust targets (rustup not available)"
+        message:
+          "Could not verify installed Rust targets (rustup not available)",
       };
     }
   } else {
     results.runtimes.wasm32 = {
       status: "fail",
-      message: "wasm32 target check requires Rust"
+      message: "wasm32 target check requires Rust",
     };
   }
 
@@ -121,22 +136,25 @@ export async function runAllChecks(customDbUrl = null) {
   if (!dbUrl) {
     results.database = {
       connected: false,
-      message: "DATABASE_URL is not set in environment variables"
+      message: "DATABASE_URL is not set in environment variables",
     };
   } else {
     try {
-      const client = new pg.Client({ connectionString: dbUrl, connectionTimeoutMillis: 3000 });
+      const client = new pg.Client({
+        connectionString: dbUrl,
+        connectionTimeoutMillis: 3000,
+      });
       await client.connect();
       await client.query("SELECT 1");
       await client.end();
       results.database = {
         connected: true,
-        message: "Successfully connected to PostgreSQL database"
+        message: "Successfully connected to PostgreSQL database",
       };
     } catch (err) {
       results.database = {
         connected: false,
-        message: `Failed to connect to PostgreSQL: ${err.message}`
+        message: `Failed to connect to PostgreSQL: ${err.message}`,
       };
     }
   }
@@ -145,19 +163,25 @@ export async function runAllChecks(customDbUrl = null) {
   results.env.SOROBAN_RPC_URL = {
     status: process.env.SOROBAN_RPC_URL ? "pass" : "warn",
     value: process.env.SOROBAN_RPC_URL || "Not set",
-    message: process.env.SOROBAN_RPC_URL ? "SOROBAN_RPC_URL configured" : "SOROBAN_RPC_URL missing (using default stellar.org)"
+    message: process.env.SOROBAN_RPC_URL
+      ? "SOROBAN_RPC_URL configured"
+      : "SOROBAN_RPC_URL missing (using default stellar.org)",
   };
   results.env.DATABASE_URL = {
     status: process.env.DATABASE_URL ? "pass" : "fail",
     value: process.env.DATABASE_URL || "Not set",
-    message: process.env.DATABASE_URL ? "DATABASE_URL configured" : "DATABASE_URL is required"
+    message: process.env.DATABASE_URL
+      ? "DATABASE_URL configured"
+      : "DATABASE_URL is required",
   };
 
   // 4. Ports Availability Check (5173, 3001, 5432)
   const portsToCheck = [5173, 3001, 5432];
   for (const port of portsToCheck) {
     const inUse = await isPortInUse(port);
-    let message = inUse ? `Port ${port} is in use` : `Port ${port} is available`;
+    let message = inUse
+      ? `Port ${port} is in use`
+      : `Port ${port} is available`;
     let status = inUse ? "warn" : "pass";
     if (port === 5432) {
       if (inUse) {
@@ -181,12 +205,12 @@ export async function runAllChecks(customDbUrl = null) {
     results.system.disk = {
       status: freeGB > 1.0 ? "pass" : "fail",
       freeGB: freeGB.toFixed(2),
-      message: `${freeGB.toFixed(2)} GB disk space free (required > 1 GB)`
+      message: `${freeGB.toFixed(2)} GB disk space free (required > 1 GB)`,
     };
   } catch (err) {
     results.system.disk = {
       status: "warn",
-      message: `Could not verify disk space: ${err.message}`
+      message: `Could not verify disk space: ${err.message}`,
     };
   }
 
@@ -199,7 +223,7 @@ export async function runAllChecks(customDbUrl = null) {
     status: totalGB >= 2.0 ? "pass" : "fail",
     totalGB: totalGB.toFixed(2),
     freeGB: freeGB.toFixed(2),
-    message: `${totalGB.toFixed(1)} GB total memory, ${freeGB.toFixed(2)} GB free (required > 2 GB)`
+    message: `${totalGB.toFixed(1)} GB total memory, ${freeGB.toFixed(2)} GB free (required > 2 GB)`,
   };
 
   // 7. Git Hooks Check
@@ -215,9 +239,10 @@ export async function runAllChecks(customDbUrl = null) {
   results.gitHooks = {
     status: missingHooks.length === 0 ? "pass" : "warn",
     installed: hookStatus,
-    message: missingHooks.length === 0
-      ? "All Git hooks installed successfully"
-      : `Missing Git hooks: ${missingHooks.join(", ")}`
+    message:
+      missingHooks.length === 0
+        ? "All Git hooks installed successfully"
+        : `Missing Git hooks: ${missingHooks.join(", ")}`,
   };
 
   // 8. Docker & Docker Compose Check
@@ -226,9 +251,10 @@ export async function runAllChecks(customDbUrl = null) {
   results.docker = {
     installed: dockerVer.available && composeVer.available,
     status: dockerVer.available && composeVer.available ? "pass" : "warn",
-    message: dockerVer.available && composeVer.available
-      ? `Docker & Compose detected (${dockerVer.output}, ${composeVer.output})`
-      : "Docker or Docker Compose not found in PATH"
+    message:
+      dockerVer.available && composeVer.available
+        ? `Docker & Compose detected (${dockerVer.output}, ${composeVer.output})`
+        : "Docker or Docker Compose not found in PATH",
   };
 
   return results;

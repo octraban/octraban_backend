@@ -12,11 +12,15 @@ export function parseInvokeContract(base64Xdr) {
   const hf = xdr.HostFunction.fromXDR(base64Xdr, "base64");
 
   if (hf.switch().name !== "hostFunctionTypeInvokeContract") {
-    throw new Error(`Expected hostFunctionTypeInvokeContract, got ${hf.switch().name}`);
+    throw new Error(
+      `Expected hostFunctionTypeInvokeContract, got ${hf.switch().name}`,
+    );
   }
 
   const invoke = hf.invokeContract();
-  const contractId = StrKey.encodeContract(invoke.contractAddress().contractId());
+  const contractId = StrKey.encodeContract(
+    invoke.contractAddress().contractId(),
+  );
   const functionName = invoke.functionName().toString();
   const args = invoke.args().map(scValToJs);
 

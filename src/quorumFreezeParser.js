@@ -40,7 +40,9 @@ function contractIdsFromLedgerKeys(ledgerKeys) {
 
       if (typeName === "contractData") {
         const cd = key.contractData();
-        const contractHex = Buffer.from(cd.contract().contractId()).toString("hex");
+        const contractHex = Buffer.from(cd.contract().contractId()).toString(
+          "hex",
+        );
         ids.add(StrKey.encodeContract(Buffer.from(contractHex, "hex")));
       } else if (typeName === "contractCode") {
         // ContractCode keys are identified by wasmHash — we store the hash
@@ -48,7 +50,9 @@ function contractIdsFromLedgerKeys(ledgerKeys) {
         const hash = Buffer.from(key.contractCode().hash()).toString("hex");
         ids.add(`wasm:${hash}`);
       }
-    } catch { /* skip malformed keys */ }
+    } catch {
+      /* skip malformed keys */
+    }
   }
   return ids;
 }
@@ -72,11 +76,16 @@ export function detectQuorumFreeze(txMeta) {
     for (const change of changes) {
       try {
         const switchName = change.switch().name;
-        if (switchName !== "ledgerEntryUpdated" && switchName !== "ledgerEntryCreated") continue;
+        if (
+          switchName !== "ledgerEntryUpdated" &&
+          switchName !== "ledgerEntryCreated"
+        )
+          continue;
 
-        const entry = switchName === "ledgerEntryUpdated"
-          ? change.updated()
-          : change.created();
+        const entry =
+          switchName === "ledgerEntryUpdated"
+            ? change.updated()
+            : change.created();
 
         const data = entry.data?.();
         if (!data) continue;
@@ -95,7 +104,9 @@ export function detectQuorumFreeze(txMeta) {
 
         if (frozen_ids.length === 0) return null;
         return { frozen_ids };
-      } catch { /* skip malformed entries */ }
+      } catch {
+        /* skip malformed entries */
+      }
     }
 
     return null;
@@ -126,7 +137,7 @@ export function isContractFrozen(frozen_ids, contractId) {
  */
 export function isQuarantineRejection(diagnosticEvents) {
   if (!Array.isArray(diagnosticEvents)) return false;
-  return diagnosticEvents.some(ev => {
+  return diagnosticEvents.some((ev) => {
     try {
       const topics = ev?.event?.body?.v0?.()?.topics?.();
       if (!topics) return false;
@@ -137,6 +148,8 @@ export function isQuarantineRejection(diagnosticEvents) {
         }
       }
       return false;
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   });
 }

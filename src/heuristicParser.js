@@ -11,13 +11,13 @@
  */
 
 // Stellar account address: G + 55 base32 chars (total 56)
-const RE_ACCOUNT  = /^G[A-Z2-7]{55}$/;
+const RE_ACCOUNT = /^G[A-Z2-7]{55}$/;
 // Stellar contract address: C + 55 base32 chars
 const RE_CONTRACT = /^C[A-Z2-7]{55}$/;
 // Transaction/WASM hash: 64 hex chars
-const RE_HASH     = /^[0-9a-f]{64}$/i;
+const RE_HASH = /^[0-9a-f]{64}$/i;
 // Symbol / token ticker: 1–12 uppercase letters/digits
-const RE_SYMBOL   = /^[A-Z][A-Z0-9]{0,11}$/;
+const RE_SYMBOL = /^[A-Z][A-Z0-9]{0,11}$/;
 
 /**
  * Guess the type of a single raw value (string, number, bigint, boolean, etc.)
@@ -67,7 +67,7 @@ export function guessType(raw) {
 export function parseHeuristic(params) {
   return params.map((p, i) => ({
     index: i + 1,
-    raw:   String(p),
+    raw: String(p),
     ...guessType(p),
   }));
 }

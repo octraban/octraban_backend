@@ -7,7 +7,9 @@
 const WASM_MAGIC = 0x0061736d; // "\0asm"
 
 function readLEB128(buf, offset) {
-  let result = 0, shift = 0, byte;
+  let result = 0,
+    shift = 0,
+    byte;
   do {
     byte = buf[offset++];
     result |= (byte & 0x7f) << shift;
@@ -48,7 +50,11 @@ export function extractPlatformVersion(wasm) {
         const major = buf[payloadStart];
         const minor = buf[payloadStart + 1];
         const patch = buf[payloadStart + 2];
-        return { majorVersion: major, minorVersion: minor, patchVersion: patch };
+        return {
+          majorVersion: major,
+          minorVersion: minor,
+          patchVersion: patch,
+        };
       }
     }
 

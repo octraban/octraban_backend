@@ -12,7 +12,8 @@
  * the lifetime of the process so we never re-query the same address twice.
  */
 
-const HORIZON_URL = process.env.HORIZON_URL || "https://horizon-testnet.stellar.org";
+const HORIZON_URL =
+  process.env.HORIZON_URL || "https://horizon-testnet.stellar.org";
 
 /** @type {Map<string, "account_created" | "trustline_opened" | null>} */
 const _cache = new Map();
@@ -52,7 +53,7 @@ export async function classifySacSideEffect(toAddress, assetCode, assetIssuer) {
       } else {
         // Check whether the trustline for this asset already exists
         const hasTrustline = account.balances?.some(
-          b => b.asset_code === assetCode && b.asset_issuer === assetIssuer
+          (b) => b.asset_code === assetCode && b.asset_issuer === assetIssuer,
         );
         result = hasTrustline ? null : "trustline_opened";
       }

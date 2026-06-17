@@ -16,8 +16,9 @@ import { db } from "./db.js";
 import { publishVaultRatio } from "./wsEvents.js";
 import { withRetry } from "./rpcRetry.js";
 
-const RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
-const rpc     = new SorobanRpc.Server(RPC_URL, { allowHttp: true });
+const RPC_URL =
+  process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
+const rpc = new SorobanRpc.Server(RPC_URL, { allowHttp: true });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────
 
@@ -26,7 +27,9 @@ function bigintOrZero(val) {
   try {
     const str = String(val);
     return /^\d+$/.test(str) ? BigInt(str) : 0n;
-  } catch { return 0n; }
+  } catch {
+    return 0n;
+  }
 }
 
 function computeRatio(assets, supply) {
@@ -46,12 +49,15 @@ function computeRatio(assets, supply) {
  */
 async function simulateView(contractId, fn, ...args) {
   const contract = new Contract(contractId);
-  const scArgs = args.map(a => nativeToScVal(a, { type: { type: "val" } }));
+  const scArgs = args.map((a) => nativeToScVal(a, { type: { type: "val" } }));
   const op = contract.call(fn, ...scArgs);
 
-  const source = process.env.SIMULATE_SOURCE || "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
+  const source =
+    process.env.SIMULATE_SOURCE ||
+    "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
   const account = await withRetry(() => rpc.getAccount(source));
-  const { TransactionBuilder, Networks, BASE_FEE, scValToNative } = await import("@stellar/stellar-sdk");
+  const { TransactionBuilder, Networks, BASE_FEE, scValToNative } =
+    await import("@stellar/stellar-sdk");
 
   const tx = new TransactionBuilder(account, {
     fee: BASE_FEE,
@@ -122,8 +128,8 @@ async function fetchUnderlyingAsset(contractId) {
 
 // ── Event detection ──────────────────────────────────────────────────────────────
 
-const VAULT_MINT_EVENTS  = new Set(["mint", "deposit"]);
-const VAULT_BURN_EVENTS  = new Set(["burn", "withdraw"]);
+const VAULT_MINT_EVENTS = new Set(["mint", "deposit"]);
+const VAULT_BURN_EVENTS = new Set(["burn", "withdraw"]);
 
 /**
  * Check if a decoded event touches a monitored vault contract.
@@ -178,10 +184,12 @@ export async function refreshVaultRatio(contractId, ledger) {
 
     console.log(
       `[vault] ${contractId.slice(0, 8)}… ratio=${ratio != null ? ratio.toFixed(6) : "N/A"} ` +
-      `assets=${totalAssets} supply=${totalSupply} @ ledger=${ledger}`
+        `assets=${totalAssets} supply=${totalSupply} @ ledger=${ledger}`,
     );
   } catch (err) {
-    console.error(`[vault] Failed to refresh ratio for ${contractId}: ${err.message}`);
+    console.error(
+      `[vault] Failed to refresh ratio for ${contractId}: ${err.message}`,
+    );
   }
 }
 
@@ -197,7 +205,10 @@ export async function bootstrapVault(contractId) {
 
     const underlyingAsset = await fetchUnderlyingAsset(contractId);
     if (underlyingAsset) {
-      await db.registerVault({ contract_id: contractId, underlying_asset: underlyingAsset });
+      await db.registerVault({
+        contract_id: contractId,
+        underlying_asset: underlyingAsset,
+      });
     }
 
     await refreshVaultRatio(contractId, seq);
@@ -217,7 +228,7 @@ export async function refreshAllVaults() {
     const ledger = await withRetry(() => rpc.getLatestLedger());
     const seq = ledger.sequence;
 
-    await Promise.allSettled(ids.map(id => refreshVaultRatio(id, seq)));
+    await Promise.allSettled(ids.map((id) => refreshVaultRatio(id, seq)));
   } catch (err) {
     console.error(`[vault] refreshAllVaults error: ${err.message}`);
   }

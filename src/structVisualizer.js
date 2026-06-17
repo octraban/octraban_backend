@@ -9,7 +9,12 @@ export function parseStructLayout(structDef) {
     type: extractType(field.type),
     doc: field.doc,
     nested: isNestedType(field.type),
-    children: field.type?.fields ? field.type.fields.map((f) => ({ name: f.name, type: extractType(f.type) })) : [],
+    children: field.type?.fields
+      ? field.type.fields.map((f) => ({
+          name: f.name,
+          type: extractType(f.type),
+        }))
+      : [],
   }));
 
   return { fields };

@@ -78,10 +78,10 @@ function walkInvocation(invocation, depth = 0) {
  * }>}
  */
 export function parseAuthTree(authEntryXdrs) {
-  return authEntryXdrs.map(b64 => {
+  return authEntryXdrs.map((b64) => {
     const entry = xdr.SorobanAuthorizationEntry.fromXDR(b64, "base64");
     return {
-      signer:      signerFromCredentials(entry.credentials()),
+      signer: signerFromCredentials(entry.credentials()),
       invocations: walkInvocation(entry.rootInvocation()),
     };
   });

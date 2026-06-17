@@ -35,7 +35,7 @@ export async function findLedgerGaps() {
   const { rows: rangeRows } = await db.query(
     `SELECT MIN(ledger)::BIGINT AS min_ledger,
             MAX(ledger)::BIGINT AS max_ledger
-     FROM events`
+     FROM events`,
   );
 
   const { min_ledger, max_ledger } = rangeRows[0];
@@ -45,7 +45,9 @@ export async function findLedgerGaps() {
     return [];
   }
 
-  console.log(`[gapDetector] Scanning ledger range ${min_ledger} → ${max_ledger}`);
+  console.log(
+    `[gapDetector] Scanning ledger range ${min_ledger} → ${max_ledger}`,
+  );
 
   // generate_series produces every integer in [min, max]; LEFT JOIN finds the holes
   const { rows } = await db.query(
@@ -56,10 +58,10 @@ export async function findLedgerGaps() {
      ) e ON e.ledger = s.ledger
      WHERE e.ledger IS NULL
      ORDER BY s.ledger`,
-    [min_ledger, max_ledger]
+    [min_ledger, max_ledger],
   );
 
-  return rows.map(r => Number(r.missing_ledger));
+  return rows.map((r) => Number(r.missing_ledger));
 }
 
 /**
@@ -94,10 +96,12 @@ function resyncGaps(gaps) {
     const result = spawnSync(
       process.execPath,
       [catchupScript, `--from=${from}`, `--to=${to}`],
-      { stdio: "inherit", env: process.env }
+      { stdio: "inherit", env: process.env },
     );
     if (result.status !== 0) {
-      console.error(`[gapDetector] catchup failed for range ${from}-${to} (exit ${result.status})`);
+      console.error(
+        `[gapDetector] catchup failed for range ${from}-${to} (exit ${result.status})`,
+      );
     }
   }
 }
@@ -125,7 +129,7 @@ async function main() {
   process.exit(0);
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error("[gapDetector] Fatal:", err);
   process.exit(1);
 });

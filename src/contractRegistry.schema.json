@@ -28,8 +28,8 @@
       "additionalProperties": false,
       "properties": {
         "homepage": { "type": "string", "format": "uri" },
-        "source":   { "type": "string", "format": "uri" },
-        "logo":     { "type": "string", "format": "uri" }
+        "source": { "type": "string", "format": "uri" },
+        "logo": { "type": "string", "format": "uri" }
       }
     },
     "functions": {

@@ -16,7 +16,9 @@ const WASM_MAGIC = 0x0061736d; // "\0asm" big-endian u32
 // ── LEB128 decoder ───────────────────────────────────────────────────────────
 
 function readLEB128(buf, offset) {
-  let result = 0, shift = 0, byte;
+  let result = 0,
+    shift = 0,
+    byte;
   do {
     byte = buf[offset++];
     result |= (byte & 0x7f) << shift;
@@ -51,7 +53,9 @@ export function extractContractSpecSection(wasm) {
     if (sectionId === 0) {
       // Custom section: read name
       const { value: nameLen, offset: afterNameLen } = readLEB128(buf, pos);
-      const name = buf.slice(afterNameLen, afterNameLen + nameLen).toString("utf8");
+      const name = buf
+        .slice(afterNameLen, afterNameLen + nameLen)
+        .toString("utf8");
       if (name === "contractspecv0") {
         return buf.slice(afterNameLen + nameLen, sectionEnd);
       }
@@ -71,33 +75,38 @@ export function extractContractSpecSection(wasm) {
 function typeStr(typeDef) {
   const name = typeDef.switch().name;
   const MAP = {
-    scSpecTypeVal:       "Val",
-    scSpecTypeBool:      "bool",
-    scSpecTypeVoid:      "void",
-    scSpecTypeError:     "Error",
-    scSpecTypeU32:       "u32",
-    scSpecTypeI32:       "i32",
-    scSpecTypeU64:       "u64",
-    scSpecTypeI64:       "i64",
+    scSpecTypeVal: "Val",
+    scSpecTypeBool: "bool",
+    scSpecTypeVoid: "void",
+    scSpecTypeError: "Error",
+    scSpecTypeU32: "u32",
+    scSpecTypeI32: "i32",
+    scSpecTypeU64: "u64",
+    scSpecTypeI64: "i64",
     scSpecTypeTimepoint: "Timepoint",
-    scSpecTypeDuration:  "Duration",
-    scSpecTypeU128:      "u128",
-    scSpecTypeI128:      "i128",
-    scSpecTypeU256:      "u256",
-    scSpecTypeI256:      "i256",
-    scSpecTypeBytes:     "Bytes",
-    scSpecTypeString:    "String",
-    scSpecTypeSymbol:    "Symbol",
-    scSpecTypeAddress:   "Address",
+    scSpecTypeDuration: "Duration",
+    scSpecTypeU128: "u128",
+    scSpecTypeI128: "i128",
+    scSpecTypeU256: "u256",
+    scSpecTypeI256: "i256",
+    scSpecTypeBytes: "Bytes",
+    scSpecTypeString: "String",
+    scSpecTypeSymbol: "Symbol",
+    scSpecTypeAddress: "Address",
   };
   if (MAP[name]) return MAP[name];
-  if (name === "scSpecTypeUdt")    return typeDef.udt().name().toString();
-  if (name === "scSpecTypeOption") return `Option<${typeStr(typeDef.option().valueType())}>`;
-  if (name === "scSpecTypeVec")    return `Vec<${typeStr(typeDef.vec().elementType())}>`;
-  if (name === "scSpecTypeMap")    return `Map<${typeStr(typeDef.map().keyType())},${typeStr(typeDef.map().valueType())}>`;
-  if (name === "scSpecTypeTuple")  return `(${typeDef.tuple().valueTypes().map(typeStr).join(",")})`;
+  if (name === "scSpecTypeUdt") return typeDef.udt().name().toString();
+  if (name === "scSpecTypeOption")
+    return `Option<${typeStr(typeDef.option().valueType())}>`;
+  if (name === "scSpecTypeVec")
+    return `Vec<${typeStr(typeDef.vec().elementType())}>`;
+  if (name === "scSpecTypeMap")
+    return `Map<${typeStr(typeDef.map().keyType())},${typeStr(typeDef.map().valueType())}>`;
+  if (name === "scSpecTypeTuple")
+    return `(${typeDef.tuple().valueTypes().map(typeStr).join(",")})`;
   if (name === "scSpecTypeBytesN") return `BytesN<${typeDef.bytesN().n()}>`;
-  if (name === "scSpecTypeResult") return `Result<${typeStr(typeDef.result().okType())},${typeStr(typeDef.result().errorType())}>`;
+  if (name === "scSpecTypeResult")
+    return `Result<${typeStr(typeDef.result().okType())},${typeStr(typeDef.result().errorType())}>`;
   return name;
 }
 
@@ -109,8 +118,10 @@ function decodeEntry(entry) {
     return {
       kind: "function",
       name: fn.name().toString(),
-      doc:  fn.doc().toString() || undefined,
-      inputs:  fn.inputs().map(i => ({ name: i.name().toString(), type: typeStr(i.type()) })),
+      doc: fn.doc().toString() || undefined,
+      inputs: fn
+        .inputs()
+        .map((i) => ({ name: i.name().toString(), type: typeStr(i.type()) })),
       outputs: fn.outputs().map(typeStr),
     };
   }
@@ -118,22 +129,25 @@ function decodeEntry(entry) {
   if (kind === "scSpecEntryUdtStructV0") {
     const s = entry.udtStructV0();
     return {
-      kind:   "struct",
-      name:   s.name().toString(),
-      doc:    s.doc().toString() || undefined,
-      fields: s.fields().map(f => ({ name: f.name().toString(), type: typeStr(f.type()) })),
+      kind: "struct",
+      name: s.name().toString(),
+      doc: s.doc().toString() || undefined,
+      fields: s
+        .fields()
+        .map((f) => ({ name: f.name().toString(), type: typeStr(f.type()) })),
     };
   }
 
   if (kind === "scSpecEntryUdtUnionV0") {
     const u = entry.udtUnionV0();
     return {
-      kind:  "union",
-      name:  u.name().toString(),
-      doc:   u.doc().toString() || undefined,
-      cases: u.cases().map(c => {
+      kind: "union",
+      name: u.name().toString(),
+      doc: u.doc().toString() || undefined,
+      cases: u.cases().map((c) => {
         const ck = c.switch().name;
-        if (ck === "scSpecUdtUnionCaseVoidV0")  return { name: c.voidCase().name().toString() };
+        if (ck === "scSpecUdtUnionCaseVoidV0")
+          return { name: c.voidCase().name().toString() };
         if (ck === "scSpecUdtUnionCaseTupleV0") {
           const t = c.tupleCase();
           return { name: t.name().toString(), types: t.type().map(typeStr) };
@@ -146,20 +160,24 @@ function decodeEntry(entry) {
   if (kind === "scSpecEntryUdtEnumV0") {
     const e = entry.udtEnumV0();
     return {
-      kind:  "enum",
-      name:  e.name().toString(),
-      doc:   e.doc().toString() || undefined,
-      cases: e.cases().map(c => ({ name: c.name().toString(), value: c.value() })),
+      kind: "enum",
+      name: e.name().toString(),
+      doc: e.doc().toString() || undefined,
+      cases: e
+        .cases()
+        .map((c) => ({ name: c.name().toString(), value: c.value() })),
     };
   }
 
   if (kind === "scSpecEntryUdtErrorEnumV0") {
     const e = entry.udtErrorEnumV0();
     return {
-      kind:  "error_enum",
-      name:  e.name().toString(),
-      doc:   e.doc().toString() || undefined,
-      cases: e.cases().map(c => ({ name: c.name().toString(), value: c.value() })),
+      kind: "error_enum",
+      name: e.name().toString(),
+      doc: e.doc().toString() || undefined,
+      cases: e
+        .cases()
+        .map((c) => ({ name: c.name().toString(), value: c.value() })),
     };
   }
 
@@ -187,7 +205,7 @@ export function parseContractSpec(wasm) {
   }
 
   return {
-    functions: entries.filter(e => e.kind === "function"),
-    types:     entries.filter(e => e.kind !== "function"),
+    functions: entries.filter((e) => e.kind === "function"),
+    types: entries.filter((e) => e.kind !== "function"),
   };
 }
