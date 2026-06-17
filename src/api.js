@@ -580,11 +580,9 @@ export function startApi() {
       try {
         const { wasm_hash, signer, signature, compiler_hash } = req.body;
         if (!wasm_hash || !signer || !signature || !compiler_hash) {
-          return res
-            .status(400)
-            .json({
-              error: "Missing wasm_hash, signer, signature, or compiler_hash",
-            });
+          return res.status(400).json({
+            error: "Missing wasm_hash, signer, signature, or compiler_hash",
+          });
         }
         await db.addSourceVerification({
           contract_id: req.params.id,
