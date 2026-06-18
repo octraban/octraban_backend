@@ -11,7 +11,7 @@ import { processYieldEvent } from './yield-distribution';
 import { processYieldOpportunityEvent } from './yield-optimizer';
 import { dispatchWebhooks } from '../webhooks/dispatcher';
 import { maybeActivateFromTransferEvent } from './sac-account-activator';
-import { processPoolEvent, looksLikePoolEvent } from './dex/pool-detector';
+import { handleUpgradeEvent, looksLikeUpgrade } from './upgrade-detector';
 
 /**
  * Parse DiagnosticEvents from a raw TransactionMeta XDR (base64).
@@ -213,19 +213,29 @@ async function storeEvent(event: LedgerEvent): Promise<number> {
     console.error('[webhook] dispatch error:', err),
   );
 
-  // Institutional DEX Analytics: detect AMM pools and maintain real-time
-  // reserves from swap/liquidity/sync events (gated by a cheap symbol check).
-  // Non-blocking — never lets a pool-tracking failure stall the pipeline.
-  if (looksLikePoolEvent(eventType, topicSymbol)) {
-    processPoolEvent({
-      contractAddress: event.contractId,
-      eventType,
-      topicSymbol,
-      decoded: decoded as Record<string, unknown> | null,
-      transactionHash: event.transactionHash,
-      ledgerSequence: event.ledgerSequence,
-      ledgerCloseTime: event.ledgerCloseTime,
-    }).catch((err) => console.error('[dex-analytics] pool event error:', err));
+  // Contract Governance Intelligence: detect WASM upgrades and record them with
+  // diff classification, governance/decentralisation analysis, and
+  // suspicious-activity flags. Gated by a cheap symbol check so the contract
+  // lookup only runs for upgrade-looking events. Non-blocking — never lets an
+  // upgrade failure stall the broadcast/governance pipeline.
+  if (looksLikeUpgrade(eventType, topicSymbol)) {
+    prisma.contract
+      .findUnique({ where: { address: event.contractId }, select: { wasmHash: true } })
+      .then((contract) =>
+        handleUpgradeEvent({
+          contractAddress: event.contractId,
+          eventType,
+          topicSymbol,
+          decoded: decoded as Record<string, unknown> | null,
+          topics: event.topics,
+          transactionHash: event.transactionHash,
+          sourceAccount: txExists.sourceAccount,
+          ledgerSequence: event.ledgerSequence,
+          ledgerCloseTime: event.ledgerCloseTime,
+          previousHash: contract?.wasmHash ?? null,
+        }),
+      )
+      .catch((err) => console.error('[upgrade-governance] processing error:', err));
   }
 
   // Track governance-related events and proposals
