@@ -88,6 +88,7 @@ async function processLedgerRange(start: number, end: number) {
     });
 
     await processSessionAuthorization(event, eventType, decoded, eventId);
+  }
 // ---------------------------------------------------------------------------
 // Parallel catch-up
 // ---------------------------------------------------------------------------

@@ -140,7 +140,7 @@ async function storeEvent(event: LedgerEvent): Promise<number> {
     ledgerCloseTime: event.ledgerCloseTime,
   });
 
-  broadcastEvent({
+  const broadcastPayload = {
     id,
     contractAddress: event.contractId,
     eventType,
@@ -150,7 +150,6 @@ async function storeEvent(event: LedgerEvent): Promise<number> {
     transactionHash: event.transactionHash,
   };
 
-  broadcastEvent(broadcastPayload);
   broadcastSSEEvent(broadcastPayload);
 
   return 1;
