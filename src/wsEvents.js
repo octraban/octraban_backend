@@ -15,8 +15,31 @@ const API_KEY = process.env.API_KEY;
 const bus = new EventEmitter();
 bus.setMaxListeners(0);
 
+const txStatusCache = new Map();
+
 export function publish(event) {
   bus.emit("event", event);
+}
+
+export function publishTransactionStatus(status) {
+  const existing = txStatusCache.get(status.tx_hash);
+  if (existing && existing.status === status.status && existing.ledger === status.ledger && existing.error === status.error) {
+    return;
+  }
+  txStatusCache.set(status.tx_hash, status);
+  bus.emit("transaction_status", status);
+}
+
+export function getTransactionStatus(txHash) {
+  return txStatusCache.get(txHash) || null;
+}
+
+export function onTransactionStatus(listener) {
+  bus.on("transaction_status", listener);
+}
+
+export function offTransactionStatus(listener) {
+  bus.off("transaction_status", listener);
 }
 
 export function publishVaultRatio(snapshot) {
