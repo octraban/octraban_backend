@@ -434,6 +434,20 @@ export function startApi() {
     }
   });
 
+  // GET /api/contracts/:id/spec-full — fetch full on-chain spec including custom types
+  app.get("/api/contracts/:id/spec-full", async (req, res) => {
+    try {
+      const { fetchContractSpecFull } = await import("./verify_abi.js");
+      const spec = await fetchContractSpecFull(req.params.id);
+      if (spec === null) {
+        return res.status(404).json({ error: "Contract not found or has no WASM spec" });
+      }
+      res.json(spec);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // POST /api/contracts  — register ABI metadata
   app.post("/api/contracts", writeLimiter, requireApiKey, async (req, res) => {
     try {

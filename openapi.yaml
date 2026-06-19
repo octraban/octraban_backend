@@ -176,6 +176,18 @@ paths:
         "200":
           description: ABI JSON file
 
+  /api/contracts/{id}/spec-full:
+    get:
+      summary: Get full on-chain contract spec (functions and types)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Full contract spec payload
+
   /api/contracts/{id}/transactions:
     get:
       summary: Get paginated transaction history for a contract
