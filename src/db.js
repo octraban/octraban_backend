@@ -43,6 +43,8 @@ export const db = {
       -- composite index for the most common query pattern: contract + ledger range
       CREATE INDEX IF NOT EXISTS idx_events_contract_ledger
         ON events(contract_id, ledger DESC);
+      CREATE INDEX IF NOT EXISTS idx_events_search_fts
+        ON events USING GIN (to_tsvector('simple', coalesce(description, '') || ' ' || coalesce(function, '') || ' ' || coalesce(contract_id, '') || ' ' || coalesce(raw_topics::text, '') || ' ' || coalesce(raw_data, '')));
 
       CREATE TABLE IF NOT EXISTS contracts (
         id          TEXT PRIMARY KEY,
@@ -59,6 +61,8 @@ export const db = {
         rwa_type    TEXT,
         created_at  TIMESTAMPTZ DEFAULT NOW()
       );
+      CREATE INDEX IF NOT EXISTS idx_contracts_search_fts
+        ON contracts USING GIN (to_tsvector('simple', coalesce(name, '') || ' ' || coalesce(description, '') || ' ' || coalesce(id, '') || ' ' || coalesce(functions::text, '')));
 
       -- Issue #37: ledger hash registry for re-org detection
       CREATE TABLE IF NOT EXISTS ledger_hashes (
@@ -359,6 +363,191 @@ export const db = {
       [`%${address}%`],
     );
     return rows;
+  },
+
+  async searchContracts(q, { limit = 10 } = {}) {
+    const terms = normalizeSearchTerms(q);
+    if (!terms.length) return [];
+
+    const params = [];
+    const ftsQuery = pushParam(params, q.trim());
+    const fts = `to_tsvector('simple', coalesce(c.name, '') || ' ' || coalesce(c.description, '') || ' ' || coalesce(c.id, '') || ' ' || coalesce(c.functions::text, '')) @@ plainto_tsquery('simple', ${ftsQuery})`;
+    const likeTerms = terms
+      .map((term) => {
+        const name = pushParam(params, `%${escapeLike(term)}%`);
+        const description = pushParam(params, `%${escapeLike(term)}%`);
+        const id = pushParam(params, `%${escapeLike(term)}%`);
+        const functions = pushParam(params, `%${escapeLike(term)}%`);
+        return `(c.name ILIKE ${name} OR c.description ILIKE ${description} OR c.id ILIKE ${id} OR c.functions::text ILIKE ${functions})`;
+      })
+      .join(" OR ");
+
+    params.push(clampLimit(limit, 10, 50));
+
+    const { rows } = await pool.query(
+      `SELECT c.*, COUNT(e.seq) AS event_count
+       FROM contracts c
+       LEFT JOIN events e ON e.contract_id = c.id
+       WHERE (${fts} OR (${likeTerms}))
+       GROUP BY c.id
+       ORDER BY event_count DESC, c.name ASC
+       LIMIT $${params.length}`,
+      params,
+    );
+
+    return rows.map((row) => ({
+      ...row,
+      event_count: Number(row.event_count || 0),
+      functions: parseJsonField(row.functions, []),
+    }));
+  },
+
+  async searchEvents(q, { limit = 10 } = {}) {
+    const terms = normalizeSearchTerms(q);
+    if (!terms.length) return [];
+
+    const params = [];
+    const ftsQuery = pushParam(params, q.trim());
+    const fts = `to_tsvector('simple', coalesce(e.description, '') || ' ' || coalesce(e.function, '') || ' ' || coalesce(e.contract_id, '') || ' ' || coalesce(e.tx_hash, '') || ' ' || coalesce(e.raw_topics::text, '') || ' ' || coalesce(e.raw_data, '')) @@ plainto_tsquery('simple', ${ftsQuery})`;
+    const likeTerms = terms
+      .map((term) => {
+        const functionParam = pushParam(params, `%${escapeLike(term)}%`);
+        const description = pushParam(params, `%${escapeLike(term)}%`);
+        const contract = pushParam(params, `%${escapeLike(term)}%`);
+        const txHash = pushParam(params, `%${escapeLike(term)}%`);
+        const topics = pushParam(params, `%${escapeLike(term)}%`);
+        const data = pushParam(params, `%${escapeLike(term)}%`);
+        return `(e.function ILIKE ${functionParam} OR e.description ILIKE ${description} OR e.contract_id ILIKE ${contract} OR e.tx_hash ILIKE ${txHash} OR e.raw_topics::text ILIKE ${topics} OR e.raw_data ILIKE ${data})`;
+      })
+      .join(" OR ");
+
+    params.push(clampLimit(limit, 10, 50));
+
+    const { rows } = await pool.query(
+      `SELECT * FROM events
+       WHERE (${fts} OR (${likeTerms}))
+       ORDER BY ledger DESC, seq DESC
+       LIMIT $${params.length}`,
+      params,
+    );
+    return rows;
+  },
+
+  async searchWallets(q, { limit = 10 } = {}) {
+    const terms = normalizeSearchTerms(q);
+    if (!terms.length) return [];
+
+    const params = terms.map((term) => pushParam(params, `%${escapeLike(term)}%`));
+    params.push(clampLimit(limit, 10, 50));
+
+    const { rows } = await pool.query(
+      `WITH address_hits AS (
+         SELECT e.seq, e.ledger, e.contract_id, a.address
+         FROM events e
+         CROSS JOIN LATERAL (
+           SELECT DISTINCT m[1] AS address
+           FROM regexp_matches(
+             coalesce(e.description, '') || ' ' || coalesce(e.raw_topics::text, '') || ' ' || coalesce(e.raw_data, ''),
+             '\\m[GCM][A-Z2-7]{55}\\M',
+             'g'
+           ) AS m
+         ) a
+         WHERE a.address ILIKE ANY($${params.length})
+         UNION
+         SELECT NULL::BIGINT AS seq, NULL::BIGINT AS ledger, contract_id, address
+         FROM privileged_roles
+         WHERE address ILIKE ANY($${params.length}) AND revoked = FALSE
+         UNION
+         SELECT NULL::BIGINT AS seq, NULL::BIGINT AS ledger, contract_id, address
+         FROM token_holders
+         WHERE address ILIKE ANY($${params.length})
+       )
+       SELECT address,
+              COUNT(seq) AS event_count,
+              MIN(ledger) AS first_seen_ledger,
+              MAX(ledger) AS last_seen_ledger,
+              ARRAY_AGG(DISTINCT contract_id) FILTER (WHERE contract_id IS NOT NULL AND contract_id <> '') AS contracts
+       FROM address_hits
+       GROUP BY address
+       ORDER BY event_count DESC, last_seen_ledger DESC NULLS LAST, address ASC
+       LIMIT $${params.length}`,
+      params,
+    );
+
+    return rows.map((row) => ({
+      ...row,
+      event_count: Number(row.event_count || 0),
+      first_seen_ledger: row.first_seen_ledger != null ? Number(row.first_seen_ledger) : null,
+      last_seen_ledger: row.last_seen_ledger != null ? Number(row.last_seen_ledger) : null,
+      contracts: row.contracts ?? [],
+    }));
+  },
+
+  async searchSuggestions(q, { limit = 10 } = {}) {
+    const terms = normalizeSearchTerms(q);
+    if (!terms.length) return [];
+
+    const limitN = clampLimit(limit, 10, 50);
+    const term = `%${escapeLike(terms[0])}%`;
+
+    const [contracts, functions, wallets] = await Promise.all([
+      pool.query(
+        `SELECT id, name, description FROM contracts
+         WHERE name ILIKE $1 OR description ILIKE $1 OR id ILIKE $1
+         ORDER BY name ASC
+         LIMIT $2`,
+        [term, limitN],
+      ),
+      pool.query(
+        `SELECT function, COUNT(*) AS event_count
+         FROM events
+         WHERE function ILIKE $1
+         GROUP BY function
+         ORDER BY event_count DESC, function ASC
+         LIMIT $2`,
+        [term, limitN],
+      ),
+      pool.query(
+        `WITH address_hits AS (
+           SELECT a.address
+           FROM events e
+           CROSS JOIN LATERAL (
+             SELECT DISTINCT m[1] AS address
+             FROM regexp_matches(
+               coalesce(e.description, '') || ' ' || coalesce(e.raw_topics::text, '') || ' ' || coalesce(e.raw_data, ''),
+               '\\m[GCM][A-Z2-7]{55}\\M',
+               'g'
+             ) AS m
+           ) a
+           WHERE a.address ILIKE $1
+           GROUP BY a.address
+           ORDER BY a.address ASC
+           LIMIT $2
+         ) SELECT * FROM address_hits`,
+        [term, limitN],
+      ),
+    ]);
+
+    return [
+      ...contracts.rows.slice(0, limitN).map((row) => ({
+        kind: "contract",
+        label: row.name || row.id,
+        route: `/contract/${row.id}`,
+        meta: { id: row.id, description: row.description || "" },
+      })),
+      ...functions.rows.slice(0, limitN).map((row) => ({
+        kind: "event",
+        label: row.function,
+        route: `/?fn=${encodeURIComponent(row.function)}`,
+        meta: { event_count: Number(row.event_count || 0) },
+      })),
+      ...wallets.rows.slice(0, limitN).map((row) => ({
+        kind: "wallet",
+        label: row.address,
+        route: `/wallet/${row.address}`,
+        meta: { address: row.address },
+      })),
+    ].slice(0, limitN);
   },
 
   async getContractMeta(id) {
@@ -881,3 +1070,36 @@ export const db = {
     return rows;
   },
 };
+
+function normalizeSearchTerms(q) {
+  return String(q ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function clampLimit(limit, fallback, max) {
+  const n = Number(limit);
+  if (!Number.isFinite(n) || n < 1) return fallback;
+  return Math.min(n, max);
+}
+
+function pushParam(params, value) {
+  params.push(value);
+  return `$${params.length}`;
+}
+
+function escapeLike(value) {
+  return String(value).replace(/([%_\\])/g, "\\$1");
+}
+
+function parseJsonField(value, fallback) {
+  if (value == null) return fallback;
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
