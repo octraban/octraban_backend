@@ -15,7 +15,7 @@ import { extractStateDiffs } from "./stateDiffIndexer.js";
 import { parseFeeBump } from "./feeBumpParser.js";
 import { detectEvictions } from "./archivalEvictionDetector.js";
 import { parseAndDescribeRestore } from "./restoreFootprintParser.js";
-import { publish } from "./wsEvents.js";
+import { publish, publishTransactionStatus } from "./wsEvents.js";
 import { extractBuildMetadata } from "./wasmBuildMetadata.js";
 import { scanFootprintContention } from "./footprintContentionScanner.js";
 import { handleVaultEvent, refreshAllVaults } from "./vaultIndexer.js";
@@ -113,6 +113,21 @@ async function indexLedger(ledger) {
             // Issue #167: parse RestoreFootprintOp if present
             const restore = parseAndDescribeRestore(txResult.envelopeXdr, txResult.resultMetaXdr ?? null);
             if (restore.isRestoreOp) restoreCache.set(txHash, restore);
+          }
+
+          // Publish a transaction status event for clients
+          try {
+            const status = txResult?.status === "SUCCESS" ? "success" : txResult?.status === "FAILED" ? "failed" : "pending";
+            const { extractFailureReason } = await import("./diagnosticParser.js");
+            const payload = {
+              tx_hash: txHash,
+              status,
+              ledger: txResult?.ledger ?? null,
+              error: extractFailureReason(txResult),
+            };
+            publishTransactionStatus(payload);
+          } catch (err) {
+            /* non-fatal */
           }
         } catch {
           /* non-critical — skip fee-bump/restore for this tx */

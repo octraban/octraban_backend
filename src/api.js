@@ -10,7 +10,7 @@ import swaggerUi from "swagger-ui-express";
 import { db } from "./db.js";
 import { analyzeSourceDependencies } from "./dependencyScanner.js";
 import { fetchTokenMetadata } from "./sep41Metadata.js";
-import { attachWebSocketServer } from "./wsEvents.js";
+import { attachWebSocketServer, publishTransactionStatus, getTransactionStatus, onTransactionStatus, offTransactionStatus } from "./wsEvents.js";
 import { verifyAbi } from "./verify_abi.js";
 import { getMetrics } from "./rpcMetrics.js";
 import { getRpcNodeStatus } from "./rpcMultiNode.js";
@@ -42,6 +42,24 @@ function requireApiKey(req, res, next) {
   const key = req.headers["x-api-key"];
   if (!key || key !== API_KEY) return res.status(401).json({ error: "Unauthorized" });
   next();
+}
+
+function parseTxHashes(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.flatMap((v) => String(v).split(",").map((hash) => hash.trim()).filter(Boolean));
+  return String(value).split(",").map((hash) => hash.trim()).filter(Boolean);
+}
+
+function createSseStream(res) {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders?.();
+  res.write("retry: 3000\n\n");
+}
+
+function sendSseEvent(res, payload) {
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
 // ── Cache middleware factory ──────────────────────────────────────────────────
@@ -231,6 +249,123 @@ export function startApi() {
       const zk = typeof ev.zk_host_calls === "string" ? JSON.parse(ev.zk_host_calls) : ev.zk_host_calls;
       res.json(zk);
     } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Issue #118 — Transaction status server-sent events endpoint
+  app.get("/api/transactions/status", async (req, res) => {
+    try {
+      const txHashes = parseTxHashes(req.query.txHashes);
+      if (txHashes.length === 0) {
+        return res.status(400).json({ error: "txHashes query parameter is required" });
+      }
+      createSseStream(res);
+
+      const listeners = new Map();
+      const cleanup = () => {
+        for (const listener of listeners.values()) {
+          offTransactionStatus(listener);
+        }
+        res.end();
+      };
+
+      req.on("close", cleanup);
+
+      for (const txHash of txHashes) {
+        const initialStatus = getTransactionStatus(txHash);
+        if (initialStatus) {
+          sendSseEvent(res, initialStatus);
+          if (initialStatus.status !== "pending") {
+            continue;
+          }
+        } else {
+          sendSseEvent(res, {
+            tx_hash: txHash,
+            status: "pending",
+            ledger: null,
+            error: null,
+          });
+        }
+
+        const listener = (status) => {
+          if (status.tx_hash !== txHash) return;
+          sendSseEvent(res, status);
+          if (status.status !== "pending") {
+            offTransactionStatus(listener);
+          }
+        };
+        listeners.set(txHash, listener);
+        onTransactionStatus(listener);
+      }
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Issue #118 — single-transaction SSE stream (compat for frontend hook)
+  app.get("/api/transactions/:hash/status/stream", async (req, res) => {
+    try {
+      const txHash = req.params.hash;
+      createSseStream(res);
+
+      const initialStatus = getTransactionStatus(txHash);
+      if (initialStatus) {
+        sendSseEvent(res, initialStatus);
+        if (initialStatus.status !== "pending") {
+          return res.end();
+        }
+      } else {
+        sendSseEvent(res, {
+          tx_hash: txHash,
+          status: "pending",
+          ledger: null,
+          error: null,
+        });
+      }
+
+      const listener = (status) => {
+        if (status.tx_hash !== txHash) return;
+        sendSseEvent(res, status);
+        if (status.status !== "pending") {
+          offTransactionStatus(listener);
+          res.end();
+        }
+      };
+
+      onTransactionStatus(listener);
+      req.on("close", () => {
+        offTransactionStatus(listener);
+        res.end();
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Issue #118 — Transaction status polling endpoint
+  app.get("/api/transactions/:hash/status", async (req, res) => {
+    try {
+      const txHash = req.params.hash;
+      const cached = getTransactionStatus(txHash);
+      if (cached) return res.json(cached);
+
+      const { SorobanRpc } = await import("@stellar/stellar-sdk");
+      const server = new SorobanRpc.Server(RPC_URL);
+      const txResult = await server.getTransaction(txHash);
+      const status = txResult?.status === "SUCCESS" ? "success" : txResult?.status === "FAILED" ? "failed" : "pending";
+      const { extractFailureReason } = await import("./diagnosticParser.js");
+      const payload = {
+        tx_hash: txHash,
+        status,
+        ledger: txResult?.ledger ?? null,
+        error: extractFailureReason(txResult),
+      };
+      res.json(payload);
+    } catch (e) {
+      if (e?.message?.includes("404") || e?.message?.includes("not found")) {
+        return res.status(404).json({ error: "Not found" });
+      }
       res.status(500).json({ error: e.message });
     }
   });
@@ -945,6 +1080,98 @@ export function startApi() {
 
   // ── Issue #139: GraphQL endpoint ───────────────────────────────────────────
   attachGraphQL(app);
+
+  // ── Issue #211: Batch Multi-Call Endpoints ───────────────────────────────────────
+
+  // POST /api/batch/simulate — simulate full batch with per-call results
+  app.post("/api/batch/simulate", async (req, res) => {
+    try {
+      const { calls, sourceAccount, networkPassphrase } = req.body;
+      if (!Array.isArray(calls)) {
+        return res.status(400).json({ error: "calls must be an array" });
+      }
+      const result = await (await import("./batch.js")).simulateBatch(
+        calls,
+        sourceAccount,
+        networkPassphrase
+      );
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/batch/estimate-gas — detailed gas breakdown per call
+  app.post("/api/batch/estimate-gas", async (req, res) => {
+    try {
+      const { calls, sourceAccount } = req.body;
+      if (!Array.isArray(calls)) {
+        return res.status(400).json({ error: "calls must be an array" });
+      }
+      const estimates = await (await import("./batch.js")).estimateGas(calls, sourceAccount);
+      const totalGas = estimates.reduce(
+        (acc, e) => ({
+          cpuInsns: acc.cpuInsns + (e.cpuInsns || 0),
+          memBytes: acc.memBytes + (e.memBytes || 0),
+          fee: acc.fee + (e.fee || 0),
+        }),
+        { cpuInsns: 0, memBytes: 0, fee: 0 }
+      );
+      res.json({ estimates, totalGas });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/batch/optimize — reorder calls for minimum gas
+  app.post("/api/batch/optimize", async (req, res) => {
+    try {
+      const { calls, sourceAccount } = req.body;
+      if (!Array.isArray(calls)) {
+        return res.status(400).json({ error: "calls must be an array" });
+      }
+      const batch = await import("./batch.js");
+      const estimates = await batch.estimateGas(calls, sourceAccount);
+      const optimizedOrder = await batch.optimizeBatchOrder(calls, sourceAccount, estimates);
+      const originalGas = batch.summarizeGas(estimates);
+      const optimizedGas = optimizedOrder
+        .map((id) => estimates.find((estimate) => estimate.callId === id))
+        .filter(Boolean)
+        .reduce(
+          (acc, estimate) => ({
+            cpuInsns: acc.cpuInsns + (estimate.cpuInsns || 0),
+            memBytes: acc.memBytes + (estimate.memBytes || 0),
+            fee: acc.fee + (estimate.fee || 0),
+          }),
+          { cpuInsns: 0, memBytes: 0, fee: 0 },
+        );
+      res.json({
+        optimizedOrder,
+        gasBreakdown: estimates,
+        estimatedSavings: {
+          cpuInsns: Math.max(0, originalGas.cpuInsns - optimizedGas.cpuInsns),
+          memBytes: Math.max(0, originalGas.memBytes - optimizedGas.memBytes),
+          fee: Math.max(0, originalGas.fee - optimizedGas.fee),
+        },
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/batch/validate — check for conflicts and errors
+  app.post("/api/batch/validate", async (req, res) => {
+    try {
+      const { calls } = req.body;
+      if (!Array.isArray(calls)) {
+        return res.status(400).json({ error: "calls must be an array" });
+      }
+      const validation = await (await import("./batch.js")).validateBatch(calls);
+      res.json(validation);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
 
   // ── Start HTTP + WebSocket server ───────────────────────────────────────────
   const server = http.createServer(app);
