@@ -1048,6 +1048,98 @@ export function startApi() {
   // ── Issue #139: GraphQL endpoint ───────────────────────────────────────────
   attachGraphQL(app);
 
+  // ── Issue #211: Batch Multi-Call Endpoints ───────────────────────────────────────
+
+  // POST /api/batch/simulate — simulate full batch with per-call results
+  app.post("/api/batch/simulate", async (req, res) => {
+    try {
+      const { calls, sourceAccount, networkPassphrase } = req.body;
+      if (!Array.isArray(calls)) {
+        return res.status(400).json({ error: "calls must be an array" });
+      }
+      const result = await (await import("./batch.js")).simulateBatch(
+        calls,
+        sourceAccount,
+        networkPassphrase
+      );
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/batch/estimate-gas — detailed gas breakdown per call
+  app.post("/api/batch/estimate-gas", async (req, res) => {
+    try {
+      const { calls, sourceAccount } = req.body;
+      if (!Array.isArray(calls)) {
+        return res.status(400).json({ error: "calls must be an array" });
+      }
+      const estimates = await (await import("./batch.js")).estimateGas(calls, sourceAccount);
+      const totalGas = estimates.reduce(
+        (acc, e) => ({
+          cpuInsns: acc.cpuInsns + (e.cpuInsns || 0),
+          memBytes: acc.memBytes + (e.memBytes || 0),
+          fee: acc.fee + (e.fee || 0),
+        }),
+        { cpuInsns: 0, memBytes: 0, fee: 0 }
+      );
+      res.json({ estimates, totalGas });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/batch/optimize — reorder calls for minimum gas
+  app.post("/api/batch/optimize", async (req, res) => {
+    try {
+      const { calls, sourceAccount } = req.body;
+      if (!Array.isArray(calls)) {
+        return res.status(400).json({ error: "calls must be an array" });
+      }
+      const batch = await import("./batch.js");
+      const estimates = await batch.estimateGas(calls, sourceAccount);
+      const optimizedOrder = await batch.optimizeBatchOrder(calls, sourceAccount, estimates);
+      const originalGas = batch.summarizeGas(estimates);
+      const optimizedGas = optimizedOrder
+        .map((id) => estimates.find((estimate) => estimate.callId === id))
+        .filter(Boolean)
+        .reduce(
+          (acc, estimate) => ({
+            cpuInsns: acc.cpuInsns + (estimate.cpuInsns || 0),
+            memBytes: acc.memBytes + (estimate.memBytes || 0),
+            fee: acc.fee + (estimate.fee || 0),
+          }),
+          { cpuInsns: 0, memBytes: 0, fee: 0 },
+        );
+      res.json({
+        optimizedOrder,
+        gasBreakdown: estimates,
+        estimatedSavings: {
+          cpuInsns: Math.max(0, originalGas.cpuInsns - optimizedGas.cpuInsns),
+          memBytes: Math.max(0, originalGas.memBytes - optimizedGas.memBytes),
+          fee: Math.max(0, originalGas.fee - optimizedGas.fee),
+        },
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/batch/validate — check for conflicts and errors
+  app.post("/api/batch/validate", async (req, res) => {
+    try {
+      const { calls } = req.body;
+      if (!Array.isArray(calls)) {
+        return res.status(400).json({ error: "calls must be an array" });
+      }
+      const validation = await (await import("./batch.js")).validateBatch(calls);
+      res.json(validation);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ── Start HTTP + WebSocket server ───────────────────────────────────────────
   const server = http.createServer(app);
   attachWebSocketServer(server);
