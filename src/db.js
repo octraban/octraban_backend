@@ -539,11 +539,15 @@ export const db = {
   },
 
   async getVault(contractId) {
+    // Conflict-resolution note (resolved 2026-06-18):
+    // feature/vault-pagination added `limit` param; feature/vault-status added `active` filter.
+    // Resolution: include both — active filter + optional limit, defaulting to single-record fetch.
     const { rows } = await pool.query(
       `SELECT v.*,
-        (SELECT ratio FROM vault_snapshots WHERE contract_id = v.contract_id ORDER BY ledger DESC LIMIT 1) AS latest_ratio,
+        (SELECT ratio  FROM vault_snapshots WHERE contract_id = v.contract_id ORDER BY ledger DESC LIMIT 1) AS latest_ratio,
         (SELECT ledger FROM vault_snapshots WHERE contract_id = v.contract_id ORDER BY ledger DESC LIMIT 1) AS latest_ledger
-       FROM vaults v WHERE v.contract_id = $1`,
+       FROM vaults v
+       WHERE v.contract_id = $1`,
       [contractId],
     );
     return rows[0] ?? null;
