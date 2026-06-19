@@ -38,6 +38,28 @@ paths:
                 items:
                   $ref: "#/components/schemas/DecodedEvent"
 
+  /api/search:
+    get:
+      summary: Search contracts, events, wallets, and suggestions
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+          description: Text query for contract metadata, event content, or wallet addresses
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        "200":
+          description: Search response grouped by result type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+        "400":
+          description: Missing search query
+
   /api/v1/events:
     get:
       summary: List contract events (cursor pagination)
@@ -434,6 +456,53 @@ components:
         is_high_bloat_risk: { type: boolean }
         upgrade_info: { type: object, nullable: true }
         storage_tiers: { type: object, nullable: true }
+
+    SearchResponse:
+      type: object
+      properties:
+        query: { type: string }
+        contracts:
+          type: array
+          items: { $ref: "#/components/schemas/SearchContract" }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/DecodedEvent" }
+        wallets:
+          type: array
+          items: { $ref: "#/components/schemas/SearchWallet" }
+        suggestions:
+          type: array
+          items: { $ref: "#/components/schemas/SearchSuggestion" }
+
+    SearchContract:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        functions:
+          type: array
+          items: { $ref: "#/components/schemas/FunctionSpec" }
+        event_count: { type: integer }
+
+    SearchWallet:
+      type: object
+      properties:
+        address: { type: string }
+        event_count: { type: integer }
+        first_seen_ledger: { type: integer, nullable: true }
+        last_seen_ledger: { type: integer, nullable: true }
+        contracts:
+          type: array
+          items: { type: string }
+
+    SearchSuggestion:
+      type: object
+      properties:
+        kind: { type: string, enum: [contract, event, wallet] }
+        label: { type: string }
+        route: { type: string }
+        meta: { type: object }
 
     ContractMeta:
       type: object

@@ -173,6 +173,39 @@ export function startApi() {
     },
   );
 
+  // GET /api/search?q=&limit=
+  app.get(
+    "/api/search",
+    makeCache("search", (req) => {
+      const { q = "", limit = "10" } = req.query;
+      return `search:${String(q).toLowerCase()}:${limit}`;
+    }),
+    async (req, res) => {
+      try {
+        const query = typeof req.query.q === "string" ? req.query.q : "";
+        const limit = Number(req.query.limit) || 10;
+        if (!query.trim()) return res.status(400).json({ error: "Missing search query" });
+
+        const [contracts, events, wallets, suggestions] = await Promise.all([
+          db.searchContracts(query, { limit }),
+          db.searchEvents(query, { limit }),
+          db.searchWallets(query, { limit }),
+          db.searchSuggestions(query, { limit }),
+        ]);
+
+        res.json({
+          query,
+          contracts,
+          events,
+          wallets,
+          suggestions,
+        });
+      } catch (e) {
+        res.status(500).json({ error: e.message });
+      }
+    },
+  );
+
   // GET /api/events/:seq
   app.get(
     "/api/events/:seq",
