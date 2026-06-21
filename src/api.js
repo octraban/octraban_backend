@@ -964,7 +964,16 @@ export function startApi() {
   });
 
   // ── Setup Wizard & Diagnostics Endpoints ────────────────────────────────────
-  app.get("/api/setup/doctor", async (req, res) => {
+  // These endpoints are disabled in production (NODE_ENV=production) because
+  // they can write .env files and run migrations with no additional auth.
+  const blockInProduction = (_req, res, next) => {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(403).json({ error: "Not available in production" });
+    }
+    next();
+  };
+
+  app.get("/api/setup/doctor", blockInProduction, async (req, res) => {
     try {
       const report = await runAllChecks();
       res.json(report);
@@ -973,7 +982,7 @@ export function startApi() {
     }
   });
 
-  app.post("/api/setup/test-db", async (req, res) => {
+  app.post("/api/setup/test-db", blockInProduction, async (req, res) => {
     try {
       const { databaseUrl } = req.body;
       if (!databaseUrl) return res.status(400).json({ error: "Missing databaseUrl" });
@@ -990,7 +999,7 @@ export function startApi() {
     }
   });
 
-  app.post("/api/setup/save-config", async (req, res) => {
+  app.post("/api/setup/save-config", blockInProduction, async (req, res) => {
     try {
       const { sorobanRpcUrl, databaseUrl, pollMs } = req.body;
       const envPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.env");
@@ -1027,7 +1036,7 @@ export function startApi() {
     }
   });
 
-  app.post("/api/setup/db-init", async (req, res) => {
+  app.post("/api/setup/db-init", blockInProduction, async (req, res) => {
     try {
       // 1. Run migrations
       await db.init();
