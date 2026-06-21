@@ -2,10 +2,6 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { guessType, parseHeuristic } from "../src/heuristicParser.js";
 
-// Valid Stellar account address (G + 55 base32 chars)
-const ACCOUNT = "GABC4RENF2IDWVF7XHZJMCDXKFNKAMNCXLNJKQJXN6FOMJHYNW5ZQZQ";
-// Valid Stellar contract address (C + 55 base32 chars)
-const CONTRACT = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
 // 64-char hex hash
 const HASH = "a".repeat(64);
 

@@ -28,6 +28,12 @@ import {
 import { recordAccess, schedulePrefetch } from "./prefetchEngine.js";
 import { attachGraphQL } from "./graphql.js";
 import { runAllChecks } from "./doctor-lib.js";
+// Route modules — ready for incremental migration
+import eventsRoutes from "./routes/events.js";
+import contractsRoutes from "./routes/contracts.js";
+import walletRoutes from "./routes/wallet.js";
+import adminRoutes from "./routes/admin.js";
+import sandboxRoutes from "./routes/sandbox.js";
 import pg from "pg";
 import { getBurnAlerts } from "./burnDetector.js";
 import { formatAmount } from "./formatAmount.js";
@@ -573,6 +579,58 @@ export function startApi() {
       });
     } catch (e) {
       res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  // ── Sandbox CRUD (persisted via DB) ─────────────────────────────────────────
+  app.post("/api/sandbox", async (req, res) => {
+    try {
+      const { sandboxId, templateId, files, metadata } = req.body;
+      if (!sandboxId || !templateId) return res.status(400).json({ error: "Missing sandboxId or templateId" });
+      await db.query(
+        `INSERT INTO sandboxes (sandbox_id, template_id, files, metadata)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (sandbox_id) DO UPDATE SET files=$3, metadata=$4, updated_at=NOW()`,
+        [sandboxId, templateId, JSON.stringify(files), JSON.stringify(metadata ?? {})],
+      );
+      res.status(201).json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/sandbox/:id", async (req, res) => {
+    try {
+      const { rows } = await db.query("SELECT * FROM sandboxes WHERE sandbox_id = $1", [req.params.id]);
+      if (!rows[0]) return res.status(404).json({ error: "Not found" });
+      res.json(rows[0]);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/sandbox/:id", async (req, res) => {
+    try {
+      await db.query("DELETE FROM sandboxes WHERE sandbox_id = $1", [req.params.id]);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/sandboxes", async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit) || 20, 100);
+      const offset = Number(req.query.offset) || 0;
+      const { rows } = await db.query(
+        `SELECT sandbox_id, template_id, metadata, created_at, updated_at
+         FROM sandboxes ORDER BY updated_at DESC LIMIT $1 OFFSET $2`,
+        [limit, offset],
+      );
+      const { rows: countRows } = await db.query("SELECT COUNT(*)::INT AS total FROM sandboxes");
+      res.json({ sandboxes: rows, total: countRows[0].total });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
     }
   });
 

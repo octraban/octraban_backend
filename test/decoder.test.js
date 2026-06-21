@@ -41,7 +41,6 @@ function extractGasCosts(ev) {
 function nativeXlmDescription(fnName, args, data) {
   if (fnName === "mint") {
     const [to, amount] = args;
-    const amt = amount ?? data;
     return {
       function: "wrap_native",
       description: `Wrapped XLM (Classic → Soroban) to ${to}`,
@@ -49,7 +48,6 @@ function nativeXlmDescription(fnName, args, data) {
   }
   if (fnName === "burn") {
     const [from, amount] = args;
-    const amt = amount ?? data;
     return {
       function: "unwrap_native",
       description: `Unwrapped XLM (Soroban → Classic) from ${from}`,

@@ -7,10 +7,11 @@ CREATE TABLE IF NOT EXISTS sandboxes (
   files JSONB NOT NULL,
   metadata JSONB DEFAULT '{}',
   created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW(),
-  INDEX idx_created_at (created_at DESC),
-  INDEX idx_template (template_id)
+  updated_at TIMESTAMP DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_sandboxes_created_at ON sandboxes (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sandboxes_template ON sandboxes (template_id);
 
 -- Add trigger to auto-update updated_at
 CREATE OR REPLACE FUNCTION update_updated_at()
