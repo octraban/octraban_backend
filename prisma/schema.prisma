@@ -274,6 +274,72 @@ model ApiKey {
   lastUsedAt DateTime?
 }
 
+// ---------------------------------------------------------------------------
+// Account Abstraction
+// ---------------------------------------------------------------------------
+
+model SmartWallet {
+  id                String   @id @default(cuid())
+  address           String   @unique
+  walletType        String   // multi_sig | social_recovery | session_key | sponsored | passkey | hybrid | custom
+  signerCount       Int?
+  threshold         Int?
+  guardians         Json?    // array of guardian addresses
+  sessionKeys       Json?    // array of active session key descriptors
+  authMethods       Json?    // detected auth methods from WASM/call analysis
+  deployedAtLedger  Int?
+  deployedByAccount String?
+  wasmHash          String?
+  firstSeenLedger   Int
+  lastSeenLedger    Int
+  txCount           Int      @default(0)
+  sponsoredTxCount  Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  sponsorships SponsoredTransaction[]
+
+  @@index([walletType])
+  @@index([firstSeenLedger])
+  @@index([deployedByAccount])
+}
+
+model SponsoredTransaction {
+  id              String   @id @default(cuid())
+  transactionHash String   @unique
+  sponsorAccount  String   // fee payer (G-address or contract)
+  sourceAccount   String   // logical sender
+  walletAddress   String?  // smart wallet address if source is a contract
+  feeCharged      String?
+  ledgerSequence  Int
+  ledgerCloseTime DateTime
+  createdAt       DateTime @default(now())
+
+  wallet SmartWallet? @relation(fields: [walletAddress], references: [address])
+
+  @@index([sponsorAccount])
+  @@index([sourceAccount])
+  @@index([walletAddress])
+  @@index([ledgerSequence])
+}
+
+model AuthDecomposition {
+  id              String   @id @default(cuid())
+  transactionHash String   @unique
+  walletAddress   String?
+  authTree        Json     // full ParsedAuth tree
+  authMethods     Json     // detected method names: ['multi_sig','passkey',...]
+  signerCount     Int      @default(0)
+  hasSubCalls     Boolean  @default(false)
+  humanReadable   String?  // plain-English description of who authorized what
+  ledgerSequence  Int
+  createdAt       DateTime @default(now())
+
+  @@index([walletAddress])
+  @@index([ledgerSequence])
+  @@index([ledgerSequence, id])
+}
+
 model ContractResourceMetric {
   id               String   @id @default(cuid())
   contractAddress  String

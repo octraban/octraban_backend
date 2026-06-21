@@ -7,6 +7,7 @@ import { extractSorobanResources } from './resource-tracker';
 import { parseFailureReason, parseFailureReasonFromString } from './failure-parser';
 import { safeXdrParse } from './protocol-guard';
 import { barrierUpsertContract, barrierUpsertLedger } from './writeBarrier';
+import { processAaTransaction } from './aa-indexer';
 
 /**
  * Fetch, decode, and persist all transactions and events for [start, end].
@@ -80,6 +81,19 @@ export async function processLedgerRange(start: number, end: number): Promise<vo
           failureReason,
         },
       });
+
+      // ── Account Abstraction processing ──────────────────────────────────
+      const sourceAccount = (txResult as any)?.sourceAccount ?? 'unknown';
+      if (rawXdr && sourceAccount !== 'unknown') {
+        await processAaTransaction(
+          event.transactionHash,
+          sourceAccount,
+          rawXdr,
+          event.ledgerSequence,
+          event.ledgerCloseTime,
+          String((txResult as any)?.feeCharged ?? ''),
+        ).catch((err) => console.warn('[aa-indexer] error:', err?.message ?? err));
+      }
     }
   }
 

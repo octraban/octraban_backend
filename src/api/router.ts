@@ -13,6 +13,7 @@ import { syncStateRouter } from './sync-state';
 import { networkRouter } from './network';
 import { tokenMetadataRouter } from './token-metadata';
 import { protocolRouter } from './protocol';
+import { aaRouter } from './aa';
 
 export const router = Router();
 
@@ -30,3 +31,4 @@ router.use('/network', networkRouter);
 router.use('/token-metadata', tokenMetadataRouter);
 router.use('/protocol', protocolRouter);
 router.use('/i18n', i18nRouter);
+router.use('/aa', aaRouter);
