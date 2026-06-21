@@ -4,13 +4,7 @@ import { decodeEvent } from './decoder';
 import { fetchEvents, LedgerEvent } from './rpc';
 import { trackTrustlineEvent } from './sac-trustline-mapper';
 import { broadcastEvent } from '../ws/eventBroadcaster';
-import { broadcastSSEEvent } from '../api/sse';
 import { barrierUpsertContract, barrierUpsertEvent } from './writeBarrier';
-import { getWhaleWatcher } from './whaleWatcher';
-import { processYieldEvent } from './yield-distribution';
-import { processYieldOpportunityEvent } from './yield-optimizer';
-import { dispatchWebhooks } from '../webhooks/dispatcher';
-import { maybeActivateFromTransferEvent } from './sac-account-activator';
 
 /**
  * Parse DiagnosticEvents from a raw TransactionMeta XDR (base64).
@@ -148,53 +142,6 @@ async function storeEvent(event: LedgerEvent): Promise<number> {
     console.warn(`[sac-trustline/event] tracking failed for ${event.transactionHash}:`, err),
   );
 
-  // #136: Monitor for whale transactions
-  const whaleWatcher = getWhaleWatcher();
-  await whaleWatcher.monitorEvent({
-    transactionHash: event.transactionHash,
-    contractAddress: event.contractId,
-    eventType,
-    decoded,
-    sourceAccount: txExists.sourceAccount,
-    ledgerSequence: event.ledgerSequence,
-    ledgerCloseTime: event.ledgerCloseTime,
-  });
-
-  // #168: Evaluate XLM SAC transfers for destination account activation
-  if (eventType === 'transfer' && decoded && typeof decoded === 'object') {
-    maybeActivateFromTransferEvent(
-      decoded as Record<string, unknown>,
-      event.contractId,
-      event.transactionHash,
-      event.ledgerSequence,
-      event.ledgerCloseTime,
-    ).catch((err) => console.error('[sac-activator] evaluation error:', err));
-  }
-
-  // Track RWA yield/distribution events
-  await processYieldEvent(
-    event.transactionHash,
-    event.contractId,
-    topicSymbol,
-    decoded as Record<string, unknown> | null,
-    event.ledgerSequence,
-    event.ledgerCloseTime,
-  );
-
-  // #320: Detect yield opportunities (LP, staking, lending, vaults) and
-  // upsert into the optimisation registry. Non-fatal on error so a bad
-  // payload cannot block the SSE/webhook broadcast pipeline.
-  processYieldOpportunityEvent(
-    event.transactionHash,
-    event.contractId,
-    topicSymbol,
-    decoded as Record<string, unknown> | null,
-    event.ledgerSequence,
-    event.ledgerCloseTime,
-  ).catch((err) =>
-    console.warn(`[yield-optimizer/event] upsert failed for ${event.transactionHash}:`, err),
-  );
-
   const broadcastPayload = {
     id,
     contractAddress: event.contractId,
@@ -206,23 +153,6 @@ async function storeEvent(event: LedgerEvent): Promise<number> {
   };
 
   broadcastEvent(broadcastPayload);
-  broadcastSSEEvent(broadcastPayload);
-
-  dispatchWebhooks({ ...broadcastPayload, topicSymbol }).catch((err) =>
-    console.error('[webhook] dispatch error:', err),
-  );
-
-  // Track governance-related events and proposals
-  import('./governance').then(({ processGovernanceEvent }) =>
-    processGovernanceEvent(
-      event,
-      eventType,
-      topicSymbol,
-      decoded as Record<string, unknown>,
-      event.transactionHash,
-      txExists.sourceAccount,
-    ).catch((err) => console.error('[governance] processing error:', err)),
-  ).catch((err) => console.error('[governance] loader error:', err));
 
   return 1;
 }

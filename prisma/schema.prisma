@@ -1,5 +1,3 @@
-// This is your Prisma schema file
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,20 +7,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Ledger (block) — one row per closed ledger.
-// sequence is the natural PK; closeTime enables timestamp-range queries.
 model Ledger {
-  sequence     Int      @id                // ledger sequence number (block number)
-  hash         String   @unique            // ledger hash
-  closeTime    DateTime                    // ledger close timestamp
-  txCount      Int      @default(0)        // number of transactions in this ledger
+  sequence     Int      @id
+  hash         String   @unique
+  closeTime    DateTime
+  txCount      Int      @default(0)
   createdAt    DateTime @default(now())
 
   transactions Transaction[]
   events       Event[]
 
-  @@index([sequence])                      // sub-second lookup by ledger number
-  @@index([closeTime])                     // range queries by timestamp
+  @@index([sequence])
+  @@index([closeTime])
 }
 
 model Contract {
@@ -30,13 +26,13 @@ model Contract {
   address            String   @unique
   name               String?
   description        String?
-  abi                Json?    // ABI-like metadata: functions, events, types
-  functionSignatures Json?    // decoded function signatures: [{ name, inputs, outputs }]
+  abi                Json?
+  functionSignatures Json?
   isToken            Boolean  @default(false)
   tokenSymbol        String?
   tokenName          String?
   tokenDecimals      Int?
-  wasmHash           String?  // fuzzy hash of compiled Wasm bytecode for similarity detection
+  wasmHash           String?
   isVerified         Boolean  @default(false)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -48,15 +44,14 @@ model Contract {
   @@index([address])
 }
 
-// WASM bytecode upgrade history for contract version lineage
 model WasmUpgradeHistory {
   id              String   @id @default(cuid())
   contractAddress String
-  previousHash    String?  // hash before upgrade (null for initial deployment)
-  newHash         String   // hash after upgrade
-  ledgerSequence  Int      // ledger where upgrade occurred
-  ledgerCloseTime DateTime // timestamp of upgrade
-  transactionHash String?  // tx that triggered the upgrade
+  previousHash    String?
+  newHash         String
+  ledgerSequence  Int
+  ledgerCloseTime DateTime
+  transactionHash String?
   createdAt       DateTime @default(now())
 
   contract Contract @relation(fields: [contractAddress], references: [address])
@@ -66,35 +61,31 @@ model WasmUpgradeHistory {
 }
 
 model Transaction {
-  id              String   @id @default(cuid())
-  hash            String   @unique
-  ledgerSequence  Int                      // FK → Ledger.sequence
-  ledgerCloseTime DateTime
-  sourceAccount   String
-  contractAddress String?
-  functionName    String?
-  functionArgs    Json?    // decoded args
-  rawXdr          String
-  status          String   // success | failed
-  humanReadable   String?  // "Address X swapped 100 USDC → 98.7 XLM"
-  feeCharged      String?
-  sorobanResources Json?   // #48: CPU, memory, ledger footprint metrics
-  failureReason   String?  // #49: human-readable failure explanation
-  flashLoanAlert  Boolean  @default(false) // #137: flash loan attack detected
-  reentrantAlert  Boolean  @default(false) // re-entrancy / drain attack detected
-  freezeViolation Boolean  @default(false) // CAP-0077: touches a consensus-frozen ledger key
-  createdAt       DateTime @default(now())
+  id               String   @id @default(cuid())
+  hash             String   @unique
+  ledgerSequence   Int
+  ledgerCloseTime  DateTime
+  sourceAccount    String
+  contractAddress  String?
+  functionName     String?
+  functionArgs     Json?
+  rawXdr           String
+  status           String
+  humanReadable    String?
+  feeCharged       String?
+  sorobanResources Json?
+  failureReason    String?
+  createdAt        DateTime @default(now())
 
   ledger   Ledger    @relation(fields: [ledgerSequence], references: [sequence])
   contract Contract? @relation(fields: [contractAddress], references: [address])
   events   Event[]
 
-  @@index([hash])                          // sub-second lookup by tx hash
-  @@index([ledgerSequence])               // sub-second lookup by ledger number
+  @@index([hash])
+  @@index([ledgerSequence])
   @@index([sourceAccount])
   @@index([contractAddress])
   @@index([status])
-  // Composite indexes for cursor-based pagination (ledgerSequence DESC, id DESC)
   @@index([contractAddress, ledgerSequence, id])
   @@index([sourceAccount, ledgerSequence, id])
   @@index([status, ledgerSequence, id])
@@ -105,14 +96,13 @@ model Event {
   id              String   @id @default(cuid())
   transactionHash String
   contractAddress String
-  eventType       String   // transfer | swap | mint | burn | custom
-  topicSymbol     String?  // first topic decoded as symbol (e.g. "transfer", "mint_pass")
-  topics          Json     // raw topics (base64 XDR array)
-  data            Json     // raw data (base64 XDR)
-  decoded         Json?    // human-readable decoded event
-  ledgerSequence  Int                      // FK → Ledger.sequence
+  eventType       String
+  topicSymbol     String?
+  topics          Json
+  data            Json
+  decoded         Json?
+  ledgerSequence  Int
   ledgerCloseTime DateTime
-  compacted       Boolean  @default(false) // #220: true once rolled into a SettlementBatchSummary
   createdAt       DateTime @default(now())
 
   ledger      Ledger      @relation(fields: [ledgerSequence], references: [sequence])
@@ -124,65 +114,22 @@ model Event {
   @@index([eventType])
   @@index([topicSymbol])
   @@index([ledgerSequence])
-  // Heavy-use composite: filter by contract + topic symbol (event name)
   @@index([contractAddress, topicSymbol])
-  // Cursor-based pagination: contract + ledger desc
   @@index([contractAddress, ledgerSequence, id])
-  // Filter by contract + event type + ledger for time-range queries
   @@index([contractAddress, eventType, ledgerSequence])
-  // #220: compactor scan index
-  @@index([eventType, compacted, ledgerSequence])
 }
 
-// Custom event symbol → template bindings submitted by verified project creators
 model EventDefinition {
   id              String   @id @default(cuid())
   contractAddress String
-  // The event topic symbol this binding applies to, e.g. "mint_pass"
   topicSymbol     String
-  // Mustache-style template, e.g. "Minted pass #{{data.id}} to {{data.owner}}"
   humanTemplate   String
-  // Who submitted this definition (API key or creator identifier)
   submittedBy     String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@unique([contractAddress, topicSymbol])
   @@index([contractAddress])
-}
-
-// Privacy-shielded transfer tracking for zero-knowledge privacy pools
-model ShieldedTransfer {
-  id              String   @id @default(cuid())
-  transactionHash String
-  contractAddress String   // privacy pool contract
-  fromAddress     String?  // null if shielded
-  toAddress       String?  // null if shielded
-  amount          String?  // null if confidential
-  isConfidential   Boolean  @default(true)
-  ledgerSequence  Int
-  ledgerCloseTime DateTime
-  createdAt       DateTime @default(now())
-
-  @@index([transactionHash])
-  @@index([contractAddress, ledgerSequence])
-}
-
-// ZKP verification event tracking
-model ZkpVerificationEvent {
-  id              String   @id @default(cuid())
-  transactionHash String
-  contractAddress String   // ZKP verifier contract
-  proofType       String   // snark | stark | groth16 | etc
-  publicInputHash String   // hash of public inputs
-  verificationResult String // verified | failed
-  certaintyPercent Float?   // cryptographic certainty level
-  ledgerSequence  Int
-  ledgerCloseTime DateTime
-  createdAt       DateTime @default(now())
-
-  @@index([transactionHash])
-  @@index([contractAddress, ledgerSequence])
 }
 
 model SessionAuthorization {
@@ -201,157 +148,122 @@ model SessionAuthorization {
   @@index([expiryLedger])
 }
 
-model OracleCallback {
-  id                        String   @id @default(cuid())
-  requestTransactionHash    String   @unique
-  fulfillmentTransactionHash String?
-  requestLedgerSequence     Int
-  fulfillmentLedgerSequence  Int?
-  requestTimestamp          DateTime
-  fulfillmentTimestamp      DateTime?
-  oracleContractAddress     String
-  dataRequestorAddress      String
-  roundTripLatencyBlocks    Int?
-  roundTripLatencyMs        Int?
-  status                    String
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
-
-  @@index([oracleContractAddress])
-  @@index([requestLedgerSequence])
+model IndexerState {
+  id         String   @id @default("singleton")
+  lastLedger Int      @default(0)
+  updatedAt  DateTime @updatedAt
 }
 
-model RwaComplianceEvent {
-  id                   String   @id @default(cuid())
-  transactionHash      String   @unique
-  ledgerSequence       Int
-  ledgerCloseTime      DateTime
-  assetContractAddress String
-  issuerAddress        String
-  targetAddress        String
-  amount               String?
-  complianceReason     String
-  humanStatement       String
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+model SacMapping {
+  id           String   @id @default(cuid())
+  assetCode    String
+  assetIssuer  String?
+  assetType    String
+  sacAddress   String   @unique
+  firstSeenLedger Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  @@index([assetContractAddress])
-  @@index([issuerAddress])
-  @@index([targetAddress])
+  @@unique([assetCode, assetIssuer])
+  @@index([sacAddress])
+  @@index([assetCode])
 }
 
-model StateContention {
-  id              String   @id
-  ledgerSequence  Int
-  contractAddress String
-  stateKey        String
-  txHashes        String[]
-  conflictCount   Int
-  delayMs         Float
-  delayLabel      String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+model SacTrustlineMapping {
+  id                  String   @id @default(cuid())
+  gAccount            String
+  sacAddress          String
+  assetCode           String
+  assetIssuer         String?
+  assetType           String   @default("credit_alphanum4")
+  trustlineLimit      String   @default("0")
+  isUnlimited         Boolean  @default(false)
+  status              String   @default("active")
+  transactionHash     String
+  ledgerSequence      Int
+  ledgerCloseTime     DateTime
+  changeTrustOpLedger Int?
+  changeTrustOpTxHash String?
+  origin              String   @default("soroban")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  @@index([ledgerSequence])
-  @@index([contractAddress])
-}
-
-model ContractFactory {
-  id                      String   @id @default(cuid())
-  parentContractAddress   String
-  childContractAddress    String
-  creationTransactionHash String
-  creationLedgerSequence  Int
-  creationTimestamp       DateTime
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
-
-  @@unique([parentContractAddress, childContractAddress])
-  @@index([parentContractAddress])
-  @@index([childContractAddress])
-  @@index([creationLedgerSequence])
-}
-
-model GovernanceContract {
-  id              String   @id @default(cuid())
-  contractAddress String   @unique
-  governanceType  String   @default("token_based")
-  votingToken     String?
-  detectedAt      DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  proposals GovernanceProposal[] @relation("ContractProposals")
-  votes     GovernanceVote[]     @relation("ContractVotes")
-  delegates GovernanceDelegate[] @relation("ContractDelegates")
-
-  @@index([contractAddress])
-  @@index([governanceType])
-}
-
-model GovernanceProposal {
-  id               String   @id @default(cuid())
-  contractAddress  String
-  proposalId       String
-  proposer         String
-  title            String?
-  description      String?
-  targets          Json?
-  startBlock       Int
-  endBlock         Int
-  votesFor         String   @default("0")
-  votesAgainst     String   @default("0")
-  votesAbstain     String   @default("0")
-  quorum           String?
-  status           String
-  executedAt       DateTime?
-  executionTxHash  String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  contract GovernanceContract @relation("ContractProposals", fields: [contractAddress], references: [contractAddress])
-  votes    GovernanceVote[]   @relation("ProposalVotes")
-
-  @@unique([contractAddress, proposalId])
+  @@unique([gAccount, sacAddress])
+  @@index([gAccount])
+  @@index([sacAddress])
+  @@index([assetCode])
   @@index([status])
-  @@index([contractAddress, status])
-  @@index([contractAddress])
+  @@index([ledgerSequence])
+  @@index([changeTrustOpLedger])
 }
 
-model GovernanceVote {
+model VerificationJob {
   id              String   @id @default(cuid())
-  contractAddress String
-  proposalId      String
-  voter           String
-  weight          String   @default("0")
-  support         String
-  reason          String?
-  transactionHash String?
-  ledgerSequence  Int
+  contractAddress String?
+  toolchain       String   @default("soroban-cli@0.9.4")
+  status          String   @default("pending")
+  uploadedHash    String?
+  onChainWasmHash String?
+  compiledWasmHash String?
+  matched         Boolean?
+  errorMsg        String?
+  logs            String?
+  sourceFiles     Json?
   createdAt       DateTime @default(now())
-
-  contract GovernanceContract @relation("ContractVotes", fields: [contractAddress], references: [contractAddress])
-  proposal GovernanceProposal  @relation("ProposalVotes", fields: [contractAddress, proposalId], references: [contractAddress, proposalId], onDelete: Cascade)
-
-  @@unique([contractAddress, proposalId, voter])
-  @@index([contractAddress, proposalId])
-  @@index([voter])
-}
-
-model GovernanceDelegate {
-  id              String   @id @default(cuid())
-  contractAddress String
-  delegatee       String
-  delegatedVotes  String   @default("0")
-  delegators      Int      @default(0)
-  proposalsVoted  Int      @default(0)
   updatedAt       DateTime @updatedAt
+
+  @@index([contractAddress])
+  @@index([status])
+}
+
+model ContractState {
+  id                 String   @id @default(cuid())
+  contractAddress    String
+  ledgerKey          String
+  keyType            String
+  status             String   @default("Live")
+  liveUntilLedgerSeq Int?
+  lastSeenLedger     Int
+  restoredAtLedger   Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([contractAddress, ledgerKey])
+  @@index([contractAddress])
+  @@index([status])
+  @@index([liveUntilLedgerSeq])
+}
+
+model RestorationLog {
+  id              String   @id @default(cuid())
+  transactionHash String   @unique
+  sourceAccount   String
+  ledgerSequence  Int
+  ledgerCloseTime DateTime
+  feeCharged      String?
+  restoredKeys    Json
   createdAt       DateTime @default(now())
 
-  contract GovernanceContract @relation("ContractDelegates", fields: [contractAddress], references: [contractAddress])
+  @@index([sourceAccount])
+  @@index([ledgerSequence])
+}
 
-  @@unique([contractAddress, delegatee])
-  @@index([contractAddress])
-  @@index([delegatee])
+model FailedItem {
+  id          String   @id @default(cuid())
+  itemType    String
+  itemId      String
+  ledger      Int
+  rawXdr      String?
+  errorMsg    String
+  errorStack  String?
+  context     Json?
+  retryCount  Int      @default(0)
+  dead        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  lastTriedAt DateTime @default(now())
+
+  @@index([itemType, dead])
+  @@index([ledger])
 }
 
 model ApiKey {
@@ -379,1061 +291,31 @@ model ContractResourceMetric {
   @@index([ledgerSequence])
 }
 
-model SignatureInspection {
-  id               String   @id @default(cuid())
-  transactionHash  String   @unique
-  ledgerSequence   Int
-  curveType        String
-  isPasskey        Boolean
-  pubKeyX          String?
-  pubKeyY          String?
-  label            String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  @@index([transactionHash])
-  @@index([ledgerSequence])
-}
-
-model IndexerState {
-  id         String   @id @default("singleton")
-  lastLedger Int      @default(0)
-  updatedAt  DateTime @updatedAt
-}
-
-// Bidirectional mapping: classic Stellar asset ↔ SAC contract address
-model SacMapping {
-  id           String   @id @default(cuid())
-  // Classic asset fields
-  assetCode    String   // e.g. "USDC"
-  assetIssuer  String?  // null for XLM (native)
-  assetType    String   // "native" | "credit_alphanum4" | "credit_alphanum12"
-  // Soroban side
-  sacAddress   String   @unique  // derived C-address of the SAC contract
-  // Metadata
-  firstSeenLedger Int?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  ammPools     AmmPool[]
-
-  @@unique([assetCode, assetIssuer])
-  @@index([sacAddress])
-  @@index([assetCode])
-}
-
-// SAC G-Account Unlimited Trustline Mapper (CAP-0073)
-// Tracks trustlines on classic Stellar G-accounts that were initiated
-// by Soroban smart contracts (SAC) with unlimited or high-limit allowances.
-// Links each trustline to its originating transaction and the corresponding
-// classic ChangeTrustOp so the unified ledger stays coherent.
-model SacTrustlineMapping {
-  id                  String   @id @default(cuid())
-  // The classic G-account that holds the trustline
-  gAccount            String
-  // The SAC contract address that initiated the trustline (C-address)
-  sacAddress          String
-  // Classic asset identifiers (resolved via SacMapping)
-  assetCode           String
-  assetIssuer         String?
-  assetType           String   @default("credit_alphanum4")
-  // Trustline limit (string for BigInt precision)
-  trustlineLimit      String   @default("0")
-  // Flag: true if the trustline has no practical limit
-  isUnlimited         Boolean  @default(false)
-  // Trustline status
-  status              String   @default("active") // active | deactivated | frozen
-  // The Soroban transaction that created/modified the trustline
-  transactionHash     String
-  // The ledger where the trustline was created
-  ledgerSequence      Int
-  ledgerCloseTime     DateTime
-  // Link to the corresponding classic ChangeTrustOp ledger sequence
-  changeTrustOpLedger Int?     // null until a classic ChangeTrustOp is found
-  changeTrustOpTxHash String?  // hash of the classic ChangeTrustOp transaction
-  // Whether the trustline was discovered via CAP-0073 (Soroban-initiated) or classic
-  origin              String   @default("soroban") // "soroban" | "classic"
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-
-  @@unique([gAccount, sacAddress])
-  @@index([gAccount])
-  @@index([sacAddress])
-  @@index([assetCode])
-  @@index([status])
-  @@index([ledgerSequence])
-  @@index([changeTrustOpLedger])
-}
-
-// AMM pool that uses one or more SAC-wrapped assets
-model AmmPool {
-  id              String   @id @default(cuid())
-  poolAddress     String   @unique  // Soroban contract address of the pool
-  poolType        String   @default("constant_product")  // constant_product | stable
-  // The two assets in the pool (at least one is a SAC)
-  assetAAddress   String   // SAC address or native token address
-  assetBAddress   String
-  // Reverse links to SacMapping (nullable — one side may be a non-SAC token)
-  sacMappingAId   String?
-  sacMappingBId   String?
-  sacMappingA     SacMapping? @relation(fields: [sacMappingAId], references: [id])
-  firstSeenLedger Int?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  @@index([assetAAddress])
-  @@index([assetBAddress])
-}
-
-model VerificationJob {
-  id              String   @id @default(cuid())
-  contractAddress String?  // on-chain address to compare against
-  toolchain       String   @default("soroban-cli@0.9.4") // pinned toolchain version
-  status          String   @default("pending") // pending | compiling | verified | failed
-  uploadedHash    String?  // SHA-256 of uploaded archive
-  onChainWasmHash String?  // hash fetched from RPC
-  compiledWasmHash String? // hash of compiled output
-  matched         Boolean?
-  errorMsg        String?
-  logs            String?  // compiler stdout/stderr
-  sourceFiles     Json?    // extracted source files: [{ path, content }]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  @@index([contractAddress])
-  @@index([status])
-}
-
-// Persistent contract state key tracking for eviction monitoring (#57, #58)
-model ContractState {
-  id                String   @id @default(cuid())
-  contractAddress   String
-  ledgerKey         String   // base64 XDR of the LedgerKey
-  keyType           String   // "contractData" | "contractCode" | "account"
-  status            String   @default("Live")  // "Live" | "Archived" | "Dead"
-  liveUntilLedgerSeq Int?    // from TTL entry; null = unknown
-  lastSeenLedger    Int
-  restoredAtLedger  Int?     // set when status transitions back to Live
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  @@unique([contractAddress, ledgerKey])
-  @@index([contractAddress])
-  @@index([status])
-  @@index([liveUntilLedgerSeq])
-}
-
-// Log of RestoreFootprintOp restorations (#58)
-model RestorationLog {
-  id              String   @id @default(cuid())
-  transactionHash String   @unique
-  sourceAccount   String
-  ledgerSequence  Int
-  ledgerCloseTime DateTime
-  feeCharged      String?
-  restoredKeys    Json     // array of { ledgerKey, contractAddress }
-  createdAt       DateTime @default(now())
-
-  @@index([sourceAccount])
-  @@index([ledgerSequence])
-}
-
-model FailedItem {
-  id          String   @id @default(cuid())
-  itemType    String   // "transaction" | "event"
-  itemId      String   // tx hash or event id
-  ledger      Int
-  rawXdr      String?  // raw XDR that failed to decode
-  errorMsg    String
-  errorStack  String?
-  context     Json?    // extra context (topics, data, etc.)
-  retryCount  Int      @default(0)
-  dead        Boolean  @default(false)  // true = max retries exceeded
-  createdAt   DateTime @default(now())
-  lastTriedAt DateTime @default(now())
-
-  @@index([itemType, dead])
-  @@index([ledger])
-}
-
-// Re-entrancy / drain attack alert — one row per suspicious transaction
-model ReentrancyAlert {
-  id              String   @id @default(cuid())
-  transactionHash String   @unique
-  contractAddress String
-  ledgerSequence  Int
-  repeatedWithdrawCalls Int  @default(0)  // # of repeated withdraw/transfer calls to same contract
-  maxCallDepth    Int      @default(0)   // deepest cross-contract call chain seen
-  cyclicCallPairs Json     @default("[]") // [[caller, callee], ...] pairs that form cycles
-  severity        String   // "low" | "medium" | "high"
-  signals         Json     // human-readable list of triggered signal descriptions
-  createdAt       DateTime @default(now())
-
-  @@index([contractAddress])
-  @@index([ledgerSequence])
-  @@index([severity])
-}
-
-// Storage efficiency: tracks allocated footprint bytes vs actual data bytes per tx
-model StorageEfficiencyLog {
-  id              String   @id @default(cuid())
-  transactionHash String   @unique
-  contractAddress String?
-  ledgerSequence  Int
-  // Footprint (what the tx declared it would read/write)
-  readOnlyKeys    Int      @default(0)   // number of read-only footprint keys
-  readWriteKeys   Int      @default(0)   // number of read-write footprint keys
-  footprintBytes  Int      @default(0)   // total allocated byte budget
-  // Actual usage
-  actualReadBytes  Int     @default(0)   // bytes actually read
-  actualWriteBytes Int     @default(0)   // bytes actually written
-  // Derived efficiency metrics
-  unusedBytes     Int      @default(0)   // footprintBytes - (actualReadBytes + actualWriteBytes)
-  efficiencyPct   Float    @default(0)   // (actual / footprint) * 100
-  createdAt       DateTime @default(now())
-
-  @@index([contractAddress])
-  @@index([ledgerSequence])
-  @@index([efficiencyPct])
-}
-
-// Async CSV export jobs
-model ExportJob {
-  id          String   @id @default(cuid())
-  status      String   @default("pending")  // pending | running | done | failed
-  exportType  String   // "transactions" | "events"
-  filters     Json?    // serialised query filters (contract, account, ledgerMin, etc.)
-  filePath    String?  // path to generated CSV file once done
-  rowCount    Int?     // number of rows exported
-  errorMsg    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([status])
-  @@index([createdAt])
-}
-
-// Signer state snapshot per transaction for multi-sig smart accounts
-model SignerSnapshot {
-  id              String   @id @default(cuid())
-  transactionHash String   @unique
-  contractAddress String   // the smart-account contract
-  ledgerSequence  Int
-  // Threshold configuration at time of tx
-  lowThreshold    Int      @default(0)
-  medThreshold    Int      @default(0)
-  highThreshold   Int      @default(0)
-  // Signer participation
-  signers         Json     // array of { key, weight, signed: bool }
-  weightAchieved  Int      @default(0)   // sum of weights of keys that signed
-  thresholdMet    String   // "low" | "medium" | "high" | "none"
-  passed          Boolean  @default(false)
-  // Margin analysis
-  marginToNext    Int?     // weight needed to reach next threshold level
-  createdAt       DateTime @default(now())
-
-  @@index([contractAddress])
-  @@index([ledgerSequence])
-  @@index([passed])
-}
-
-// Institutional treasury wallet multi-sig auditor
-model TreasuryWallet {
-  id                String   @id @default(cuid())
-  address           String   @unique
-  name              String
-  requiredThreshold Int      // minimum signature weight required
-  totalSigners       Int      // total number of signers
-  adminEmail        String?  // for alert notifications
-  lastAuditLedger   Int      @default(0)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  auditSnapshots    TreasuryAuditSnapshot[]
-
-  @@index([address])
-}
-
-// Periodic audit snapshot of treasury wallet safety metrics
-model TreasuryAuditSnapshot {
-  id                String   @id @default(cuid())
-  treasuryId        String
-  ledgerSequence    Int
-  ledgerCloseTime   DateTime
-  // Balance tracking
-  totalBalance      String   // in stroops
-  balanceThreshold  String   // minimum safe balance
-  balanceHealthy    Boolean  // totalBalance >= balanceThreshold
-  // Multi-sig configuration
-  activeSigners     Int      // current active signers
-  thresholdMet      Boolean  // activeSigners >= requiredThreshold
-  configurationChanged Boolean @default(false)
-  // Alert status
-  alertSent         Boolean  @default(false)
-  alertReason       String?  // "low_balance" | "config_change" | "signer_change"
-  createdAt         DateTime @default(now())
-
-  treasury          TreasuryWallet @relation(fields: [treasuryId], references: [id])
-
-  @@index([treasuryId])
-  @@index([ledgerSequence])
-  @@index([alertSent])
-}
-
-// OFAC sanctioned address registry
-model SanctionedAddress {
-  id              String   @id @default(cuid())
-  address         String   @unique
-  name            String?
-  jurisdiction    String?  // country/region
-  listSource      String   // "OFAC" | "EU" | "UN" | "custom"
-  addedAt         DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  complianceFlags ComplianceFlag[]
-
-  @@index([address])
-  @@index([listSource])
-}
-
-// Compliance flag on transactions/accounts
-model ComplianceFlag {
-  id                String   @id @default(cuid())
-  transactionHash   String?  // null if flagging an account
-  sourceAccount     String?
-  destinationAccount String?
-  sanctionedAddressId String
-  flagType          String   // "sender_sanctioned" | "receiver_sanctioned" | "both"
-  severity          String   // "high" | "medium" | "low"
-  reviewed          Boolean  @default(false)
-  reviewedBy        String?
-  reviewedAt        DateTime?
-  notes             String?
-  createdAt         DateTime @default(now())
-
-  sanctionedAddress SanctionedAddress @relation(fields: [sanctionedAddressId], references: [id])
-
-  @@index([transactionHash])
-  @@index([sourceAccount])
-  @@index([destinationAccount])
-  @@index([reviewed])
-  @@index([severity])
-}
-
-// Tax lot for cost-basis tracking (IRS Form 8949)
-model TaxLot {
-  id              String   @id @default(cuid())
-  walletAddress   String
-  assetSymbol     String   // e.g., "USDC", "XLM"
-  quantity        String   // decimal string
-  costBasisPerUnit String  // in USD or reference currency
-  totalCostBasis  String   // quantity * costBasisPerUnit
-  acquisitionDate DateTime
-  disposalDate    DateTime?
-  disposalPrice   String?  // price per unit at disposal
-  gainLoss        String?  // (disposalPrice - costBasisPerUnit) * quantity
-  transactionHash String?  // link to original tx
-  createdAt       DateTime @default(now())
-
-  @@index([walletAddress])
-  @@index([assetSymbol])
-  @@index([acquisitionDate])
-  @@index([disposalDate])
-}
-
-// Tax export job for Form 8949 CSV generation
-model TaxExportJob {
-  id              String   @id @default(cuid())
-  walletAddress   String
-  taxYear         Int
-  status          String   @default("pending")  // pending | processing | completed | failed
-  filePath        String?  // path to generated CSV
-  totalLots       Int?
-  totalGain       String?  // sum of all gains
-  totalLoss       String?  // sum of all losses
-  errorMsg        String?
-  createdAt       DateTime @default(now())
-  completedAt     DateTime?
-
-  @@index([walletAddress])
-  @@index([taxYear])
-  @@index([status])
-}
-
-// ─── Threat Intelligence Platform ────────────────────────────────────────────
-
-// External vulnerability / feed source registration
-model VulnerabilitySource {
-  id          String   @id @default(cuid())
-  name        String   @unique  // "NVD_CVE" | "GHSA" | "ON_CHAIN" | "COMMUNITY"
-  sourceType  String            // "cve" | "ghsa" | "onchain" | "manual"
-  feedUrl     String?
-  enabled     Boolean  @default(true)
-  lastFetchAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  advisories  ThreatAdvisory[]
-}
-
-// Core security advisory record
-model ThreatAdvisory {
-  id                String   @id @default(cuid())
-  title             String
-  description       String
-  severity          String   // "critical" | "high" | "medium" | "low" | "info"
-  cvssScore         Float?
-  cveId             String?  @unique
-  ghsaId            String?  @unique
-  affectedContracts String[] // Soroban contract addresses
-  affectedChains    String[] // "stellar" | "ethereum" | etc.
-  mitigations       String[] // free-text recommendations
-  status            String   @default("open") // "open" | "under_review" | "resolved" | "disputed"
-  publishedAt       DateTime?
-  resolvedAt        DateTime?
-  sourceId          String?
-  submittedBy       String?  // user/api-key for manual submissions
-  externalUrl       String?
-  tags              String[]
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  source       VulnerabilitySource? @relation(fields: [sourceId], references: [id])
-  correlations ThreatCorrelation[]
-  reviews      ThreatReview[]
-  comments     ThreatComment[]
-
-  @@index([severity])
-  @@index([status])
-  @@index([cveId])
-  @@index([ghsaId])
-  @@index([createdAt])
-}
-
-// Cross-chain / cross-source deduplication link
-model ThreatCorrelation {
-  id           String   @id @default(cuid())
-  advisoryId   String
-  relatedId    String   // another ThreatAdvisory id
-  relationship String   // "duplicate" | "related" | "supercedes"
-  confidence   Float    @default(1.0) // 0-1
-  createdAt    DateTime @default(now())
-
-  advisory     ThreatAdvisory @relation(fields: [advisoryId], references: [id])
-
-  @@unique([advisoryId, relatedId])
-  @@index([advisoryId])
-  @@index([relatedId])
-}
-
-// Role-based review workflow entry
-model ThreatReview {
-  id         String   @id @default(cuid())
-  advisoryId String
-  reviewerKey String  // API key / user id
-  role        String  // "analyst" | "admin"
-  decision    String  // "approve" | "reject" | "escalate"
-  notes       String?
-  createdAt   DateTime @default(now())
-
-  advisory    ThreatAdvisory @relation(fields: [advisoryId], references: [id])
-
-  @@index([advisoryId])
-  @@index([reviewerKey])
-}
-
-// Community comment thread on an advisory
-model ThreatComment {
-  id         String   @id @default(cuid())
-  advisoryId String
-  authorKey  String
-  body       String
-  createdAt  DateTime @default(now())
-
-  advisory   ThreatAdvisory @relation(fields: [advisoryId], references: [id])
-
-  @@index([advisoryId])
-}
-
-// Push subscription (email / Slack / Discord / Telegram)
-model TipSubscription {
-  id        String   @id @default(cuid())
-  channel   String   // "email" | "slack" | "discord" | "telegram"
-  target    String   // email address / webhook url / chat id
-  filters   Json?    // { severity: ["critical","high"], tags: [] }
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([channel, target])
-  @@index([channel])
-  @@index([active])
-}
-
-// Outbound webhook endpoint registration
-model TipWebhook {
-  id        String   @id @default(cuid())
-  url       String   @unique
-  secret    String   // HMAC signing secret
-  events    String[] // ["advisory.created","advisory.updated","advisory.resolved"]
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([active])
-}
-
-// ─── End Threat Intelligence Platform ────────────────────────────────────────
-
-// Webhook subscriptions — developer-registered URLs that receive event payloads
-model WebhookSubscription {
-  id              String   @id @default(cuid())
-  url             String                        // target HTTPS endpoint
-  secret          String?                       // optional HMAC-SHA256 signing secret
-  contractAddress String?                       // null = all contracts
-  eventType       String?                       // null = all event types
-  topicSymbol     String?                       // null = all topic symbols
-  active          Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  deliveries      WebhookDelivery[]
-
-  @@index([contractAddress])
-  @@index([active])
-}
-
-// Delivery log — one row per dispatch attempt
-model WebhookDelivery {
-  id             String   @id @default(cuid())
-  subscriptionId String
-  eventId        String                        // Event.id that triggered this delivery
-  attempt        Int      @default(1)          // 1-based attempt counter
-  status         String   @default("pending")  // pending | success | failed
-  httpStatus     Int?                          // HTTP response code from target
-  responseBody   String?                       // first 500 chars of response
-  errorMsg       String?
-  nextRetryAt    DateTime?                     // null once terminal
-  deliveredAt    DateTime?
-  createdAt      DateTime @default(now())
-
-  subscription   WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-
-  @@index([subscriptionId])
-  @@index([status, nextRetryAt])
-  @@index([eventId])
-}
-
-// BN254 ZK-Host function gas exemption tracker (CAP-0080)
-// Tracks transactions using native BN254 curve host functions and
-// calculates the gas savings vs equivalent Wasm-side computation.
-model Bn254GasExemption {
-  id              String   @id @default(cuid())
-  transactionHash String   @unique
-  contractAddress String?
-  // Detected BN254 operation types involved, e.g. ["bn254_add", "bn254_mul", "bn254_pairing_check", "bn254_multiscalar_mul"]
-  bn254Ops        Json     @default("[]")
-  // Number of detected BN254 host function calls
-  opCount         Int      @default(0)
-  // Actual fee charged for the transaction (stroops)
-  feeCharged      String?
-  // Estimated equivalent fee if done in Wasm (stroops)
-  estimatedWasmFee String?
-  // Net stroops saved
-  stroopSavings   String?
-  // Savings percentage (e.g. 74.0)
-  savingsPct      Float?
-  // CPU instructions from soroban resources
-  cpuInstructions Int      @default(0)
-  // Multi-scalar multiplication complexity factor
-  msmComplexity   Int      @default(0)
-  ledgerSequence  Int
-  ledgerCloseTime DateTime
-  createdAt       DateTime @default(now())
-
-  @@index([contractAddress])
-  @@index([ledgerSequence])
-  @@index([savingsPct])
-}
-
-// Gas cost analytics snapshot — pre-aggregated fee stats per time bucket
-model GasAnalyticsSnapshot {
-  id          String   @id @default(cuid())
-  bucket      String   // "hour" | "day" | "week"
-  bucketStart DateTime // start of the time bucket
-  bucketEnd   DateTime // end of the time bucket
-  avgFee      Float    // average fee charged (in stroops)
-  medianFee   Float    // median fee charged
-  peakFee     Float    // maximum fee charged
-  minFee      Float    // minimum fee charged
-  txCount     Int      // number of transactions in bucket
-  createdAt   DateTime @default(now())
-
-  @@unique([bucket, bucketStart])
-  @@index([bucket, bucketStart])
-}
-
-// Portfolio snapshot — token holdings with fiat valuation per wallet/contract
-model PortfolioSnapshot {
-  id              String   @id @default(cuid())
-  contractAddress String   // SAC contract address
-  assetCode       String?
-  assetIssuer     String?
-  estimatedVolume Float    // raw token quantity
-  priceXlm        Float?   // price in XLM
-  priceUsd        Float?   // price in USD
-  valueXlm        Float?   // estimatedVolume * priceXlm
-  valueUsd        Float?   // estimatedVolume * priceUsd
-  snapshotAt      DateTime @default(now())
-
-  @@index([contractAddress])
-  @@index([snapshotAt])
-}
-
-// Persisted volume spike alert — one row per detected spike
-model VolumeAlert {
-  id              String   @id @default(cuid())
-  contractAddress String
-  currentCount    Int      // tx count in the observation window
-  baseline        Float    // historical mean
-  stdDev          Float    // historical standard deviation
-  zScore          Float    // (currentCount - baseline) / stdDev
-  windowMinutes   Int      // observation window size
-  detectedAt      DateTime @default(now())
-  acknowledged    Boolean  @default(false)
-
-  @@index([contractAddress])
-  @@index([detectedAt])
-  @@index([zScore])
-}
-
-// #168: Account activation records for XLM SAC transfers to unfunded addresses
-model AccountActivation {
-  id              String   @id @default(cuid())
-  destination     String                        // G-address of the recipient
-  sacAddress      String                        // C-address of the XLM SAC contract
-  transactionHash String                        // originating transaction
-  ledgerSequence  Int
-  ledgerCloseTime DateTime
-  amountStroops   String                        // transfer amount in stroops (i128 as string)
-  previousStatus  String   @default("Unfunded Key")
-  newStatus       String   @default("Active Base Wallet Natively Initialized")
-  createdAt       DateTime @default(now())
-
-  @@unique([transactionHash, destination])
-  @@index([destination])
-  @@index([sacAddress])
-  @@index([ledgerSequence])
-}
-
-// Yield/distribution event from RWA treasury contracts — individual recipient rows
-// grouped by windowLabel for the "Corporate Yield Distribution Sync" dashboard.
-model YieldDistribution {
-  id              String   @id @default(cuid())
-  transactionHash String
-  contractAddress String
-  distributionId  String?
-  recipient       String
-  amount          String
-  tokenSymbol     String?
-  windowLabel     String   @default("Corporate Yield Distribution Sync")
-  ledgerSequence  Int
-  ledgerCloseTime DateTime
-  createdAt       DateTime @default(now())
-
-  @@index([contractAddress])
-  @@index([contractAddress, windowLabel])
-  @@index([contractAddress, ledgerCloseTime])
-  @@index([windowLabel])
-  @@index([distributionId])
-}
-
-// #218: DTCC Tokenized Securities Settlement ID Bridge
-model DtccSettlementBridge {
-  id                  String   @id @default(cuid())
-  transactionHash     String   @unique
-  dtccSettlementId    String
-  securityId          String
-  securityType        String
-  sellerAddress       String
-  buyerAddress        String
-  quantity            String
-  settlementAmount    String
-  currency            String   @default("USD")
-  settlementStatus    String   @default("pending")
-  settlementDate      DateTime?
-  contractAddress     String?
-  ledgerSequence      Int
-  ledgerCloseTime     DateTime
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-
-  @@index([dtccSettlementId])
-  @@index([securityId])
-  @@index([sellerAddress])
-  @@index([buyerAddress])
-  @@index([settlementStatus])
-  @@index([ledgerSequence])
-}
-
-// #219: Commodity Compliance Dual-Signer Verification Log
-model CommodityDualSignerLog {
-  id                  String   @id @default(cuid())
-  transactionHash     String   @unique
-  commodityType       String
-  commodityCode       String
-  contractAddress     String
-  traderAddress       String
-  primarySignerAddress  String
-  secondarySignerAddress String
-  primarySigned       Boolean  @default(false)
-  secondarySigned     Boolean  @default(false)
-  bothSigned          Boolean  @default(false)
-  quantity            String
-  unit                String
-  notionalValueUsd    String?
-  regulatoryJurisdiction String @default("CFTC")
-  complianceStatus    String   @default("pending")
-  expiresAt           DateTime?
-  ledgerSequence      Int
-  ledgerCloseTime     DateTime
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-
-  @@index([commodityCode])
-  @@index([contractAddress])
-  @@index([traderAddress])
-  @@index([primarySignerAddress])
-  @@index([secondarySignerAddress])
-  @@index([complianceStatus])
-  @@index([ledgerSequence])
-}
-
-// i18n translation dictionary
 model TranslationKey {
-  id              String   @id @default(cuid())
-  key             String   @unique  // e.g., "transaction.swap_description"
-  defaultText     String   // English template with {placeholders}
-  context         String?  // usage context for translators
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id          String   @id @default(cuid())
+  key         String   @unique
+  defaultText String
+  context     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  translations    Translation[]
+  translations Translation[]
 
   @@index([key])
 }
 
-// Translated text for a specific language
 model Translation {
-  id              String   @id @default(cuid())
-  keyId           String
-  language        String   // e.g., "es", "ko", "fr"
-  translatedText  String   // translated template with {placeholders}
-  approvedBy      String?  // translator/reviewer
-  approvedAt      DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  key             TranslationKey @relation(fields: [keyId], references: [id])
-
-  @@unique([keyId, language])
-  @@index([language])
-}
-
-
-
-
-
-// #320: Yield Farming & Staking Optimizer — risk-scored yield opportunities
-model YieldOpportunity {
-  id              String   @id
-  contractAddress String
-  name            String
-  type            String   // lp_farming | staking | lending | liquid_staking | vault
-  tokens          Json     @default("[]")  // [String] token symbols involved
-  baseApy         Float    @default(0)     // organic APY from fees/interest
-  incentiveApy    Float    @default(0)     // APY from token incentives
-  totalApy        Float    @default(0)     // baseApy + incentiveApy
-  tvl             String   @default("0")   // total value locked (decimal string)
-  lockupDays      Int      @default(0)
-  minDeposit      String   @default("0")   // decimal string
-  depositFee      Float    @default(0)     // percentage (e.g. 0.1 = 0.1%)
-  withdrawFee     Float    @default(0)     // percentage
-  // Composite risk score 0-100 (higher = riskier)
-  riskScore       Int      @default(0)
-  riskLabel       String   @default("unknown") // low | medium | high | unknown
-  lastObservedAt  DateTime @default(now())
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  @@unique([contractAddress, type])
-  @@index([type])
-  @@index([totalApy])
-  @@index([riskScore])
-  @@index([lastObservedAt])
-}
-
-// #320: Daily APY/TVL history snapshots for a yield opportunity
-model YieldHistorySnapshot {
-  id              String   @id @default(cuid())
-  opportunityId   String
-  snapshotDate    DateTime // truncated to start-of-day UTC
-  apy             Float
-  baseApy         Float    @default(0)
-  incentiveApy    Float    @default(0)
-  tvl             String   @default("0")
-  ledgerSequence  Int?
-  createdAt       DateTime @default(now())
-
-  @@unique([opportunityId, snapshotDate])
-  @@index([opportunityId])
-  @@index([snapshotDate])
-}
-
-// #220: High-Throughput Batch-Settlement Event Compact Engine
-// One row per (contractAddress, windowKey) — a window covers WINDOW_SIZE ledgers.
-// Replaces thousands of raw settlement Event rows with a single scannable summary.
-model SettlementBatchSummary {
-  id              String   @id @default(cuid())
-  contractAddress String                        // enterprise banking contract
-  windowKey       Int                           // floor(ledgerSequence / WINDOW_SIZE)
-  ledgerMin       Int                           // first ledger in window
-  ledgerMax       Int                           // last ledger in window
-  windowStart     DateTime                      // ledgerCloseTime of first event
-  windowEnd       DateTime                      // ledgerCloseTime of last event
-  eventCount      Int                           // number of settlement events compacted
-  totalAmount     String                        // sum of settlement amounts (string for precision)
-  uniqueParties   Int                           // distinct addresses involved
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  @@unique([contractAddress, windowKey])
-  @@index([contractAddress])
-  @@index([ledgerMin])
-  @@index([windowKey])
-}
-
-// CAP-0077: Consensus-frozen ledger key registry
-model FrozenLedgerKey {
-  ledgerKey       String   @id
-  contractAddress String?
-  frozenAtLedger  Int
-  frozenAtTime    DateTime
-  active          Boolean  @default(true)
-  reason          String?
-  createdAt       DateTime @default(now())
-
-  @@index([active])
-}
-
-// ── Performance Benchmarking Suite Models ─────────────────────────────────────
-
-// Pre-computed operation microbenchmarks aggregated across all transactions
-model OperationBenchmark {
-  id           String   @id @default(cuid())
-  name         String   @unique  // e.g. "token_transfer", "token_balance_of", "swap"
-  avgCpu       Int      @default(0)
-  avgMemory    Int      @default(0)
-  avgFeeStroops BigInt  @default(0)
-  samples      Int      @default(0)
-  lastUpdated  DateTime @default(now())
-  createdAt    DateTime @default(now())
-
-  @@index([name])
-}
-
-// Per-contract per-function benchmark snapshot (for trend/regression analysis)
-model ContractBenchmarkSnapshot {
-  id              String   @id @default(cuid())
-  contractAddress String
-  functionName    String
-  avgCpu          Int      @default(0)
-  avgMemory       Int      @default(0)
-  avgFeeStroops   BigInt   @default(0)
-  minFeeStroops   BigInt   @default(0)
-  maxFeeStroops   BigInt   @default(0)
-  minCpu          Int      @default(0)
-  maxCpu          Int      @default(0)
-  samples         Int      @default(0)
-  ledgerSequence  Int      // snapshot ledger
-  createdAt       DateTime @default(now())
-
-  @@index([contractAddress, functionName, ledgerSequence])
-  @@index([contractAddress, createdAt])
-}
-
-// Standards compliance thresholds per contract type (SEP-41, DEX, NFT, etc.)
-model StandardCompliance {
-  id              String   @id @default(cuid())
-  contractType    String   // "sep-41", "dex", "nft", "lending", "staking"
-  functionName    String
-  maxCpu          Int      @default(0)
-  maxMemory       Int      @default(0)
-  maxFeeStroops   BigInt   @default(0)
-  description     String?  // e.g. "SEP-41 token transfer expected range"
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  @@unique([contractType, functionName])
-  @@index([contractType])
-}
-
-// Gas golfing tips for common function patterns
-model GasGolfingTip {
-  id           String   @id @default(cuid())
-  functionName String   @unique
-  tips         Json     @default("[]")  // ["Reduce event data", "Batch storage operations"]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  @@index([functionName])
-}
-
-// CAP-0077: Freeze violation records
-model FreezeViolation {
-  id              String   @id @default(cuid())
-  transactionHash String   @unique
-  contractAddress String?
-  ledgerSequence  Int
-  ledgerCloseTime DateTime
-  frozenKeys      Json
-  createdAt       DateTime @default(now())
-
-  @@index([transactionHash])
-}
-
-// ── Soroban Network Observatory ──────────────────────────────────────────────
-
-enum NodeType {
-  validator
-  full_node
-  watcher
-  archival
-  unknown
-}
-
-enum AlertSeverity {
-  critical
-  warning
-  info
-}
-
-model NetworkNode {
-  id              String   @id @default(cuid())
-  publicKey       String   @unique
-  name            String?
-  organization    String?
-  homeDomain      String?
-  version         String?
-  ledgerVersion   Int?
-  overlayVersion  Int?
-  maxLedgerAge    Int?
-  quorumSet       Json?
-  isValidator     Boolean  @default(false)
-  activeInNetwork Boolean  @default(true)
-  firstSeen       DateTime
-  lastSeen        DateTime
-  uptime24h       Float?
-  uptime7d        Float?
-  uptime30d       Float?
-  avgLatency      Int?
-  p95Latency      Int?
-  agreementRate24h Float?
-  agreementRate7d  Float?
-  agreementRate30d Float?
-  missedSlots24h   Int?
-  missedSlots7d    Int?
-  country         String?
-  city            String?
-  latitude        Float?
-  longitude       Float?
-  organizationUrl String?
-  softwareVersion String?
-  stellarCoreVersion String?
-  historyArchiveUrl String?
-  peerCount       Int?
-  transitiveQuorum Json?
-  nodeType        NodeType @default(unknown)
-  lastHeartbeat   DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  nodeEvents      NetworkNodeEvent[]
-  nodeMetrics     NetworkNodeMetric[]
-
-  @@index([publicKey])
-  @@index([isValidator])
-  @@index([activeInNetwork])
-  @@index([lastSeen])
-}
-
-model NetworkNodeEvent {
-  id        String   @id @default(cuid())
-  nodeId    String
-  node      NetworkNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  eventType String
-  details   Json?
-  timestamp DateTime @default(now())
-  createdAt DateTime @default(now())
-
-  @@index([nodeId])
-  @@index([eventType])
-  @@index([timestamp])
-}
-
-model NetworkNodeMetric {
-  id            String   @id @default(cuid())
-  nodeId        String
-  node          NetworkNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  timestamp     DateTime @default(now())
-  ledgerNum     Int?
-  latency       Int?
-  agreementRate Float?
-  peerCount     Int?
-  createdAt     DateTime @default(now())
-
-  @@index([nodeId, timestamp])
-  @@index([timestamp])
-}
-
-model NetworkConsensusRound {
   id             String   @id @default(cuid())
-  ledgerSeq      Int      @unique
-  startTime      DateTime
-  endTime        DateTime
-  durationMs     Int
-  externalizeTimeMs Int?
-  txCount        Int
-  successful     Boolean  @default(true)
-  agreementRate  Float?
-  nodesParticipated Int
-  quorumSetSize  Int
-  missedNodes    Json?
-  topologyHash   String?
-  createdAt      DateTime @default(now())
-
-  @@index([ledgerSeq])
-  @@index([startTime])
-  @@index([successful])
-}
-
-model NetworkAlert {
-  id             String   @id @default(cuid())
-  alertType      String
-  severity       AlertSeverity
-  title          String
-  description    String
-  affectedNodes  Json?
-  metricData     Json?
-  acknowledged   Boolean  @default(false)
-  acknowledgedBy String?
-  acknowledgedAt DateTime?
-  resolvedAt     DateTime?
+  keyId          String
+  language       String
+  translatedText String
+  approvedBy     String?
+  approvedAt     DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  @@index([alertType])
-  @@index([severity])
-  @@index([acknowledged])
-  @@index([createdAt])
+  key TranslationKey @relation(fields: [keyId], references: [id])
+
+  @@unique([keyId, language])
+  @@index([language])
 }

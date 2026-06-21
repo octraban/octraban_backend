@@ -2,9 +2,7 @@ import { xdr, scValToNative } from '@stellar/stellar-sdk';
 import { getContractAbi, decodeArgs, renderHuman } from './registry';
 import { parseInvokeHostFunction } from './xdr-parser';
 import { parseSep41Event, isSep41Event } from './sep41-parser';
-import { parseRwaEnforcementEvent, isRwaEnforcementEvent } from './rwa-enforcement-normalizer';
 import { prismaRead as prisma } from '../db';
-import { decodeMastercardFlags } from './identity-verifier';
 
 /**
  * Look up a custom EventDefinition for a given contract + topic symbol.
@@ -102,25 +100,16 @@ export async function decodeTransaction(rawXdr: string): Promise<DecodedTransact
     rawArgs = [];
   }
 
-  // Check for compliance flags if it's a mastercard contract
-  let complianceMessage = '';
-  if (contractAddress.includes('mastercard') || functionName.includes('mastercard')) {
-     const compliance = decodeMastercardFlags(args);
-     if (compliance) {
-         complianceMessage = ` | ${compliance.complianceMessage}`;
-     }
-  }
-
   const abi = await getContractAbi(contractAddress);
   if (!abi) {
-    return { contractAddress, functionName, functionArgs: null, humanReadable: `Called ${functionName} on ${contractAddress}${complianceMessage}` };
+    return { contractAddress, functionName, functionArgs: null, humanReadable: `Called ${functionName} on ${contractAddress}` };
   }
 
   const contract = await prisma.contract.findUnique({ where: { address: contractAddress } });
   const decoded = decodeArgs(functionName, rawArgs, abi, contract?.tokenDecimals ?? undefined);
   const human = decoded
-    ? renderHuman(functionName, decoded, abi, contract?.name, contract?.tokenDecimals ?? undefined) + complianceMessage
-    : `Called ${functionName} on ${contract?.name ?? contractAddress}` + complianceMessage;
+    ? renderHuman(functionName, decoded, abi, contract?.name, contract?.tokenDecimals ?? undefined)
+    : `Called ${functionName} on ${contract?.name ?? contractAddress}`;
 
   return { contractAddress, functionName, functionArgs: decoded, humanReadable: human };
 }
@@ -158,25 +147,6 @@ export function decodeEvent(
       }
     }
 
-    // ── RWA enforcement fast path ───────────────────────────────────────────
-    if (isRwaEnforcementEvent(rawSymbol)) {
-      const parsed = parseRwaEnforcementEvent(topics, data);
-      if (parsed) {
-        return {
-          eventType: rawSymbol,
-          topicSymbol: rawSymbol,
-          decoded: {
-            event: rawSymbol,
-            humanReadable: parsed.humanReadable,
-            issuer: parsed.issuer,
-            from: parsed.from,
-            ...(parsed.amount !== undefined && { amount: parsed.amount }),
-            ...(parsed.reason !== undefined && { reason: parsed.reason }),
-          },
-        };
-      }
-    }
-
     // ── Generic fallback ────────────────────────────────────────────────────
     const dataVal = xdr.ScVal.fromXDR(data, 'base64');
     const decoded: Record<string, unknown> = {
@@ -207,9 +177,6 @@ function normalizeEventType(raw: string): string {
     'hot_signer_authorized',
     'ephemeral_key_auth',
     'authorization_window',
-    'freeze',
-    'seize',
-    'regulatory_action',
   ];
   const normalized = raw.toLowerCase();
   return known.includes(normalized) ? normalized : 'custom';

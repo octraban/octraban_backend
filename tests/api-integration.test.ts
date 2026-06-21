@@ -255,7 +255,6 @@ describe('GET /api/v1/transactions/:hash', () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body).toHaveProperty('bn254GasExemption');
   });
 
   it('returns 404 for an unknown hash', async () => {

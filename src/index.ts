@@ -20,17 +20,12 @@ import { swaggerSpec } from './indexer/swaggerSpec';
 import { attachWebSocketServer } from './ws/eventBroadcaster';
 import { warmTokenMetadataCache } from './indexer/token-metadata';
 import { cacheConnect } from './cache';
-import { startGasAnalyticsScheduler } from './indexer/gasAnalytics';
-import { startPortfolioScanner } from './indexer/portfolioScanner';
-import { startVolumeAlertScheduler } from './indexer/volumeAlertRunner';
-import { startSystemicMonitor } from './indexer/systemicMonitor';
-import { startNetworkIndexer } from './indexer/network-indexer';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './logger';
 
 const app = express();
 
-app.use(helmet({ contentSecurityPolicy: false })); // CSP off so Swagger UI loads
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json());
@@ -41,16 +36,13 @@ app.use(sanitizeInputs);
 app.use(i18nMiddleware);
 app.use(replicaGuard);
 
-// #134: Cold storage routing for deep history queries
 app.use(coldStorageRouter);
 
-// Interactive API docs
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.get('/api/docs.json', (_req, res) => res.json(swaggerSpec));
 
 app.use('/api/v1', router);
 
-// Prometheus metrics endpoint
 app.get('/metrics', async (_req, res) => {
   res.set('Content-Type', registry.contentType);
   res.end(await registry.metrics());
@@ -66,20 +58,11 @@ async function main() {
   await cacheConnect();
   await prisma.$connect();
   dbConnectionStatus.set(1);
-  if (!process.env.DISABLE_INDEXER) {
-    startIndexerService().catch((err) => logger.error('Indexer service failed', { error: String(err) }));
-  }
 
   if (!process.env.DISABLE_INDEXER) {
+    startIndexerService().catch((err) => logger.error('Indexer service failed', { error: String(err) }));
     warmTokenMetadataCache().catch((err) =>
       logger.warn('Token-metadata cache warm-up failed', { error: String(err) }),
-    );
-    startGasAnalyticsScheduler();
-    startPortfolioScanner();
-    startVolumeAlertScheduler();
-    startSystemicMonitor();
-    startNetworkIndexer().catch((err) =>
-      logger.error('Network indexer failed', { error: String(err) }),
     );
   }
 

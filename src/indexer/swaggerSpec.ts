@@ -1,63 +1,34 @@
 import swaggerJsdoc from 'swagger-jsdoc';
-import path from 'path';
 
 const options: swaggerJsdoc.Options = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'Soroban Smart Block Explorer API',
+      title: 'Soroban Block Explorer API',
       version: '1.0.0',
-      description: 'Human-readable Soroban contract explorer. Decodes raw XDR into plain English.',
+      description: 'Human-readable Soroban smart contract block explorer backend. Decodes raw XDR into plain English descriptions of transactions, events, contracts, and tokens on the Stellar/Soroban network.',
     },
-    servers: [{ url: '/api/v1', description: 'API v1' }],
-    components: {
-      securitySchemes: {
-        ApiKeyAuth: {
-          type: 'apiKey',
-          in: 'header',
-          name: 'X-API-Key',
-          description: 'Optional API key. Tiers: public (100 req/min), developer (300 req/min), premium (1000 req/min).',
-        },
-      },
-      schemas: {
-        StorageEfficiencyLog: {
-          type: 'object',
-          properties: {
-            transactionHash: { type: 'string' },
-            contractAddress: { type: 'string', nullable: true },
-            ledgerSequence: { type: 'integer' },
-            readOnlyKeys: { type: 'integer', description: 'Number of declared read-only footprint keys' },
-            readWriteKeys: { type: 'integer', description: 'Number of declared read-write footprint keys' },
-            footprintBytes: { type: 'integer', description: 'Total declared byte budget (rent-paying storage)' },
-            actualReadBytes: { type: 'integer', description: 'Actual bytes read during execution' },
-            actualWriteBytes: { type: 'integer', description: 'Actual bytes written during execution' },
-            unusedBytes: { type: 'integer', description: 'Unutilised storage bytes (footprintBytes - actualTotal)' },
-            efficiencyPct: { type: 'number', description: 'Storage efficiency percentage (0–100)' },
-          },
-        },
-        WebhookSubscription: {
-          type: 'object',
-          properties: {
-            id: { type: 'string' },
-            url: { type: 'string', format: 'uri' },
-            contractAddress: { type: 'string', nullable: true },
-            eventType: { type: 'string', nullable: true },
-            topicSymbol: { type: 'string', nullable: true },
-            active: { type: 'boolean' },
-            createdAt: { type: 'string', format: 'date-time' },
-          },
-        },
-      },
-    },
-    security: [{ ApiKeyAuth: [] }],
+    servers: [
+      { url: '/api/v1', description: 'API v1' },
+    ],
+    tags: [
+      { name: 'Transactions', description: 'Soroban transaction queries and decoding' },
+      { name: 'Events', description: 'Contract event queries' },
+      { name: 'Contracts', description: 'Smart contract metadata and ABI management' },
+      { name: 'Wallets', description: 'Wallet/account transaction history' },
+      { name: 'Tokens', description: 'Token balances, info, and transfers' },
+      { name: 'Render', description: 'Human-readable transaction rendering' },
+      { name: 'Simulate', description: 'Transaction simulation' },
+      { name: 'Verify', description: 'Contract source code verification' },
+      { name: 'Authorizations', description: 'Session authorization tracking' },
+      { name: 'Sync State', description: 'Indexer synchronization status' },
+      { name: 'Network', description: 'Network protocol status' },
+      { name: 'Token Metadata', description: 'Token metadata resolution' },
+      { name: 'Protocol', description: 'Protocol version and reconciliation' },
+      { name: 'i18n', description: 'Internationalization translation management' },
+    ],
   },
-  // Scan all route files for @swagger JSDoc comments
-  apis: [
-    path.join(__dirname, '../api/*.ts'),
-    path.join(__dirname, '../api/*.js'),
-    path.join(__dirname, '../middleware/*.ts'),
-    path.join(__dirname, '../middleware/*.js'),
-  ],
+  apis: ['./src/api/*.ts'],
 };
 
 export const swaggerSpec = swaggerJsdoc(options);
