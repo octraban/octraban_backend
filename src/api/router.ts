@@ -13,6 +13,12 @@ import { syncStateRouter } from './sync-state';
 import { networkRouter } from './network';
 import { tokenMetadataRouter } from './token-metadata';
 import { protocolRouter } from './protocol';
+import { authRouter } from './auth';
+import { authMultisigRouter } from './authMultisig';
+import { authProfileRouter } from './authProfile';
+import { authSecurityRouter } from './authSecurity';
+import { authWebhooksRouter } from './authWebhooks';
+import { authOAuth2Router } from './authOAuth2';
 
 export const router = Router();
 
@@ -30,3 +36,11 @@ router.use('/network', networkRouter);
 router.use('/token-metadata', tokenMetadataRouter);
 router.use('/protocol', protocolRouter);
 router.use('/i18n', i18nRouter);
+
+// Auth routes
+router.use('/auth', authRouter);
+router.use('/auth/multisig', authMultisigRouter);
+router.use('/auth', authProfileRouter);
+router.use('/auth/security', authSecurityRouter);
+router.use('/auth/webhooks', authWebhooksRouter);
+router.use('/auth/oauth2', authOAuth2Router);

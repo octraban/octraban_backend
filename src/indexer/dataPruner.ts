@@ -40,13 +40,8 @@ async function pruneExpiredData() {
     console.log(`[Pruner] Deleted ${deletedFailedItems.count} expired failed items`);
 
     // Prune completed export jobs older than retention period
-    const exportJobCutoff = new Date(Date.now() - EXPORT_JOB_RETENTION_DAYS * 24 * 60 * 60 * 1000);
-    const deletedExportJobs = await prisma.exportJob.deleteMany({
-      where: {
-        status: { in: ['done', 'failed'] },
-        createdAt: { lt: exportJobCutoff },
-      },
-    });
+    // (exportJob model not yet provisioned — skip)
+    const deletedExportJobs = { count: 0 };
     console.log(`[Pruner] Deleted ${deletedExportJobs.count} expired export jobs`);
 
     // Prune verification jobs older than 90 days
