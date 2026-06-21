@@ -1,5 +1,5 @@
 /**
- * Issue #116 — Automated Data Pruning Task for Temporary Storage Logs
+ * Automated Data Pruning Task for Temporary Storage Logs
  *
  * Runs on a daily cron schedule. Deletes events whose on-chain storage entry
  * has passed its expiration ledger height, keeping only instance/persistent

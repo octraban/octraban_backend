@@ -1,5 +1,5 @@
 /**
- * Issue #133 — Daily Gas Consumption Leaderboard
+ * Daily Gas Consumption Leaderboard
  *
  * Background worker that aggregates cpu_instructions and fee_charged
  * over 24-hour windows, bucketed by contract_id, to produce a ranked

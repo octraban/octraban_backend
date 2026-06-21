@@ -1,5 +1,5 @@
 /**
- * Issue #140 — State-Diff Timeline Indexer
+ * State-Diff Timeline Indexer
  *
  * Extracts ContractDataEntry mutations from sorobanMeta.changedEntries and
  * persists them as storage_state_diffs rows keyed by (contract_id, ledger).

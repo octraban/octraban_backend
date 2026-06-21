@@ -1,5 +1,5 @@
 /**
- * Issue #86: Circuit Breaker Indexer
+ * Circuit Breaker Indexer
  * Monitors contract events for pause/unpause operations and updates circuit breaker status.
  */
 

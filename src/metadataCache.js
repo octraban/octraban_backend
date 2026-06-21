@@ -1,5 +1,5 @@
 /**
- * Issue #137 — In-Memory Redis Cache for Contract Metadata
+ * In-Memory Redis Cache for Contract Metadata
  *
  * Cache-Aside strategy: callers check the cache first; on miss they fetch
  * from the DB/RPC and populate the cache.  A TTL of 60 s ensures stale

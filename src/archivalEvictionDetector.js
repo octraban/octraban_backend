@@ -1,5 +1,5 @@
 /**
- * Archival Eviction Detector — Issue #167
+ * Archival Eviction Detector —
  *
  * Scans the soroban ledger change stream from txMeta and identifies
  * ContractData / ContractCode entries whose TTL has hit 0, meaning they

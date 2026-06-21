@@ -1,5 +1,5 @@
 /**
- * Issue #114 — Bulk Block Processing Loader for Fast Ecosystem Resyncing
+ * Bulk Block Processing Loader for Fast Ecosystem Resyncing
  *
  * High-speed historical ledger importer. Uses concurrent workers and batch
  * DB inserts to achieve ≥500 blocks/second throughput.

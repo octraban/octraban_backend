@@ -1,5 +1,5 @@
 /**
- * Issue #86: Circuit Breaker Detector
+ * Circuit Breaker Detector
  * Detects whether a contract implements a pausable mechanism and tracks its status.
  * Looks for common pause-related state variables and events.
  */

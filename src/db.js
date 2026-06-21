@@ -1,223 +1,15 @@
 import pg from "pg";
+import { runMigrations } from "./migrate.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
+/** Exported for pool metric collection — do not use for queries outside db.js. */
+export { pool };
+
 export const db = {
+  /** Run all pending SQL migrations from indexer/migrations/. */
   async init() {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS events (
-        seq              BIGSERIAL PRIMARY KEY,
-        contract_id      TEXT NOT NULL,
-        function         TEXT NOT NULL,
-        ledger           BIGINT NOT NULL,
-        tx_hash          TEXT,
-        description      TEXT NOT NULL,
-        raw_topics       JSONB,
-        raw_data         TEXT,
-        -- Issue #40: Soroban resource gas costs
-        cpu_instructions BIGINT,
-        mem_bytes        BIGINT,
-        fee_charged      BIGINT,
-        -- Issue #50: state-bloat DoS risk flag
-        is_high_bloat_risk BOOLEAN NOT NULL DEFAULT FALSE,
-        -- Issue #51: contract upgrade lineage
-        upgrade_info     JSONB,
-        -- Issue #52: storage tier breakdown
-        storage_tiers    JSONB,
-        -- Issue #74: clawback compliance flag
-        is_clawback      BOOLEAN NOT NULL DEFAULT FALSE,
-        -- Issue #134: block compute capacity exceeded flag
-        is_resource_limit_exceeded BOOLEAN NOT NULL DEFAULT FALSE,
-        -- Issue #191: CAP-0080 ZK host function telemetry (Protocol 26)
-        zk_host_calls    JSONB,
-        created_at       TIMESTAMPTZ DEFAULT NOW()
-      );
-      -- Issue #35: explicit index mappings on high-frequency lookup columns
-      CREATE INDEX IF NOT EXISTS idx_events_contract ON events(contract_id);
-      CREATE INDEX IF NOT EXISTS idx_events_function ON events(function);
-      CREATE INDEX IF NOT EXISTS idx_events_ledger   ON events(ledger);
-      CREATE INDEX IF NOT EXISTS idx_events_tx_hash  ON events(tx_hash);
-      -- topic_0 is the first element of raw_topics JSON array (most-queried topic)
-      CREATE INDEX IF NOT EXISTS idx_events_topic0
-        ON events USING btree ((raw_topics->0));
-      -- composite index for the most common query pattern: contract + ledger range
-      CREATE INDEX IF NOT EXISTS idx_events_contract_ledger
-        ON events(contract_id, ledger DESC);
-      CREATE INDEX IF NOT EXISTS idx_events_search_fts
-        ON events USING GIN (to_tsvector('simple', coalesce(description, '') || ' ' || coalesce(function, '') || ' ' || coalesce(contract_id, '') || ' ' || coalesce(raw_topics::text, '') || ' ' || coalesce(raw_data, '')));
-
-      CREATE TABLE IF NOT EXISTS contracts (
-        id          TEXT PRIMARY KEY,
-        name        TEXT NOT NULL,
-        description TEXT,
-        functions   JSONB,
-        registered_by TEXT,
-        -- Issue #86: Circuit breaker status tracking
-        has_circuit_breaker BOOLEAN DEFAULT FALSE,
-        is_paused   BOOLEAN DEFAULT FALSE,
-        pause_status_ledger BIGINT,
-        -- Issue #81: RWA token metadata
-        is_rwa      BOOLEAN DEFAULT FALSE,
-        rwa_type    TEXT,
-        created_at  TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_contracts_search_fts
-        ON contracts USING GIN (to_tsvector('simple', coalesce(name, '') || ' ' || coalesce(description, '') || ' ' || coalesce(id, '') || ' ' || coalesce(functions::text, '')));
-
-      -- Issue #37: ledger hash registry for re-org detection
-      CREATE TABLE IF NOT EXISTS ledger_hashes (
-        ledger     BIGINT PRIMARY KEY,
-        hash       TEXT   NOT NULL,
-        indexed_at TIMESTAMPTZ DEFAULT NOW()
-      );
-
-      -- Issue #33: daemon cursor persistence — survives restarts
-      CREATE TABLE IF NOT EXISTS daemon_state (
-        key   TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      );
-
-      -- Issue #50: add column to existing deployments
-      ALTER TABLE events ADD COLUMN IF NOT EXISTS is_high_bloat_risk BOOLEAN NOT NULL DEFAULT FALSE;
-      -- Issue #51: contract upgrade lineage
-      ALTER TABLE events ADD COLUMN IF NOT EXISTS upgrade_info JSONB;
-      -- Issue #52: storage tier breakdown
-      ALTER TABLE events ADD COLUMN IF NOT EXISTS storage_tiers JSONB;
-      -- Issue #85: multi-file source code matching
-      ALTER TABLE contracts ADD COLUMN IF NOT EXISTS source_files JSONB;
-      -- footprint contention: tx writes to same slot as preceding tx in same ledger
-      ALTER TABLE events ADD COLUMN IF NOT EXISTS footprint_contention BOOLEAN NOT NULL DEFAULT FALSE;
-
-      -- Issue #134: resource-limit-exceeded flag
-      ALTER TABLE events ADD COLUMN IF NOT EXISTS is_resource_limit_exceeded BOOLEAN NOT NULL DEFAULT FALSE;
-
-      -- Protocol 26: TTL extension host function data (extend_to, min_extension, max_extension)
-      ALTER TABLE events ADD COLUMN IF NOT EXISTS ttl_extension JSONB;
-
-      -- Issue #169: fee-bump chain of custody (sponsor, channel account, actual caller)
-      ALTER TABLE events ADD COLUMN IF NOT EXISTS fee_bump JSONB;
-
-      -- Issue #177: factory deployment tracking (multi-contract composite deployments)
-      ALTER TABLE events ADD COLUMN IF NOT EXISTS factory_deployment JSONB;
-
-      -- Issue #117: sub-invocation indexing
-      CREATE TABLE IF NOT EXISTS sub_invocations (
-        id              BIGSERIAL PRIMARY KEY,
-        parent_tx_hash  TEXT NOT NULL,
-        depth           INT  NOT NULL DEFAULT 1,
-        contract_id     TEXT NOT NULL,
-        function        TEXT NOT NULL,
-        args            JSONB,
-        ledger          BIGINT NOT NULL,
-        created_at      TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_sub_inv_parent   ON sub_invocations(parent_tx_hash);
-      CREATE INDEX IF NOT EXISTS idx_sub_inv_contract ON sub_invocations(contract_id);
-
-      -- Issue #135: multi-signature source code verification
-      CREATE TABLE IF NOT EXISTS source_verifications (
-        id           BIGSERIAL PRIMARY KEY,
-        contract_id  TEXT NOT NULL,
-        wasm_hash    TEXT NOT NULL,
-        signer       TEXT NOT NULL,
-        signature    TEXT NOT NULL,
-        compiler_hash TEXT NOT NULL,
-        submitted_at TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE (contract_id, wasm_hash, signer)
-      );
-      CREATE INDEX IF NOT EXISTS idx_src_ver_contract ON source_verifications(contract_id);
-
-      -- Issue #140: contract storage state-diff timeline
-      CREATE TABLE IF NOT EXISTS storage_state_diffs (
-        id          BIGSERIAL PRIMARY KEY,
-        contract_id TEXT NOT NULL,
-        ledger      BIGINT NOT NULL,
-        tx_hash     TEXT,
-        key         TEXT NOT NULL,
-        tier        TEXT NOT NULL,
-        old_value   TEXT,
-        new_value   TEXT,
-        change_type TEXT NOT NULL,
-        created_at  TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_state_diff_contract_ledger
-        ON storage_state_diffs(contract_id, ledger ASC);
-
-      -- Issue #172: CAP-0077 quorum freeze events
-      CREATE TABLE IF NOT EXISTS quorum_freezes (
-        id          BIGSERIAL PRIMARY KEY,
-        contract_id TEXT NOT NULL,
-        frozen_ids  JSONB NOT NULL,
-        ledger      BIGINT,
-        tx_hash     TEXT,
-        is_frozen   BOOLEAN NOT NULL DEFAULT TRUE,
-        created_at  TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_quorum_freezes_contract
-        ON quorum_freezes(contract_id);
-
-      CREATE TABLE IF NOT EXISTS vaults (
-        contract_id     TEXT PRIMARY KEY,
-        name            TEXT,
-        underlying_asset TEXT,
-        decimals        INT DEFAULT 7,
-        active          BOOLEAN DEFAULT TRUE,
-        created_at      TIMESTAMPTZ DEFAULT NOW(),
-        updated_at      TIMESTAMPTZ DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS vault_snapshots (
-        id            BIGSERIAL PRIMARY KEY,
-        contract_id   TEXT NOT NULL REFERENCES vaults(contract_id),
-        ledger        BIGINT NOT NULL,
-        total_assets  TEXT NOT NULL,
-        total_supply  TEXT NOT NULL,
-        ratio         TEXT NOT NULL,
-        created_at    TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_vault_snapshots_contract
-        ON vault_snapshots(contract_id, ledger DESC);
-
-      CREATE TABLE IF NOT EXISTS token_holders (
-        id            BIGSERIAL PRIMARY KEY,
-        contract_id   TEXT NOT NULL,
-        address       TEXT NOT NULL,
-        balance_raw   TEXT NOT NULL DEFAULT '0',
-        updated_at    TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE (contract_id, address)
-      );
-      CREATE INDEX IF NOT EXISTS idx_token_holders_contract
-        ON token_holders(contract_id);
-
-      CREATE TABLE IF NOT EXISTS privileged_roles (
-        id            BIGSERIAL PRIMARY KEY,
-        contract_id   TEXT NOT NULL,
-        role          TEXT NOT NULL,
-        address       TEXT NOT NULL,
-        revoked       BOOLEAN NOT NULL DEFAULT FALSE,
-        ledger        BIGINT,
-        updated_at    TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE (contract_id, role, address)
-      );
-      CREATE INDEX IF NOT EXISTS idx_privileged_roles_contract
-        ON privileged_roles(contract_id);
-
-      CREATE TABLE IF NOT EXISTS wasm_build_metadata (
-        wasm_hash     TEXT PRIMARY KEY,
-        contract_id   TEXT,
-        sdk_version   TEXT,
-        compiler      TEXT,
-        optimizer     TEXT,
-        repository    TEXT,
-        commit        TEXT,
-        producers     JSONB,
-        ledger        BIGINT,
-        tx_hash       TEXT,
-        created_at    TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_wasm_build_contract
-        ON wasm_build_metadata(contract_id);
-    `);
+    await runMigrations(pool);
   },
 
   async getMaxLedger() {
@@ -225,7 +17,7 @@ export const db = {
     return Number(rows[0].max_ledger);
   },
 
-  // ── Issue #33: daemon cursor persistence ──────────────────────────────────
+  // ── daemon cursor persistence ──────────────────────────────────
   async saveCursor(ledger) {
     await pool.query(
       `INSERT INTO daemon_state (key, value) VALUES ('cursor', $1)
@@ -239,7 +31,7 @@ export const db = {
     return rows[0] ? Number(rows[0].value) : null;
   },
 
-  // ── Issue #34: cursor-based pagination ────────────────────────────────────
+  // ── cursor-based pagination ────────────────────────────────────
   /**
    * Return a page of events using keyset (cursor-based) pagination.
    * Avoids OFFSET degradation on large tables.
@@ -333,7 +125,7 @@ export const db = {
       params.push(fn);
       conditions.push(`function = $${params.length}`);
     }
-    // Issue #48: filter by transaction type
+    filter by transaction type
     // "soroban"  → contract_id is non-empty (Soroban invocations/deployments)
     // "classic"  → contract_id is empty string or NULL
     if (type === "soroban") {
@@ -358,9 +150,18 @@ export const db = {
   },
 
   async getWalletEvents(address) {
+    // Use the GIN full-text index via plainto_tsquery so the query uses the
+    // idx_events_search_fts index instead of a full-table raw_topics::text scan.
     const { rows } = await pool.query(
-      `SELECT * FROM events WHERE raw_topics::text ILIKE $1 ORDER BY ledger DESC LIMIT 100`,
-      [`%${address}%`],
+      `SELECT * FROM events
+       WHERE to_tsvector('simple',
+         coalesce(description, '') || ' ' ||
+         coalesce(raw_topics::text, '') || ' ' ||
+         coalesce(raw_data, '')
+       ) @@ plainto_tsquery('simple', $1)
+       ORDER BY ledger DESC
+       LIMIT 100`,
+      [address],
     );
     return rows;
   },
@@ -556,7 +357,7 @@ export const db = {
   },
 
   /**
-   * Issue #38 — paginated contract transaction history with optional filters.
+   * paginated contract transaction history with optional filters.
    * @param {string} contractId
    * @param {{ function_name?: string, start_ledger?: number, end_ledger?: number, page?: number, limit?: number }} opts
    */
@@ -659,7 +460,7 @@ export const db = {
     );
   },
 
-  // Issue #86: Circuit breaker status tracking
+  Circuit breaker status tracking
   async updateCircuitBreakerStatus(contractId, isPaused, ledger) {
     await pool.query(`UPDATE contracts SET is_paused = $1, pause_status_ledger = $2 WHERE id = $3`, [
       isPaused,
@@ -795,7 +596,7 @@ export const db = {
     return pool.query(sql, params);
   },
 
-  // ── Issue #135: multi-signature source verification ────────────────────────
+  // ── multi-signature source verification ────────────────────────
 
   /** Submit a verification signature for a contract's WASM hash. */
   async addSourceVerification({ contract_id, wasm_hash, signer, signature, compiler_hash }) {
@@ -823,7 +624,7 @@ export const db = {
     return rows;
   },
 
-  // ── Issue #140: storage state-diff timeline ────────────────────────────────
+  // ── storage state-diff timeline ────────────────────────────────
 
   /** Persist a batch of storage state diffs for a transaction. */
   async insertStateDiffs(diffs) {
@@ -919,7 +720,7 @@ export const db = {
     return rows[0] ?? null;
   },
 
-  /** Issue #117: persist sub-invocation records. */
+  /** persist sub-invocation records. */
   async upsertSubInvocations(records) {
     if (!records.length) return;
     const values = records
@@ -943,7 +744,7 @@ export const db = {
     );
   },
 
-  /** Issue #142: aggregate caller→callee edges for the global dependency graph. */
+  /** aggregate caller→callee edges for the global dependency graph. */
   async getSubInvocationEdges(limit = 500) {
     const { rows } = await pool.query(
       `SELECT e.contract_id AS caller, s.contract_id AS callee, COUNT(*) AS call_count
@@ -975,9 +776,9 @@ export const db = {
   },
 
   async applyTransfer(contractId, from, to, amount) {
-    const client = pool;
-    await client.query("BEGIN");
+    const client = await pool.connect();
     try {
+      await client.query("BEGIN");
       await client.query(
         `INSERT INTO token_holders (contract_id, address, balance_raw)
          VALUES ($1, $2, $3)
@@ -996,6 +797,8 @@ export const db = {
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
+    } finally {
+      client.release();
     }
   },
 
@@ -1019,7 +822,7 @@ export const db = {
     );
   },
 
-  // Issue #215: data export — events (CSV/JSON)
+  data export — events (CSV/JSON)
   async getEventsForExport({ contract, fn, type, limit = 10000 } = {}) {
     const conditions = [];
     const params = [];
@@ -1048,7 +851,7 @@ export const db = {
     return rows;
   },
 
-  // Issue #215: data export — registered contracts (CSV/JSON)
+  data export — registered contracts (CSV/JSON)
   async getContractsForExport() {
     const { rows } = await pool.query(
       `SELECT id, name, description, registered_by, has_circuit_breaker, is_paused, is_rwa, rwa_type, created_at

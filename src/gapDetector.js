@@ -1,5 +1,5 @@
 /**
- * Issue #138 — Ledger Ingestion Gap Detection Script
+ * Ledger Ingestion Gap Detection Script
  *
  * Scans the indexed ledger range for any missing ledger_sequence values
  * and triggers a targeted catchup resync for each gap found.

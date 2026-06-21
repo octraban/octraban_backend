@@ -1,5 +1,5 @@
 /**
- * Issue #113 — Multi-Node RPC Validation Client
+ * Multi-Node RPC Validation Client
  *
  * Maintains a pool of Soroban RPC nodes. Queries are sent to the primary node;
  * if it fails or falls behind consensus, the client switches to the next healthy

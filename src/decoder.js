@@ -1,8 +1,13 @@
 import { scValToNative } from "@stellar/stellar-sdk";
+import { db } from "./db.js";
+import { detectSac, detectSacAsset } from "./sac.js";
+import { extractRoleAssignment } from "./roleTracker.js";
+import { decodeRwaEvent } from "./rwaDecoder.js";
+import { parseHeuristic } from "./heuristicParser.js";
 import { parseTTLHostFunction, formatTTLExtension } from "./ttlExtensionParser.js";
 import { parseZkHostFunctions, computeZkCostDelta } from "./zkHostFunctions.js";
 
-// Issue #134 — result codes that indicate block compute capacity was exhausted
+// Result codes that indicate the block compute budget was exhausted.
 const RESOURCE_LIMIT_CODES = new Set([
   "tx_resource_limit_exceeded",
   "txResourceLimitExceeded",
@@ -20,13 +25,15 @@ function isResourceLimitExceeded(ev) {
 }
 
 /**
- * Issue #40 — Extract CPU instructions, memory bytes, and fee charged from
- * the Soroban RPC event's transaction metadata.
+ * Extract resource usage costs from the Soroban RPC event's transaction metadata.
  *
- * The Soroban RPC event object may carry a `feeBump` or `feeCharged` field
- * directly, and the `txMeta` (TransactionMeta XDR) contains sorobanMeta with
- * resource usage.  We extract what's available and return undefined for the
- * rest so callers can store only what exists.
+ * The Soroban RPC event object may carry a `feeCharged` field directly, and
+ * the `txMeta` (TransactionMeta XDR) contains sorobanMeta with resource usage.
+ * Fields:
+ *   cpu_instructions — SorobanTransactionMeta.ext.v1.totalNonRefundableResourceFeeCharged
+ *                      (non-refundable fees are proportional to CPU consumed)
+ *   fee_charged      — SorobanTransactionMeta.ext.v1.totalRefundableResourceFeeCharged
+ *   mem_bytes        — SorobanTransactionMeta.ext.v1.rentFeeCharged (rent ∝ memory)
  *
  * @param {object} ev  Raw Soroban RPC event
  * @returns {{ cpu_instructions?: number, mem_bytes?: number, fee_charged?: number }}
@@ -35,13 +42,11 @@ function extractGasCosts(ev) {
   const result = {};
 
   try {
-    // fee_charged is sometimes surfaced directly on the event
     if (ev.feeCharged != null) result.fee_charged = Number(ev.feeCharged);
 
     const meta = ev.txMeta;
     if (!meta) return result;
 
-    // TransactionMeta is an XDR union; v3 carries sorobanMeta
     let sorobanMeta = null;
     try {
       sorobanMeta = meta.v3?.().sorobanMeta?.() ?? null;
@@ -51,15 +56,17 @@ function extractGasCosts(ev) {
 
     if (!sorobanMeta) return result;
 
-    // SorobanTransactionMeta.ext carries resource fee breakdown in v1
     try {
       const extV1 = sorobanMeta.ext?.().v1?.();
       if (extV1) {
+        // Non-refundable fee is a proxy for CPU consumption
         if (extV1.totalNonRefundableResourceFeeCharged != null)
           result.cpu_instructions = Number(extV1.totalNonRefundableResourceFeeCharged);
         if (extV1.totalRefundableResourceFeeCharged != null)
           result.fee_charged = Number(extV1.totalRefundableResourceFeeCharged);
-        if (extV1.rentFeeCharged != null) result.mem_bytes = Number(extV1.rentFeeCharged);
+        // Rent fee is a proxy for memory/storage consumption
+        if (extV1.rentFeeCharged != null)
+          result.mem_bytes = Number(extV1.rentFeeCharged);
       }
     } catch {
       /* ext not v1 */
@@ -70,12 +77,6 @@ function extractGasCosts(ev) {
 
   return result;
 }
-
-import { db } from "./db.js";
-import { detectSac, detectSacAsset } from "./sac.js";
-import { extractRoleAssignment } from "./roleTracker.js";
-import { decodeRwaEvent } from "./rwaDecoder.js";
-import { parseHeuristic } from "./heuristicParser.js";
 
 // Native XLM Stellar Asset Contract IDs (testnet + mainnet)
 const NATIVE_SAC_IDS = new Set([
@@ -127,7 +128,7 @@ export async function decode(ev) {
       ? `${assetCode} (SAC:${contractId.slice(0, 8)}…)`
       : (meta?.name ?? contractId);
 
-  // Issue #81: Try RWA decoder first
+  // Try RWA decoder first
   let description = null;
   if (meta) {
     const tempDecoded = {
@@ -148,7 +149,7 @@ export async function decode(ev) {
         : genericDescription(fnName, topics.slice(1), data, contractLabel);
   }
 
-  // Attach heuristic params when no ABI was available (no fnAbi, not a vault, not RWA)
+  // Attach heuristic params when no ABI was available
   const heuristicParams =
     !fnAbi && !vaultMeta && !meta ? parseHeuristic([...topics.slice(1), ...(data != null ? [data] : [])]) : undefined;
 
@@ -171,11 +172,10 @@ export async function decode(ev) {
   const ttlExt = parseTTLHostFunction(ev.hostFunction ?? ev.host_function ?? ev.operation ?? null);
   if (ttlExt) {
     decoded.ttl_extension = ttlExt;
-    // Enrich description so the ledger history row is self-explanatory
     decoded.description = formatTTLExtension(ttlExt);
   }
 
-  // Issue #164 — Protocol 26: detect CAP-0080 ZK host function calls
+  // Protocol 26: detect CAP-0080 ZK host function calls
   const zkCalls = parseZkHostFunctions(ev);
   if (zkCalls) {
     decoded.zk_host_calls = {

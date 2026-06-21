@@ -1,5 +1,5 @@
 /**
- * Issue #36 — Historical Block Indexing Catch-Up Script
+ * Historical Block Indexing Catch-Up Script
  *
  * Syncs a range of historical ledgers in parallel workers without overloading
  * the RPC node or causing duplicate-key violations in the DB.

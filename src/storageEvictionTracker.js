@@ -1,5 +1,5 @@
 /**
- * Issue #176 — Persistent Storage Eviction & Off-Chain Archival State Tracker
+ * Persistent Storage Eviction & Off-Chain Archival State Tracker
  *
  * Monitors ContractDataEntry TTL expiry by comparing each entry's
  * liveUntilLedger against the current ledger height.  When the threshold

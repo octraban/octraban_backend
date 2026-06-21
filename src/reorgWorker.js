@@ -1,5 +1,5 @@
 /**
- * Ledger Re-org Detection & Rollback Worker  (Issue #37)
+ * Ledger Re-org Detection & Rollback Worker 
  *
  * Maintains a rolling window of indexed ledger hashes and compares them
  * against the network's consensus state.  When a mismatch is detected the

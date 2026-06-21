@@ -1,5 +1,5 @@
 /**
- * Issue #115 — RPC Node Performance Metrics
+ * RPC Node Performance Metrics
  *
  * Background service that periodically probes each configured RPC node,
  * records latency and error-rate samples, and exposes them via

@@ -1,5 +1,5 @@
 /**
- * Issue #117 — Sub-invocation indexer.
+ * Sub-invocation indexer.
  *
  * Soroban transactions can trigger contract-to-contract calls (sub-invocations).
  * This module walks the SorobanTransactionMeta invocation tree and flattens each
@@ -62,7 +62,7 @@ export async function indexSubInvocations(txHash, ledger, txMeta) {
   const records = collectSubInvocations(root, txHash, ledger, 0);
   if (records.length) {
     await db.upsertSubInvocations(records);
-    // Issue #142: stream each new cross-contract link live
+    stream each new cross-contract link live
     for (const r of records) {
       publishContractLink({
         caller: txHash,

@@ -1,5 +1,5 @@
 /**
- * Issue #175 — Reentrancy Guard Trap & Deep Call-Stack Exception Detector
+ * Reentrancy Guard Trap & Deep Call-Stack Exception Detector
  *
  * Identifies when a Soroban transaction fails due to:
  *   1. A reentrancy violation (contract called itself recursively through the guard)
