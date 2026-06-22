@@ -38,6 +38,12 @@ import { protocolRouter } from './protocol';
 import { aaRouter } from './aa';
 import { complianceRouter } from './compliance';
 
+// ── Pricing & Market Intelligence ──────────────────────────────────────────────
+import { marketRouter } from './market';
+import { tokenPricesRouter } from './token-prices';
+import { portfolioRouter } from './portfolio';
+import { alertsRouter } from './alerts';
+
 export const router = Router();
 
 // ── Core Stellar / Soroban ────────────────────────────────────────────────────
@@ -57,3 +63,9 @@ router.use('/token-metadata', tokenMetadataRouter);
 router.use('/protocol', protocolRouter);
 router.use('/aa', aaRouter);
 router.use('/compliance', complianceRouter);
+
+// ── Token Pricing & Valuation ─────────────────────────────────────────────────
+router.use('/tokens', tokenPricesRouter);
+router.use('/market', marketRouter);
+router.use('/portfolio', portfolioRouter);
+router.use('/market/alerts', alertsRouter);
