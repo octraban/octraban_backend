@@ -14,6 +14,17 @@ import { attachWebSocketServer, publishTransactionStatus, getTransactionStatus, 
 import { verifyAbi } from "./verify_abi.js";
 import { getMetrics } from "./rpcMetrics.js";
 import { getRpcNodeStatus } from "./rpcMultiNode.js";
+// ── Auth & Rate Limiting ──────────────────────────────────────────────────────
+import { apiKeyAuthenticator } from "./auth/apiKeyAuth.js";
+import { geoIpRateLimiter } from "./rateLimit/geoIpLimiter.js";
+import { concurrentRequestLimiter } from "./rateLimit/concurrentLimiter.js";
+import { tokenBucketMiddleware } from "./rateLimit/tokenBucket.js";
+import { graphqlComplexityLimiter } from "./rateLimit/graphqlComplexity.js";
+import { abuseDetector } from "./rateLimit/abuseDetector.js";
+import { rateLimitHeaderWriter } from "./rateLimit/headers.js";
+import { auditLoggerMiddleware } from "./audit/auditLogger.js";
+import registerAdminRoutes from "./routes/admin.js";
+import { stripeWebhookRouter } from "./billing/stripeWebhook.js";
 import {
   cacheInvalidate,
   cacheGet,
@@ -31,6 +42,16 @@ import { registry } from "./metrics.js";
 import pg from "pg";
 import { getBurnAlerts } from "./burnDetector.js";
 import { formatAmount } from "./formatAmount.js";
+import { auditLoggerMiddleware } from "./audit/auditLogger.js";
+import { apiKeyAuthenticator } from "./auth/apiKeyAuth.js";
+import { geoIpRateLimiter } from "./rateLimit/geoIpLimiter.js";
+import { concurrentRequestLimiter } from "./rateLimit/concurrentLimiter.js";
+import { tokenBucketMiddleware } from "./rateLimit/tokenBucket.js";
+import { graphqlComplexityLimiter } from "./rateLimit/graphqlComplexity.js";
+import { abuseDetector } from "./rateLimit/abuseDetector.js";
+import { rateLimitHeaderWriter } from "./rateLimit/headers.js";
+import registerAdminRoutes from "./routes/admin.js";
+import { stripeWebhookRouter } from "./billing/stripeWebhook.js";
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
@@ -126,8 +147,30 @@ export function startApi() {
   const app = express();
   app.use(helmet());
   app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
+
+  // Stripe webhook requires raw body — mount BEFORE express.json()
+  app.use("/api/billing", stripeWebhookRouter);
+
   app.use(express.json());
-  app.use(generalLimiter);
+
+  // ── Auth & Rate Limiting Middleware Stack ─────────────────────────────────
+  // Order matters: audit logger sets _startTime first, then auth resolves tier,
+  // then geo/concurrent/bucket limiters enforce quotas, then headers are set.
+  app.use(auditLoggerMiddleware);
+  app.use(apiKeyAuthenticator);
+  app.use(geoIpRateLimiter);
+  app.use(concurrentRequestLimiter);
+  app.use(tokenBucketMiddleware);
+  app.use(graphqlComplexityLimiter);
+  app.use(abuseDetector);
+  app.use(rateLimitHeaderWriter);
+
+  // NOTE: generalLimiter superseded by tokenBucketMiddleware above.
+  // Kept as fallback only if Redis is unavailable (tokenBucket fails open).
+  // app.use(generalLimiter);
+
+  // ── Admin routes (auth-gated) ─────────────────────────────────────────────
+  registerAdminRoutes(app);
 
   // ── API Documentation ────────────────────────────────────────────────────────
   const openApiPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../openapi.yaml");
