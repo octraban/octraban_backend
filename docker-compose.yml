@@ -4,6 +4,17 @@ version: '3.9'
 x-app-build: &app-build
   build: .
 
+x-security: &security
+  cap_drop:
+    - ALL
+  cap_add:
+    - NET_BIND_SERVICE
+  read_only: true
+  tmpfs:
+    - /tmp:noexec,nosuid,size=100M
+  security_opt:
+    - seccomp:./seccomp/node.json
+
 # ─── Per-network DB defaults ──────────────────────────────────────────────────
 x-db-healthcheck: &db-healthcheck
   test: ['CMD-SHELL', 'pg_isready -U postgres']
@@ -46,7 +57,7 @@ services:
     healthcheck: *db-healthcheck
 
   api-testnet:
-    <<: *app-build
+    <<: [*app-build, *security]
     ports:
       - '3000:3000'
     environment:
@@ -58,13 +69,14 @@ services:
       TESTNET_PASSPHRASE: "Test SDF Network ; September 2015"
       NODE_ENV: production
       PORT: 3000
+      npm_config_cache: /tmp/.npm
     depends_on:
       db-testnet:
         condition: service_healthy
     command: sh -c "npx prisma migrate deploy && node dist/index.js"
 
   indexer-testnet:
-    <<: *app-build
+    <<: [*app-build, *security]
     environment:
       STELLAR_NETWORK: testnet
       TESTNET_DATABASE_URL: postgresql://postgres:password@db-testnet:5432/soroban_testnet
@@ -96,7 +108,7 @@ services:
     profiles: [mainnet]
 
   api-mainnet:
-    <<: *app-build
+    <<: [*app-build, *security]
     ports:
       - '3001:3001'
     environment:
@@ -109,6 +121,7 @@ services:
       MAINNET_PASSPHRASE: "Public Global Stellar Network ; September 2015"
       NODE_ENV: production
       PORT: 3001
+      npm_config_cache: /tmp/.npm
     depends_on:
       db-mainnet:
         condition: service_healthy
@@ -116,7 +129,7 @@ services:
     profiles: [mainnet]
 
   indexer-mainnet:
-    <<: *app-build
+    <<: [*app-build, *security]
     environment:
       STELLAR_NETWORK: mainnet
       MAINNET_DATABASE_URL: postgresql://postgres:password@db-mainnet:5432/soroban_mainnet
@@ -149,7 +162,7 @@ services:
     profiles: [devnet]
 
   api-devnet:
-    <<: *app-build
+    <<: [*app-build, *security]
     ports:
       - '3002:3002'
     environment:
@@ -161,6 +174,7 @@ services:
       DEVNET_PASSPHRASE: "Standalone Network ; February 2017"
       NODE_ENV: development
       PORT: 3002
+      npm_config_cache: /tmp/.npm
     depends_on:
       db-devnet:
         condition: service_healthy
@@ -168,7 +182,7 @@ services:
     profiles: [devnet]
 
   indexer-devnet:
-    <<: *app-build
+    <<: [*app-build, *security]
     environment:
       STELLAR_NETWORK: devnet
       DEVNET_DATABASE_URL: postgresql://postgres:password@db-devnet:5432/soroban_devnet

@@ -77,3 +77,7 @@ router.use('/query', nlqRouter);
 
 // ── Historical Data Market (#327) ─────────────────────────────────────────────
 router.use('/data-market', dataMarketRouter);
+
+// ── NFT Collection Discovery, Rarity Engine, Marketplace Analytics & Portfolio ──
+import { nftRouter } from './nft';
+router.use('/nft', nftRouter);
