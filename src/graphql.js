@@ -1,5 +1,5 @@
 /**
- * Issue #139 — GraphQL Interface for Contract Events
+ * GraphQL Interface for Contract Events
  *
  * Mounts a /graphql endpoint on the Express app using a minimal hand-rolled
  * resolver so no heavy framework dependency is required.  The schema supports

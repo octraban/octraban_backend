@@ -1,5 +1,5 @@
 /**
- * Live Event Streaming via WebSockets  (Issue #39)
+ * Live Event Streaming via WebSockets 
  *
  * Uses Node's built-in EventEmitter as the pub/sub bus (no Redis required).
  * The HTTP server is upgraded to handle WebSocket connections via the `ws`

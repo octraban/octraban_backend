@@ -104,7 +104,7 @@ describe("db integration (mock pool)", () => {
         );
       },
 
-      async getContractTransactions(contractId, { function_name, start_ledger, end_ledger, page = 1, limit = 25 } = {}) {
+      async getContractTransactions(contractId, { function_name, start_ledger: _start_ledger, end_ledger: _end_ledger, page = 1, limit = 25 } = {}) {
         const params = [contractId];
         const conditions = ["contract_id = $1"];
         if (function_name) { params.push(function_name); conditions.push(`function = $${params.length}`); }

@@ -1,5 +1,5 @@
 /**
- * Bloat risk detection — Issue #50
+ * Bloat risk detection —
  *
  * Counts new persistent ContractDataEntry keys created by a single contract
  * invocation within one block. If the count exceeds BLOAT_THRESHOLD the

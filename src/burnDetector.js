@@ -34,14 +34,14 @@ export async function runBurnDetection() {
     const minLedger = maxLedger - WINDOW_LEDGERS;
 
     // Fetch burn and mint events in the window
-    const { rows: burnRows } = await db._query(
+    const { rows: burnRows } = await db.query(
       `SELECT contract_id, ledger, raw_data
        FROM events
        WHERE function = 'burn' AND ledger >= $1`,
       [minLedger],
     );
 
-    const { rows: mintRows } = await db._query(
+    const { rows: mintRows } = await db.query(
       `SELECT contract_id, SUM((raw_data::jsonb->>'amount')::NUMERIC)::TEXT AS total_minted
        FROM events
        WHERE function IN ('mint') AND ledger >= $1

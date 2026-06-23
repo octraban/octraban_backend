@@ -15,7 +15,6 @@ import { verifyAbi } from "./verify_abi.js";
 import { getMetrics } from "./rpcMetrics.js";
 import { getRpcNodeStatus } from "./rpcMultiNode.js";
 import {
-  cacheAside,
   cacheInvalidate,
   cacheGet,
   cacheSet,
@@ -28,6 +27,7 @@ import {
 import { recordAccess, schedulePrefetch } from "./prefetchEngine.js";
 import { attachGraphQL } from "./graphql.js";
 import { runAllChecks } from "./doctor-lib.js";
+import { registry } from "./metrics.js";
 import pg from "pg";
 import { getBurnAlerts } from "./burnDetector.js";
 import { formatAmount } from "./formatAmount.js";
@@ -155,6 +155,17 @@ export function startApi() {
   // ── Health check (used by Docker Compose) ──────────────────────────────
   app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
+  // ── Prometheus metrics ────────────────────────────────────────────────────
+  // Scraped by Prometheus or any OpenMetrics-compatible collector.
+  app.get("/metrics", async (_req, res) => {
+    try {
+      res.set("Content-Type", registry.contentType);
+      res.end(await registry.metrics());
+    } catch (e) {
+      res.status(500).end(e.message);
+    }
+  });
+
   // ── Existing endpoints ──────────────────────────────────────────────────────
 
   // GET /api/events?contract=&fn=&page=
@@ -191,6 +202,39 @@ export function startApi() {
     },
   );
 
+  // GET /api/search?q=&limit=
+  app.get(
+    "/api/search",
+    makeCache("search", (req) => {
+      const { q = "", limit = "10" } = req.query;
+      return `search:${String(q).toLowerCase()}:${limit}`;
+    }),
+    async (req, res) => {
+      try {
+        const query = typeof req.query.q === "string" ? req.query.q : "";
+        const limit = Number(req.query.limit) || 10;
+        if (!query.trim()) return res.status(400).json({ error: "Missing search query" });
+
+        const [contracts, events, wallets, suggestions] = await Promise.all([
+          db.searchContracts(query, { limit }),
+          db.searchEvents(query, { limit }),
+          db.searchWallets(query, { limit }),
+          db.searchSuggestions(query, { limit }),
+        ]);
+
+        res.json({
+          query,
+          contracts,
+          events,
+          wallets,
+          suggestions,
+        });
+      } catch (e) {
+        res.status(500).json({ error: e.message });
+      }
+    },
+  );
+
   // GET /api/events/:seq
   app.get(
     "/api/events/:seq",
@@ -206,7 +250,7 @@ export function startApi() {
     },
   );
 
-  // Issue #164 — GET /api/events/:seq/zk-costs
+  GET /api/events/:seq/zk-costs
   // Returns the ZK host function call list and cost delta for a single event.
   app.get("/api/events/:seq/zk-costs", async (req, res) => {
     try {
@@ -220,7 +264,7 @@ export function startApi() {
     }
   });
 
-  // Issue #118 — Transaction status server-sent events endpoint
+  Transaction status server-sent events endpoint
   app.get("/api/transactions/status", async (req, res) => {
     try {
       const txHashes = parseTxHashes(req.query.txHashes);
@@ -270,7 +314,7 @@ export function startApi() {
     }
   });
 
-  // Issue #118 — single-transaction SSE stream (compat for frontend hook)
+  single-transaction SSE stream (compat for frontend hook)
   app.get("/api/transactions/:hash/status/stream", async (req, res) => {
     try {
       const txHash = req.params.hash;
@@ -310,7 +354,7 @@ export function startApi() {
     }
   });
 
-  // Issue #118 — Transaction status polling endpoint
+  Transaction status polling endpoint
   app.get("/api/transactions/:hash/status", async (req, res) => {
     try {
       const txHash = req.params.hash;
@@ -343,11 +387,7 @@ export function startApi() {
     makeCache("contracts_single", (req) => `contracts:single:${req.params.id}`),
     async (req, res) => {
       try {
-        const meta = await cacheAside(
-          `contracts:single:${req.params.id}`,
-          () => db.getContractMeta(req.params.id),
-          "contracts_single",
-        );
+        const meta = await db.getContractMeta(req.params.id);
         if (!meta) return res.status(404).json({ error: "Not found" });
 
         const sourceFiles = Array.isArray(meta.source_files)
@@ -396,6 +436,20 @@ export function startApi() {
       };
       res.setHeader("Content-Disposition", `attachment; filename="${req.params.id}.abi.json"`);
       res.json(abi);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/contracts/:id/spec-full — fetch full on-chain spec including custom types
+  app.get("/api/contracts/:id/spec-full", async (req, res) => {
+    try {
+      const { fetchContractSpecFull } = await import("./verify_abi.js");
+      const spec = await fetchContractSpecFull(req.params.id);
+      if (spec === null) {
+        return res.status(404).json({ error: "Contract not found or has no WASM spec" });
+      }
+      res.json(spec);
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
@@ -529,6 +583,58 @@ export function startApi() {
     }
   });
 
+  // ── Sandbox CRUD (persisted via DB) ─────────────────────────────────────────
+  app.post("/api/sandbox", async (req, res) => {
+    try {
+      const { sandboxId, templateId, files, metadata } = req.body;
+      if (!sandboxId || !templateId) return res.status(400).json({ error: "Missing sandboxId or templateId" });
+      await db.query(
+        `INSERT INTO sandboxes (sandbox_id, template_id, files, metadata)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (sandbox_id) DO UPDATE SET files=$3, metadata=$4, updated_at=NOW()`,
+        [sandboxId, templateId, JSON.stringify(files), JSON.stringify(metadata ?? {})],
+      );
+      res.status(201).json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/sandbox/:id", async (req, res) => {
+    try {
+      const { rows } = await db.query("SELECT * FROM sandboxes WHERE sandbox_id = $1", [req.params.id]);
+      if (!rows[0]) return res.status(404).json({ error: "Not found" });
+      res.json(rows[0]);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/sandbox/:id", async (req, res) => {
+    try {
+      await db.query("DELETE FROM sandboxes WHERE sandbox_id = $1", [req.params.id]);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/sandboxes", async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit) || 20, 100);
+      const offset = Number(req.query.offset) || 0;
+      const { rows } = await db.query(
+        `SELECT sandbox_id, template_id, metadata, created_at, updated_at
+         FROM sandboxes ORDER BY updated_at DESC LIMIT $1 OFFSET $2`,
+        [limit, offset],
+      );
+      const { rows: countRows } = await db.query("SELECT COUNT(*)::INT AS total FROM sandboxes");
+      res.json({ sandboxes: rows, total: countRows[0].total });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // POST /api/sandbox/simulate — accepts a raw XDR TransactionEnvelope, simulates it directly
   app.post("/api/sandbox/simulate", writeLimiter, requireApiKey, async (req, res) => {
     try {
@@ -624,7 +730,7 @@ export function startApi() {
     }
   });
 
-  // ── Issue #34: cursor-based pagination endpoint ────────────────────────────
+  // ── cursor-based pagination endpoint ────────────────────────────
   // GET /api/v1/events?contract=&fn=&type=&after=&limit=
   // `after` is the opaque seq cursor returned as `next_cursor` in the previous page.
   app.get("/api/v1/events", async (req, res) => {
@@ -642,7 +748,7 @@ export function startApi() {
     }
   });
 
-  // ── Issue #38: Contract transaction history ─────────────────────────────────
+  // ── Contract transaction history ─────────────────────────────────
   // GET /api/v1/contracts/:id/transactions?function_name=&start_ledger=&end_ledger=&page=&limit=
   app.get("/api/v1/contracts/:id/transactions", async (req, res) => {
     try {
@@ -670,7 +776,7 @@ export function startApi() {
     }
   });
 
-  // ── GET /api/contracts/:id/migration-status — Issue #84: SEP-49 migration tracker
+  // ── GET /api/contracts/:id/migration-status — SEP-49 migration tracker
   app.get("/api/contracts/:id/migration-status", async (req, res) => {
     try {
       const status = await db.getMigrationStatus(req.params.id);
@@ -680,7 +786,7 @@ export function startApi() {
     }
   });
 
-  // ── Issue #86: Circuit breaker status endpoint ──────────────────────────────
+  // ── Circuit breaker status endpoint ──────────────────────────────
   // GET /api/contracts/:id/circuit-breaker — detect and return pause status
   app.get("/api/contracts/:id/circuit-breaker", async (req, res) => {
     try {
@@ -691,7 +797,7 @@ export function startApi() {
     }
   });
 
-  // ── Issue #81: RWA token activity endpoint ──────────────────────────────────
+  // ── RWA token activity endpoint ──────────────────────────────────
   // GET /api/contracts/:id/rwa-metadata — get RWA-specific metadata
   app.get("/api/contracts/:id/rwa-metadata", async (req, res) => {
     try {
@@ -733,7 +839,7 @@ export function startApi() {
     }
   });
 
-  // ── Issue #115: RPC node performance metrics ────────────────────────────────
+  // ── RPC node performance metrics ────────────────────────────────
   // GET /api/rpc-metrics — latency history, uptime, error rate per node
   app.get("/api/rpc-metrics", (_req, res) => {
     try {
@@ -752,7 +858,7 @@ export function startApi() {
     }
   });
 
-  // ── Issue #135: Multi-Signature Source Code Verification ───────────────────
+  // ── Multi-Signature Source Code Verification ───────────────────
 
   // POST /api/contracts/:id/source-verifications
   // Body: { wasm_hash, signer, signature, compiler_hash }
@@ -787,7 +893,7 @@ export function startApi() {
     }
   });
 
-  // ── Issue #140: Storage State-Diff Timeline ────────────────────────────────
+  // ── Storage State-Diff Timeline ────────────────────────────────
 
   // GET /api/contracts/:id/state-diffs?key=&limit=
   app.get("/api/contracts/:id/state-diffs", async (req, res) => {
@@ -802,7 +908,7 @@ export function startApi() {
     }
   });
 
-  // ── Issue #165: Live TTL status for contract instance, code, and persistent storage ──
+  // ── Live TTL status for contract instance, code, and persistent storage ──
   // GET /api/contracts/:id/ttl
   // Queries the Soroban RPC getLedgerEntries for the contract's instance and code
   // ledger keys, then returns expiration ledgers alongside the current ledger height.
@@ -858,7 +964,16 @@ export function startApi() {
   });
 
   // ── Setup Wizard & Diagnostics Endpoints ────────────────────────────────────
-  app.get("/api/setup/doctor", async (req, res) => {
+  // These endpoints are disabled in production (NODE_ENV=production) because
+  // they can write .env files and run migrations with no additional auth.
+  const blockInProduction = (_req, res, next) => {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(403).json({ error: "Not available in production" });
+    }
+    next();
+  };
+
+  app.get("/api/setup/doctor", blockInProduction, async (req, res) => {
     try {
       const report = await runAllChecks();
       res.json(report);
@@ -867,7 +982,7 @@ export function startApi() {
     }
   });
 
-  app.post("/api/setup/test-db", async (req, res) => {
+  app.post("/api/setup/test-db", blockInProduction, async (req, res) => {
     try {
       const { databaseUrl } = req.body;
       if (!databaseUrl) return res.status(400).json({ error: "Missing databaseUrl" });
@@ -884,7 +999,7 @@ export function startApi() {
     }
   });
 
-  app.post("/api/setup/save-config", async (req, res) => {
+  app.post("/api/setup/save-config", blockInProduction, async (req, res) => {
     try {
       const { sorobanRpcUrl, databaseUrl, pollMs } = req.body;
       const envPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.env");
@@ -892,13 +1007,17 @@ export function startApi() {
       if (fs.existsSync(envPath)) {
         envContent = fs.readFileSync(envPath, "utf8");
       }
+      // Shell-escape a value so it is safe to embed in a KEY=value .env line.
+      // Wraps in single-quotes and escapes any embedded single-quote characters.
+      const shellEscape = (val) => `'${String(val).replace(/'/g, "'\\''")}'`;
       const updateEnvVar = (key, val) => {
         if (!val) return;
+        const escaped = shellEscape(val);
         const regex = new RegExp(`^#?\\s*${key}=.*$`, "m");
         if (regex.test(envContent)) {
-          envContent = envContent.replace(regex, `${key}=${val}`);
+          envContent = envContent.replace(regex, `${key}=${escaped}`);
         } else {
-          envContent += `\n${key}=${val}`;
+          envContent += `\n${key}=${escaped}`;
         }
       };
       updateEnvVar("SOROBAN_RPC_URL", sorobanRpcUrl);
@@ -906,7 +1025,7 @@ export function startApi() {
       updateEnvVar("POLL_MS", pollMs);
       fs.writeFileSync(envPath, envContent, "utf8");
 
-      // Update current process environment
+      // Update current process environment (unescaped raw values)
       if (sorobanRpcUrl) process.env.SOROBAN_RPC_URL = sorobanRpcUrl;
       if (databaseUrl) process.env.DATABASE_URL = databaseUrl;
       if (pollMs) process.env.POLL_MS = pollMs;
@@ -917,7 +1036,7 @@ export function startApi() {
     }
   });
 
-  app.post("/api/setup/db-init", async (req, res) => {
+  app.post("/api/setup/db-init", blockInProduction, async (req, res) => {
     try {
       // 1. Run migrations
       await db.init();
@@ -932,7 +1051,7 @@ export function startApi() {
     }
   });
 
-  // ── Issue #215: CSV/JSON export endpoints ─────────────────────────────────
+  // ── CSV/JSON export endpoints ─────────────────────────────────
 
   function rowsToCsv(rows, columns) {
     if (!rows.length) return columns.join(",") + "\n";
@@ -1045,10 +1164,10 @@ export function startApi() {
     },
   );
 
-  // ── Issue #139: GraphQL endpoint ───────────────────────────────────────────
+  // ── GraphQL endpoint ───────────────────────────────────────────
   attachGraphQL(app);
 
-  // ── Issue #211: Batch Multi-Call Endpoints ───────────────────────────────────────
+  // ── Batch Multi-Call Endpoints ───────────────────────────────────────
 
   // POST /api/batch/simulate — simulate full batch with per-call results
   app.post("/api/batch/simulate", async (req, res) => {

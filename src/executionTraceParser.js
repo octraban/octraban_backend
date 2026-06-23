@@ -1,5 +1,5 @@
 /**
- * Issue #174 — WASM Execution Call Stack Reconstructor
+ * WASM Execution Call Stack Reconstructor
  *
  * Reconstructs a chronological execution tree from a Soroban transaction's
  * diagnostic events, host function logs, and auth stack transitions.

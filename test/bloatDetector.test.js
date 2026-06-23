@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { xdr, StrKey } from "@stellar/stellar-sdk";
+import { StrKey } from "@stellar/stellar-sdk";
 import { countNewPersistentKeys, isHighBloatRisk, BLOAT_THRESHOLD } from "../src/bloatDetector.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -8,62 +8,6 @@ import { countNewPersistentKeys, isHighBloatRisk, BLOAT_THRESHOLD } from "../src
 const CONTRACT_BYTES = Buffer.alloc(32, 0xab);
 const CONTRACT_ID    = StrKey.encodeContract(CONTRACT_BYTES);
 const OTHER_BYTES    = Buffer.alloc(32, 0xcd);
-
-/**
- * Build a minimal fake txMeta v3 sorobanMeta with `n` CREATED persistent
- * ContractDataEntry changes for `contractBytes`.
- */
-function makeTxMeta(n, contractBytes = CONTRACT_BYTES, durability = "persistent") {
-  const changes = Array.from({ length: n }, (_, i) =>
-    new xdr.LedgerEntryChange(
-      "ledgerEntryCreated",
-      new xdr.LedgerEntry({
-        lastModifiedLedgerSeq: 1,
-        ext: new xdr.LedgerEntryExt(0),
-        data: xdr.LedgerEntryData.contractData(
-          new xdr.ContractDataEntry({
-            ext: new xdr.ExtensionPoint(0),
-            contract: xdr.ScAddress.scAddressTypeContract(contractBytes),
-            key: xdr.ScVal.scvU32(i),
-            durability: durability === "persistent"
-              ? xdr.ContractDataDurability.persistent()
-              : xdr.ContractDataDurability.temporary(),
-            val: xdr.ScVal.scvVoid(),
-          })
-        ),
-      })
-    )
-  );
-
-  // Build a TransactionMeta v3 with sorobanMeta carrying the changes
-  const sorobanMeta = new xdr.SorobanTransactionMeta({
-    ext: new xdr.SorobanTransactionMetaExt(0),
-    events: [],
-    returnValue: xdr.ScVal.scvVoid(),
-    changedEntries: changes,
-  });
-
-  const txMeta = xdr.TransactionMeta.v3(
-    new xdr.TransactionMetaV3({
-      ext: new xdr.ExtensionPoint(0),
-      txChangesBefore: [],
-      operations: [],
-      txChangesAfter: [],
-      sorobanMeta,
-    })
-  );
-
-  // Return a fake ev object whose txMeta mirrors the XDR accessor pattern
-  return {
-    v3: () => ({
-      sorobanMeta: () => ({
-        changedEntries: () => changes.map(c => ({
-          created: () => c.value(),
-        })),
-      }),
-    }),
-  };
-}
 
 /**
  * Build a fake RPC event with the given txMeta accessor object.

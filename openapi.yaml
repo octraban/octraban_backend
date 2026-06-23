@@ -38,6 +38,28 @@ paths:
                 items:
                   $ref: "#/components/schemas/DecodedEvent"
 
+  /api/search:
+    get:
+      summary: Search contracts, events, wallets, and suggestions
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+          description: Text query for contract metadata, event content, or wallet addresses
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        "200":
+          description: Search response grouped by result type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+        "400":
+          description: Missing search query
+
   /api/v1/events:
     get:
       summary: List contract events (cursor pagination)
@@ -153,6 +175,18 @@ paths:
       responses:
         "200":
           description: ABI JSON file
+
+  /api/contracts/{id}/spec-full:
+    get:
+      summary: Get full on-chain contract spec (functions and types)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Full contract spec payload
 
   /api/contracts/{id}/transactions:
     get:
@@ -435,6 +469,53 @@ components:
         upgrade_info: { type: object, nullable: true }
         storage_tiers: { type: object, nullable: true }
 
+    SearchResponse:
+      type: object
+      properties:
+        query: { type: string }
+        contracts:
+          type: array
+          items: { $ref: "#/components/schemas/SearchContract" }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/DecodedEvent" }
+        wallets:
+          type: array
+          items: { $ref: "#/components/schemas/SearchWallet" }
+        suggestions:
+          type: array
+          items: { $ref: "#/components/schemas/SearchSuggestion" }
+
+    SearchContract:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        functions:
+          type: array
+          items: { $ref: "#/components/schemas/FunctionSpec" }
+        event_count: { type: integer }
+
+    SearchWallet:
+      type: object
+      properties:
+        address: { type: string }
+        event_count: { type: integer }
+        first_seen_ledger: { type: integer, nullable: true }
+        last_seen_ledger: { type: integer, nullable: true }
+        contracts:
+          type: array
+          items: { type: string }
+
+    SearchSuggestion:
+      type: object
+      properties:
+        kind: { type: string, enum: [contract, event, wallet] }
+        label: { type: string }
+        route: { type: string }
+        meta: { type: object }
+
     ContractMeta:
       type: object
       properties:
@@ -477,3 +558,214 @@ components:
             properties:
               name: { type: string }
               type: { type: string }
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: >
+        OpenMetrics/Prometheus scrape endpoint. Exposes default Node.js runtime
+        metrics plus application-level counters and histograms (events ingested,
+        decode latency, RPC errors, DB pool gauges).
+      responses:
+        "200":
+          description: Prometheus text exposition format
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/v1/events:
+    get:
+      summary: List events (cursor/keyset pagination)
+      description: >
+        Preferred pagination endpoint. Returns a stable page using keyset
+        (seq-based) pagination that avoids OFFSET degradation on large tables.
+      parameters:
+        - name: contract
+          in: query
+          schema: { type: string }
+          description: Filter by contract ID
+        - name: fn
+          in: query
+          schema: { type: string }
+          description: Filter by function name
+        - name: type
+          in: query
+          schema: { type: string, enum: [soroban, classic] }
+        - name: after
+          in: query
+          schema: { type: integer }
+          description: Opaque seq cursor from previous page's next_cursor field
+        - name: limit
+          in: query
+          schema: { type: integer, default: 25, maximum: 200 }
+      responses:
+        "200":
+          description: Cursor-paginated event page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/DecodedEvent" }
+                  next_cursor:
+                    type: integer
+                    nullable: true
+                    description: Pass as `after` on the next request; null means last page
+
+  /api/batch/simulate:
+    post:
+      summary: Simulate a batch of contract calls
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [calls]
+              properties:
+                calls:
+                  type: array
+                  items: { $ref: "#/components/schemas/BatchCall" }
+                sourceAccount:
+                  type: string
+                networkPassphrase:
+                  type: string
+      responses:
+        "200":
+          description: Per-call simulation results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchSimulateResult"
+
+  /api/batch/estimate-gas:
+    post:
+      summary: Estimate gas for each call in a batch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [calls]
+              properties:
+                calls:
+                  type: array
+                  items: { $ref: "#/components/schemas/BatchCall" }
+                sourceAccount:
+                  type: string
+      responses:
+        "200":
+          description: Per-call gas estimates and totals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  estimates:
+                    type: array
+                    items: { $ref: "#/components/schemas/GasEstimate" }
+                  totalGas:
+                    $ref: "#/components/schemas/GasSummary"
+
+  /api/batch/optimize:
+    post:
+      summary: Reorder batch calls for minimum gas
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [calls]
+              properties:
+                calls:
+                  type: array
+                  items: { $ref: "#/components/schemas/BatchCall" }
+                sourceAccount:
+                  type: string
+      responses:
+        "200":
+          description: Optimized call order and estimated savings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  optimizedOrder:
+                    type: array
+                    items: { type: string }
+                  gasBreakdown:
+                    type: array
+                    items: { $ref: "#/components/schemas/GasEstimate" }
+                  estimatedSavings:
+                    $ref: "#/components/schemas/GasSummary"
+
+  /api/batch/validate:
+    post:
+      summary: Validate a batch for conflicts and errors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [calls]
+              properties:
+                calls:
+                  type: array
+                  items: { $ref: "#/components/schemas/BatchCall" }
+      responses:
+        "200":
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid: { type: boolean }
+                  errors:
+                    type: array
+                    items: { type: string }
+
+    BatchCall:
+      type: object
+      required: [callId, contractId, fn]
+      properties:
+        callId: { type: string }
+        contractId: { type: string }
+        fn: { type: string }
+        args:
+          type: array
+          items: {}
+
+    GasEstimate:
+      type: object
+      properties:
+        callId: { type: string }
+        cpuInsns: { type: integer }
+        memBytes: { type: integer }
+        fee: { type: integer }
+
+    GasSummary:
+      type: object
+      properties:
+        cpuInsns: { type: integer }
+        memBytes: { type: integer }
+        fee: { type: integer }
+
+    BatchSimulateResult:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              callId: { type: string }
+              success: { type: boolean }
+              returnValue: { type: string, nullable: true }
+              error: { type: string, nullable: true }

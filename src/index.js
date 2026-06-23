@@ -1,6 +1,6 @@
 import { SorobanRpc } from "@stellar/stellar-sdk";
 import { startApi } from "./api.js";
-import { db } from "./db.js";
+import { db, pool } from "./db.js";
 import { decode } from "./decoder.js";
 import { startAbiSync } from "./githubAbiSync.js";
 import { withRetry } from "./rpcRetry.js";
@@ -24,6 +24,7 @@ import { startGasGuzzlersWorker } from "./gasGuzzlers.js";
 import { recordLedgerHash } from "./reorgWorker.js";
 import { warmCache } from "./cacheWarming.js";
 import { cacheInvalidate } from "./cacheLayer.js";
+import { eventsIngested, decodeLatency, rpcErrors, updateDbPoolMetrics } from "./metrics.js";
 
 const RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
@@ -33,7 +34,7 @@ const PAGE_LIMIT = 200;
 
 const rpc = new SorobanRpc.Server(RPC_URL, { allowHttp: true });
 
-// ── Issue #33: persisted ledger cursor ────────────────────────────────────────
+// ── persisted ledger cursor ────────────────────────────────────────
 // The cursor is stored in the DB so the daemon resumes correctly after restart.
 let _cursor = 0;
 
@@ -77,7 +78,7 @@ async function indexWasmUploads(txHashes, ledger) {
 
 /**
  * Fetch and process ALL events for a given startLedger, handling pagination
- * boundaries when a ledger contains more than PAGE_LIMIT events (Issue #33).
+ * boundaries when a ledger contains more than PAGE_LIMIT events
  *
  * Returns the latestLedger reported by the RPC node.
  */
@@ -99,10 +100,10 @@ async function indexLedger(ledger) {
     // Flag footprint contention across transactions in this page's events
     scanFootprintContention(res.events);
 
-    // Issue #169: build a per-page txHash → feeBump cache to avoid redundant
+    build a per-page txHash → feeBump cache to avoid redundant
     // getTransaction calls when multiple events share the same transaction.
     const feeBumpCache = new Map();
-    const restoreCache = new Map(); // Issue #167: txHash → archival_info
+    const restoreCache = new Map(); txHash → archival_info
     const uniqueTxHashes = [...new Set(res.events.map((e) => e.txHash).filter(Boolean))];
     await Promise.all(
       uniqueTxHashes.map(async (txHash) => {
@@ -110,7 +111,7 @@ async function indexLedger(ledger) {
           const txResult = await withRetry(() => rpc.getTransaction(txHash));
           if (txResult?.envelopeXdr) {
             feeBumpCache.set(txHash, parseFeeBump(txResult.envelopeXdr));
-            // Issue #167: parse RestoreFootprintOp if present
+            parse RestoreFootprintOp if present
             const restore = parseAndDescribeRestore(txResult.envelopeXdr, txResult.resultMetaXdr ?? null);
             if (restore.isRestoreOp) restoreCache.set(txHash, restore);
           }
@@ -136,7 +137,10 @@ async function indexLedger(ledger) {
     );
 
     for (const ev of res.events) {
+      const decodeStart = Date.now();
       const decoded = await decode(ev);
+      decodeLatency.observe(Date.now() - decodeStart);
+      eventsIngested.inc({ function: decoded.function });
       decoded.is_high_bloat_risk = isHighBloatRisk(ev, ev.contractId);
       decoded.footprint_contention = ev.footprint_contention ?? false;
 
@@ -148,15 +152,15 @@ async function indexLedger(ledger) {
 
       decoded.storage_tiers = classifyStorageWrites(ev);
       decoded.fee_bump = feeBumpCache.get(ev.txHash) ?? null;
-      // Issue #167: attach restoration info when this tx is a RestoreFootprintOp
+      attach restoration info when this tx is a RestoreFootprintOp
       decoded.archival_info = restoreCache.get(ev.txHash) ?? null;
       await db.upsertEvent(decoded);
 
-      // Issue #140: persist per-key state diffs for the timeline
+      persist per-key state diffs for the timeline
       const diffs = extractStateDiffs(ev, decoded);
       if (diffs.length) await db.insertStateDiffs(diffs).catch(() => {});
 
-      // Issue #167: detect evicted ledger keys (TTL → 0) in this transaction
+      detect evicted ledger keys (TTL → 0) in this transaction
       const evictions = detectEvictions(ev, ev.ledger, ev.txHash);
       if (evictions.length) {
         await db
@@ -165,10 +169,10 @@ async function indexLedger(ledger) {
         console.log(`[${ev.ledger}] EVICTED ${evictions.length} key(s) in tx ${ev.txHash}`);
       }
 
-      publish(decoded); // Issue #39 — push to WS clients
+      publish(decoded); push to WS clients
       handleVaultEvent(decoded); // vault ratio update (async, non-blocking)
 
-      // Issue #86: Process circuit breaker events
+      Process circuit breaker events
       const meta = await db.getContractMeta(ev.contractId).catch(() => null);
       if (meta) {
         processCircuitBreakerEvent(decoded, meta).catch((err) =>
@@ -182,7 +186,7 @@ async function indexLedger(ledger) {
     // Scan transactions for UploadContractWasm operations (non-blocking)
     indexWasmUploads(uniqueTxHashes, ledger).catch((err) => console.error("[wasmUpload] batch error:", err.message));
 
-    // Issue #37 — record the latest ledger hash for re-org detection
+    record the latest ledger hash for re-org detection
     if (res.latestLedger && res.latestLedgerHash) {
       await recordLedgerHash(res.latestLedger, res.latestLedgerHash).catch(() => {});
     }
@@ -204,19 +208,21 @@ let shutdown = false;
 async function run() {
   await db.init();
   const server = startApi();
+  // Poll DB pool stats every 15 s for Prometheus gauges
+  setInterval(() => updateDbPoolMetrics(pool), 15_000);
   warmCache().catch((e) => console.warn("[daemon] cache warm failed:", e.message));
   startAbiSync();
   startBurnDetector();
-  startMetricsCollector(); // Issue #115 — RPC latency probes
-  startPruner(); // Issue #116 — daily temporary-storage cleanup
-  startGasGuzzlersWorker(); // Issue #133 — daily gas consumption leaderboard
+  startMetricsCollector(); RPC latency probes
+  startPruner(); daily temporary-storage cleanup
+  startGasGuzzlersWorker(); daily gas consumption leaderboard
 
   // Bootstrap vault indexer: initial ratio snapshot for all registered vaults
   refreshAllVaults().catch(() => {});
   // Periodic ratio refresh every 60s for vaults that accrue without emitting events
   setInterval(() => refreshAllVaults().catch(() => {}), 60_000);
 
-  // Issue #33: resume from the highest indexed ledger so no events are missed
+  resume from the highest indexed ledger so no events are missed
   // after a restart. Fall back to START_LEDGER or (latest - 100) for first run.
   const dbMax = await db.getMaxLedger();
   _cursor =
@@ -231,6 +237,7 @@ async function run() {
       await db.saveCursor(_cursor);
     } catch (err) {
       console.error("[daemon] indexer error:", err.message);
+      rpcErrors.inc({ type: err.code ?? "unknown" });
     }
     if (!shutdown) await new Promise((r) => setTimeout(r, POLL_MS));
   }

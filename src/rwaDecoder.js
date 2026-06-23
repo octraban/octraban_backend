@@ -1,5 +1,5 @@
 /**
- * Issue #81: RWA Token Activity Decoder
+ * RWA Token Activity Decoder
  * Decodes Franklin Templeton Benji and other RWA token actions.
  * Maps enterprise function indicators to clear corporate action labels.
  */

@@ -17,11 +17,13 @@ export default [
         clearTimeout: "readonly",
         setInterval: "readonly",
         clearInterval: "readonly",
+        global: "readonly",
       },
     },
     rules: {
       "no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
       "no-console": "off",
+      "no-empty": ["error", { allowEmptyCatch: true }],
     },
   },
   {

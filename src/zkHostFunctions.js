@@ -1,5 +1,5 @@
 /**
- * Issue #164 — CAP-0080 Protocol 26 ZK host function telemetry.
+ * CAP-0080 Protocol 26 ZK host function telemetry.
  *
  * Detects BN254 and BLS12-381 host function calls from the Soroban execution
  * trace and computes a cost delta showing how much cheaper the native
