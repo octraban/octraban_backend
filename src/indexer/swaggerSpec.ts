@@ -28,6 +28,7 @@ const options: swaggerJsdoc.Options = {
       { name: 'Token Metadata', description: 'Token metadata resolution' },
       { name: 'Protocol', description: 'Protocol version and reconciliation' },
       { name: 'i18n', description: 'Internationalization translation management' },
+      { name: 'Threat Intelligence', description: 'Advisories, review workflow, subscriptions, webhooks, RSS/JSON feeds, analytics, and source management' },
     ],
     components: {
       securitySchemes: {
@@ -955,6 +956,109 @@ const options: swaggerJsdoc.Options = {
             triggerTime: { type: 'string', format: 'date-time', example: '2026-06-19T07:24:26.000Z' },
             delivered: { type: 'boolean', example: false },
             acknowledged: { type: 'boolean', example: false },
+          },
+        },
+        // ── Threat Intelligence Platform (#251) ───────────────────────────────
+        // Full ThreatAdvisory record as stored in DB. mitigations is String? in
+        // the schema even though the Zod input accepts an array.
+        ThreatAdvisory: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', example: 'clz9q1x4t0000s6h2advis001' },
+            title: { type: 'string', example: 'Reentrancy in transfer hook' },
+            description: { type: 'string', nullable: true, example: 'A reentrancy vulnerability allows double-spend via malicious token hook.' },
+            severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low', 'info'], example: 'high' },
+            cvssScore: { type: 'number', nullable: true, example: 8.1 },
+            cveId: { type: 'string', nullable: true, example: 'CVE-2026-1234' },
+            ghsaId: { type: 'string', nullable: true, example: null },
+            affectedContracts: { type: 'array', items: { type: 'string' }, example: ['CALLD5GHXR4QSTKHSWQEK4UVMHM4QHU4KZ5G4SBKWY7C7TXKZ45RJ4M5'] },
+            affectedChains: { type: 'array', items: { type: 'string' }, example: ['stellar'] },
+            mitigations: { type: 'string', nullable: true, description: 'Stored as a serialised value (schema column is String?)', example: null },
+            tags: { type: 'array', items: { type: 'string' }, example: ['reentrancy', 'community'] },
+            sourceId: { type: 'string', nullable: true, example: 'clz9q1x4t0000s6h2vsource1' },
+            status: { type: 'string', enum: ['open', 'under_review', 'resolved', 'disputed'], example: 'open' },
+            publishedAt: { type: 'string', format: 'date-time', nullable: true, example: '2026-06-19T07:24:26.000Z' },
+            externalUrl: { type: 'string', nullable: true, example: null },
+            createdAt: { type: 'string', format: 'date-time', example: '2026-06-19T07:24:26.000Z' },
+            updatedAt: { type: 'string', format: 'date-time', example: '2026-06-19T07:24:27.000Z' },
+          },
+        },
+        // A review decision for a ThreatAdvisory (full ThreatReview record).
+        ThreatReview: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', example: 'clz9q1x4t0000s6h2review001' },
+            advisoryId: { type: 'string', example: 'clz9q1x4t0000s6h2advis001' },
+            role: { type: 'string', nullable: true, enum: ['analyst', 'admin'], example: 'analyst' },
+            decision: { type: 'string', nullable: true, enum: ['approve', 'reject', 'escalate'], example: 'approve' },
+            notes: { type: 'string', nullable: true, example: 'Confirmed exploitable on testnet.' },
+            reviewerKey: { type: 'string', example: 'sk_live_abc123' },
+            createdAt: { type: 'string', format: 'date-time', example: '2026-06-19T07:24:26.000Z' },
+          },
+        },
+        // A community comment on a ThreatAdvisory (full ThreatComment record).
+        ThreatComment: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', example: 'clz9q1x4t0000s6h2comment01' },
+            advisoryId: { type: 'string', example: 'clz9q1x4t0000s6h2advis001' },
+            authorKey: { type: 'string', description: 'X-API-Key header value, or "anonymous" if absent', example: 'anonymous' },
+            body: { type: 'string', example: 'Reproduced on testnet ledger 3168075.' },
+            createdAt: { type: 'string', format: 'date-time', example: '2026-06-19T07:24:26.000Z' },
+          },
+        },
+        // A TIP notification subscription (full TipSubscription record).
+        TipSubscription: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', example: 'clz9q1x4t0000s6h2tipsub01' },
+            channel: { type: 'string', enum: ['email', 'slack', 'discord', 'telegram'], example: 'slack' },
+            target: { type: 'string', description: 'Channel-specific destination (email address, webhook URL, user id, etc.)', example: '#security-alerts' },
+            active: { type: 'boolean', example: true },
+            filters: {
+              type: 'object',
+              nullable: true,
+              description: 'Optional severity/tag filters',
+              properties: {
+                severity: { type: 'array', items: { type: 'string' }, example: ['critical', 'high'] },
+                tags: { type: 'array', items: { type: 'string' }, example: ['reentrancy'] },
+              },
+              example: { severity: ['critical', 'high'] },
+            },
+            createdAt: { type: 'string', format: 'date-time', example: '2026-06-19T07:24:26.000Z' },
+            updatedAt: { type: 'string', format: 'date-time', example: '2026-06-19T07:24:27.000Z' },
+          },
+        },
+        // A registered threat intelligence feed source (full VulnerabilitySource record).
+        VulnerabilitySource: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', example: 'clz9q1x4t0000s6h2vsource1' },
+            name: { type: 'string', description: 'Unique source identifier, e.g. NVD_CVE, GHSA, COMMUNITY', example: 'NVD_CVE' },
+            sourceType: { type: 'string', description: 'Feed type: cve | ghsa | manual | onchain', example: 'cve' },
+            feedUrl: { type: 'string', nullable: true, example: 'https://services.nvd.nist.gov/rest/json/cves/2.0' },
+            lastFetchAt: { type: 'string', format: 'date-time', nullable: true, example: '2026-06-19T07:24:26.000Z' },
+            active: { type: 'boolean', example: true },
+            createdAt: { type: 'string', format: 'date-time', example: '2026-06-19T07:24:26.000Z' },
+            updatedAt: { type: 'string', format: 'date-time', example: '2026-06-19T07:24:27.000Z' },
+          },
+        },
+        // Validation error envelope for routes using .safeParse() + .flatten().
+        // Shape differs from ZodValidationError (which wraps .errors array).
+        ZodFlattenedError: {
+          type: 'object',
+          properties: {
+            error: {
+              type: 'object',
+              properties: {
+                formErrors: { type: 'array', items: { type: 'string' }, example: [] },
+                fieldErrors: {
+                  type: 'object',
+                  additionalProperties: { type: 'array', items: { type: 'string' } },
+                  example: { title: ['String must contain at least 3 character(s)'] },
+                },
+              },
+            },
           },
         },
       },
