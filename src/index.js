@@ -25,6 +25,8 @@ import { recordLedgerHash } from "./reorgWorker.js";
 import { warmCache } from "./cacheWarming.js";
 import { cacheInvalidate } from "./cacheLayer.js";
 import { eventsIngested, decodeLatency, rpcErrors, updateDbPoolMetrics } from "./metrics.js";
+import { startUsageFlushCron, startRetentionCleanupCron } from "./usage/usageTracker.js";
+import { startAuditPartitionCron } from "./audit/auditLogger.js";
 
 const RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
@@ -213,9 +215,14 @@ async function run() {
   warmCache().catch((e) => console.warn("[daemon] cache warm failed:", e.message));
   startAbiSync();
   startBurnDetector();
-  startMetricsCollector(); RPC latency probes
-  startPruner(); daily temporary-storage cleanup
-  startGasGuzzlersWorker(); daily gas consumption leaderboard
+  startMetricsCollector(); // RPC latency probes
+  startPruner(); // daily temporary-storage cleanup
+  startGasGuzzlersWorker(); // daily gas consumption leaderboard
+
+  // ── Auth & Rate Limiting cron jobs ─────────────────────────────────────────
+  startUsageFlushCron();       // flush Redis usage counters → DB every minute
+  startRetentionCleanupCron(); // nightly usage data retention cleanup
+  startAuditPartitionCron();   // monthly audit log partition management
 
   // Bootstrap vault indexer: initial ratio snapshot for all registered vaults
   refreshAllVaults().catch(() => {});
