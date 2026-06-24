@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { prisma } from '../db';
+import { prismaRead as prisma } from '../db';
 import { getLatestLedger } from '../indexer/rpc';
 
 export const authorizationRouter = Router();

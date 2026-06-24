@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { prisma } from '../db';
+import { prismaRead as prisma } from '../db';
 import { ChannelManager } from '../feed/channelManager';
 
 const router = Router();
