@@ -1,307 +1,197 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { prismaWrite as prisma, prismaRead } from '../db';
-import { dispatchEvent } from '../webhooks/dispatcher';
+import { asyncHandler } from '../middleware/asyncHandler';
 
-export const webhookRouter = Router();
+export const webhooksRouter = Router();
 
-// ─── Schemas ─────────────────────────────────────────────────────────────────
-
-const filterRuleSchema = z.object({
-  field: z.string(),
-  operator: z.enum(['eq', 'neq', 'contains', 'startsWith', 'gt', 'lt', 'in']),
-  value: z.unknown(),
+const createSchema = z.object({
+  url: z.string().url(),
+  secret: z.string().min(8).optional(),
+  contractAddress: z.string().optional(),
+  eventType: z.string().optional(),
+  topicSymbol: z.string().optional(),
 });
 
-const retryPolicySchema = z.object({
-  maxAttempts: z.number().int().min(1).max(10).default(3),
-  backoffMs: z.number().int().min(100).default(2000),
-});
+/**
+ * @swagger
+ * /webhooks:
+ *   post:
+ *     summary: Register a webhook subscription
+ *     description: >
+ *       Register a server endpoint to receive on-chain contract event
+ *       notifications. Each delivery is signed with HMAC-SHA256 using the
+ *       provided secret (X-Webhook-Signature header). Failed deliveries are
+ *       retried with exponential backoff (up to 5 attempts).
+ *     tags: [Webhooks]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [url]
+ *             properties:
+ *               url:
+ *                 type: string
+ *                 format: uri
+ *                 description: HTTPS endpoint to receive webhook payloads
+ *               secret:
+ *                 type: string
+ *                 minLength: 8
+ *                 description: Signing secret for HMAC-SHA256 signature verification
+ *               contractAddress:
+ *                 type: string
+ *                 description: Filter to a specific contract (omit for all contracts)
+ *               eventType:
+ *                 type: string
+ *                 description: Filter to a specific event type (e.g. "transfer")
+ *               topicSymbol:
+ *                 type: string
+ *                 description: Filter to a specific topic symbol
+ *     responses:
+ *       201:
+ *         description: Subscription created
+ *       400:
+ *         description: Validation error
+ */
+// POST /webhooks — register a new subscription
+webhooksRouter.post(
+  '/',
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = createSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-const channelConfigSchema = z.discriminatedUnion('channel', [
-  z.object({ channel: z.literal('http'), url: z.string().url(), headers: z.record(z.string()).optional() }),
-  z.object({ channel: z.literal('slack'), webhookUrl: z.string().url() }),
-  z.object({ channel: z.literal('discord'), webhookUrl: z.string().url() }),
-  z.object({ channel: z.literal('telegram'), botToken: z.string(), chatId: z.string() }),
-  z.object({ channel: z.literal('email'), to: z.string().email(), subject: z.string().optional() }),
-  z.object({ channel: z.literal('pagerduty'), routingKey: z.string(), severity: z.enum(['critical', 'error', 'warning', 'info']).default('info') }),
-]);
+    const sub = await prisma.webhookSubscription.create({ data: parsed.data });
+    res.status(201).json(sub);
+  }),
+);
 
-const createEndpointSchema = z.object({
-  name: z.string().min(1).max(200),
-  ownerId: z.string().min(1),
-  channel: z.enum(['http', 'slack', 'discord', 'telegram', 'email', 'pagerduty']).default('http'),
-  channelConfig: z.record(z.unknown()).default({}),
-  secret: z.string().optional(),
-  active: z.boolean().default(true),
-  filterRules: z.array(filterRuleSchema).default([]),
-  transformTemplate: z.record(z.unknown()).optional(),
-  retryPolicy: retryPolicySchema.default({ maxAttempts: 3, backoffMs: 2000 }),
-  rateLimit: z.number().int().min(1).max(10000).default(100),
-});
-
-const workflowStepSchema = z.object({
-  type: z.enum(['delay', 'transform', 'condition', 'deliver']),
-  config: z.record(z.unknown()).default({}),
-});
-
-const createWorkflowSchema = z.object({
-  name: z.string().min(1).max(200),
-  triggerEvent: z.string().min(1),
-  conditions: z.array(filterRuleSchema).default([]),
-  steps: z.array(workflowStepSchema).default([]),
-  active: z.boolean().default(true),
-});
-
-// ─── Endpoints CRUD ───────────────────────────────────────────────────────────
-
-webhookRouter.post('/endpoints', async (req: Request, res: Response) => {
-  const parsed = createEndpointSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-
-  const endpoint = await prisma.webhookEndpoint.create({ data: parsed.data });
-  res.status(201).json(endpoint);
-});
-
-webhookRouter.get('/endpoints', async (req: Request, res: Response) => {
-  const ownerId = req.query.ownerId as string | undefined;
-  const channel = req.query.channel as string | undefined;
-  const page = Math.max(1, parseInt(req.query.page as string) || 1);
-  const limit = Math.min(50, parseInt(req.query.limit as string) || 20);
-
-  const where: Record<string, unknown> = {};
-  if (ownerId) where.ownerId = ownerId;
-  if (channel) where.channel = channel;
-
-  const [endpoints, total] = await Promise.all([
-    prismaRead.webhookEndpoint.findMany({
-      where,
-      include: { _count: { select: { deliveries: true, workflows: true } } },
+/**
+ * @swagger
+ * /webhooks:
+ *   get:
+ *     summary: List webhook subscriptions
+ *     tags: [Webhooks]
+ *     responses:
+ *       200:
+ *         description: List of subscriptions (secrets omitted)
+ */
+// GET /webhooks — list all subscriptions
+webhooksRouter.get(
+  '/',
+  asyncHandler(async (_req: Request, res: Response) => {
+    const subs = await prismaRead.webhookSubscription.findMany({
       orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-    prismaRead.webhookEndpoint.count({ where }),
-  ]);
+      select: {
+        id: true,
+        url: true,
+        contractAddress: true,
+        eventType: true,
+        topicSymbol: true,
+        active: true,
+        createdAt: true,
+      },
+    });
+    res.json({ data: subs });
+  }),
+);
 
-  res.json({ data: endpoints, total, page, pages: Math.ceil(total / limit) });
+/**
+ * @swagger
+ * /webhooks/{id}:
+ *   delete:
+ *     summary: Delete a webhook subscription
+ *     tags: [Webhooks]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       204:
+ *         description: Deleted
+ *       404:
+ *         description: Not found
+ */
+// DELETE /webhooks/:id — remove a subscription
+webhooksRouter.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    await prisma.webhookSubscription.delete({ where: { id: req.params.id } });
+    res.status(204).end();
+  } catch {
+    res.status(404).json({ error: 'Subscription not found' });
+  }
 });
 
-webhookRouter.get('/endpoints/:id', async (req: Request, res: Response) => {
-  const endpoint = await prismaRead.webhookEndpoint.findUnique({
-    where: { id: req.params.id },
-    include: {
-      workflows: true,
-      _count: { select: { deliveries: true } },
-    },
-  });
-  if (!endpoint) return res.status(404).json({ error: 'Not found' });
-  res.json(endpoint);
-});
+/**
+ * @swagger
+ * /webhooks/{id}:
+ *   patch:
+ *     summary: Enable or disable a webhook subscription
+ *     tags: [Webhooks]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [active]
+ *             properties:
+ *               active: { type: boolean }
+ *     responses:
+ *       200:
+ *         description: Updated subscription
+ *       404:
+ *         description: Not found
+ */
+// PATCH /webhooks/:id — enable / disable
+webhooksRouter.patch(
+  '/:id',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { active } = z.object({ active: z.boolean() }).parse(req.body);
+    try {
+      const sub = await prisma.webhookSubscription.update({
+        where: { id: req.params.id },
+        data: { active },
+      });
+      res.json(sub);
+    } catch {
+      res.status(404).json({ error: 'Subscription not found' });
+    }
+  }),
+);
 
-webhookRouter.put('/endpoints/:id', async (req: Request, res: Response) => {
-  const parsed = createEndpointSchema.partial().omit({ ownerId: true }).safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-
-  const existing = await prismaRead.webhookEndpoint.findUnique({ where: { id: req.params.id } });
-  if (!existing) return res.status(404).json({ error: 'Not found' });
-
-  const endpoint = await prisma.webhookEndpoint.update({
-    where: { id: req.params.id },
-    data: parsed.data,
-  });
-  res.json(endpoint);
-});
-
-webhookRouter.delete('/endpoints/:id', async (req: Request, res: Response) => {
-  const existing = await prismaRead.webhookEndpoint.findUnique({ where: { id: req.params.id } });
-  if (!existing) return res.status(404).json({ error: 'Not found' });
-  await prisma.webhookEndpoint.delete({ where: { id: req.params.id } });
-  res.json({ deleted: true });
-});
-
-// ─── Test Delivery ────────────────────────────────────────────────────────────
-
-webhookRouter.post('/endpoints/:id/test', async (req: Request, res: Response) => {
-  const endpoint = await prismaRead.webhookEndpoint.findUnique({ where: { id: req.params.id } });
-  if (!endpoint) return res.status(404).json({ error: 'Not found' });
-
-  const testEvent = {
-    type: req.body.eventType ?? 'test',
-    contractAddress: req.body.contractAddress ?? 'CTEST000000000000000000000000000000000000000000000000000000',
-    transactionHash: req.body.transactionHash ?? 'test-tx-hash',
-    ledger: req.body.ledger ?? 0,
-    data: req.body.data ?? { message: 'This is a test webhook delivery from Soroban Explorer' },
-  };
-
-  await dispatchEvent(testEvent);
-
-  const delivery = await prismaRead.webhookDelivery.findFirst({
-    where: { endpointId: req.params.id },
-    orderBy: { createdAt: 'desc' },
-  });
-
-  res.json({ dispatched: true, delivery });
-});
-
-// ─── Delivery Logs ────────────────────────────────────────────────────────────
-
-webhookRouter.get('/endpoints/:id/deliveries', async (req: Request, res: Response) => {
-  const endpoint = await prismaRead.webhookEndpoint.findUnique({ where: { id: req.params.id } });
-  if (!endpoint) return res.status(404).json({ error: 'Not found' });
-
-  const status = req.query.status as string | undefined;
-  const eventType = req.query.eventType as string | undefined;
-  const page = Math.max(1, parseInt(req.query.page as string) || 1);
-  const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
-
-  const where: Record<string, unknown> = { endpointId: req.params.id };
-  if (status) where.status = status;
-  if (eventType) where.eventType = eventType;
-
-  const [deliveries, total] = await Promise.all([
-    prismaRead.webhookDelivery.findMany({
-      where,
+/**
+ * @swagger
+ * /webhooks/{id}/deliveries:
+ *   get:
+ *     summary: Get delivery history for a webhook subscription
+ *     description: Returns the last 50 delivery attempts including status, HTTP response, and retry schedule.
+ *     tags: [Webhooks]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Delivery history
+ */
+// GET /webhooks/:id/deliveries — delivery history for a subscription
+webhooksRouter.get(
+  '/:id/deliveries',
+  asyncHandler(async (req: Request, res: Response) => {
+    const deliveries = await prismaRead.webhookDelivery.findMany({
+      where: { subscriptionId: req.params.id },
       orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-    prismaRead.webhookDelivery.count({ where }),
-  ]);
-
-  res.json({ data: deliveries, total, page, pages: Math.ceil(total / limit) });
-});
-
-webhookRouter.post('/endpoints/:id/deliveries/:deliveryId/retry', async (req: Request, res: Response) => {
-  const delivery = await prismaRead.webhookDelivery.findFirst({
-    where: { id: req.params.deliveryId, endpointId: req.params.id },
-  });
-  if (!delivery) return res.status(404).json({ error: 'Not found' });
-
-  await prisma.webhookDelivery.update({
-    where: { id: req.params.deliveryId },
-    data: { status: 'retrying', nextRetryAt: new Date(), attempts: 0 },
-  });
-
-  res.json({ queued: true });
-});
-
-// ─── Workflows ────────────────────────────────────────────────────────────────
-
-webhookRouter.post('/endpoints/:id/workflows', async (req: Request, res: Response) => {
-  const parsed = createWorkflowSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-
-  const endpoint = await prismaRead.webhookEndpoint.findUnique({ where: { id: req.params.id } });
-  if (!endpoint) return res.status(404).json({ error: 'Endpoint not found' });
-
-  const workflow = await prisma.webhookWorkflow.create({
-    data: { endpointId: req.params.id, ...parsed.data },
-  });
-  res.status(201).json(workflow);
-});
-
-webhookRouter.get('/endpoints/:id/workflows', async (req: Request, res: Response) => {
-  const endpoint = await prismaRead.webhookEndpoint.findUnique({ where: { id: req.params.id } });
-  if (!endpoint) return res.status(404).json({ error: 'Not found' });
-
-  const workflows = await prismaRead.webhookWorkflow.findMany({
-    where: { endpointId: req.params.id },
-    orderBy: { createdAt: 'asc' },
-  });
-  res.json(workflows);
-});
-
-webhookRouter.put('/endpoints/:id/workflows/:workflowId', async (req: Request, res: Response) => {
-  const parsed = createWorkflowSchema.partial().safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-
-  const existing = await prismaRead.webhookWorkflow.findFirst({
-    where: { id: req.params.workflowId, endpointId: req.params.id },
-  });
-  if (!existing) return res.status(404).json({ error: 'Not found' });
-
-  const workflow = await prisma.webhookWorkflow.update({
-    where: { id: req.params.workflowId },
-    data: parsed.data,
-  });
-  res.json(workflow);
-});
-
-webhookRouter.delete('/endpoints/:id/workflows/:workflowId', async (req: Request, res: Response) => {
-  const existing = await prismaRead.webhookWorkflow.findFirst({
-    where: { id: req.params.workflowId, endpointId: req.params.id },
-  });
-  if (!existing) return res.status(404).json({ error: 'Not found' });
-  await prisma.webhookWorkflow.delete({ where: { id: req.params.workflowId } });
-  res.json({ deleted: true });
-});
-
-// ─── Channel Schema Reference ─────────────────────────────────────────────────
-
-webhookRouter.get('/channels', (_req: Request, res: Response) => {
-  res.json({
-    channels: [
-      {
-        id: 'http',
-        name: 'HTTP Webhook',
-        configFields: [{ field: 'url', type: 'url', required: true }],
-      },
-      {
-        id: 'slack',
-        name: 'Slack',
-        configFields: [{ field: 'webhookUrl', type: 'url', required: true }],
-      },
-      {
-        id: 'discord',
-        name: 'Discord',
-        configFields: [{ field: 'webhookUrl', type: 'url', required: true }],
-      },
-      {
-        id: 'telegram',
-        name: 'Telegram',
-        configFields: [
-          { field: 'botToken', type: 'string', required: true },
-          { field: 'chatId', type: 'string', required: true },
-        ],
-      },
-      {
-        id: 'email',
-        name: 'Email',
-        configFields: [
-          { field: 'to', type: 'email', required: true },
-          { field: 'subject', type: 'string', required: false },
-        ],
-      },
-      {
-        id: 'pagerduty',
-        name: 'PagerDuty',
-        configFields: [
-          { field: 'routingKey', type: 'string', required: true },
-          { field: 'severity', type: 'enum', values: ['critical', 'error', 'warning', 'info'], required: false },
-        ],
-      },
-    ],
-    filterOperators: ['eq', 'neq', 'contains', 'startsWith', 'gt', 'lt', 'in'],
-    workflowStepTypes: ['delay', 'transform', 'condition', 'deliver'],
-  });
-});
-
-// ─── Delivery Stats ───────────────────────────────────────────────────────────
-
-webhookRouter.get('/endpoints/:id/stats', async (req: Request, res: Response) => {
-  const endpoint = await prismaRead.webhookEndpoint.findUnique({ where: { id: req.params.id } });
-  if (!endpoint) return res.status(404).json({ error: 'Not found' });
-
-  const [total, delivered, failed, retrying, pending] = await Promise.all([
-    prismaRead.webhookDelivery.count({ where: { endpointId: req.params.id } }),
-    prismaRead.webhookDelivery.count({ where: { endpointId: req.params.id, status: 'delivered' } }),
-    prismaRead.webhookDelivery.count({ where: { endpointId: req.params.id, status: 'failed' } }),
-    prismaRead.webhookDelivery.count({ where: { endpointId: req.params.id, status: 'retrying' } }),
-    prismaRead.webhookDelivery.count({ where: { endpointId: req.params.id, status: 'pending' } }),
-  ]);
-
-  const successRate = total > 0 ? ((delivered / total) * 100).toFixed(1) : '0.0';
-
-  res.json({ endpointId: req.params.id, total, delivered, failed, retrying, pending, successRate: `${successRate}%` });
-});
+      take: 50,
+    });
+    res.json({ data: deliveries });
+  }),
+);
