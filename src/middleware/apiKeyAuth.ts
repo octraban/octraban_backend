@@ -54,15 +54,21 @@ function endpointAllowed(path: string, allowedEndpoints: string[]): boolean {
   });
 }
 
-// Cache resolved keys for 60s to avoid DB lookup on every request
+// Cache resolved keys for 60s to avoid DB lookup on every request.
+// Keyed by SHA-256 digest so raw credentials never remain in process memory.
 const keyCache = new Map<string, { ctx: ApiKeyContext | null; expiresAt: number }>();
 const KEY_CACHE_TTL = 60_000;
 
+/** Exposed for testing only — do not call in production code. */
+export function _keyCacheKeys(): string[] {
+  return Array.from(keyCache.keys());
+}
+
 async function resolveApiKey(raw: string): Promise<ApiKeyContext | null> {
-  const cached = keyCache.get(raw);
+  const hash = hashKey(raw);
+  const cached = keyCache.get(hash);
   if (cached && cached.expiresAt > Date.now()) return cached.ctx;
 
-  const hash = hashKey(raw);
   const record = await prismaRead.devApiKey
     .findFirst({
       where: { keyHash: hash, status: 'active' },
@@ -105,7 +111,7 @@ async function resolveApiKey(raw: string): Promise<ApiKeyContext | null> {
       .catch(() => {});
   }
 
-  keyCache.set(raw, { ctx, expiresAt: Date.now() + KEY_CACHE_TTL });
+  keyCache.set(hash, { ctx, expiresAt: Date.now() + KEY_CACHE_TTL });
   return ctx;
 }
 
