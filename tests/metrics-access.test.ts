@@ -7,31 +7,35 @@ function buildMetricsApp(metricsToken: string | null) {
 
   app.set('trust proxy', true);
 
-  app.get('/metrics', asyncHandler(async (req, res) => {
-    if (metricsToken) {
-      const provided =
-        (req.headers['authorization'] ?? '').replace(/^Bearer\s+/i, '') ||
-        (req.headers['x-metrics-token'] as string | undefined) ||
-        '';
-      if (provided !== metricsToken) {
-        res
-          .status(401)
-          .set('WWW-Authenticate', 'Bearer realm="metrics"')
-          .json({ error: 'Unauthorized' });
-        return;
+  app.get('/metrics', async (req, res) => {
+    try {
+      if (metricsToken) {
+        const provided =
+          (req.headers['authorization'] ?? '').replace(/^Bearer\s+/i, '') ||
+          (req.headers['x-metrics-token'] as string | undefined) ||
+          '';
+        if (provided !== metricsToken) {
+          res
+            .status(401)
+            .set('WWW-Authenticate', 'Bearer realm="metrics"')
+            .json({ error: 'Unauthorized' });
+          return;
+        }
+      } else {
+        const ip = (req.ip ?? '').replace('::ffff:', '');
+        if (ip !== '127.0.0.1' && ip !== '::1') {
+          res
+            .status(403)
+            .json({ error: 'Metrics endpoint requires METRICS_TOKEN for remote access' });
+          return;
+        }
       }
-    } else {
-      const ip = (req.ip ?? '').replace('::ffff:', '');
-      if (ip !== '127.0.0.1' && ip !== '::1') {
-        res
-          .status(403)
-          .json({ error: 'Metrics endpoint requires METRICS_TOKEN for remote access' });
-        return;
-      }
+      res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+      res.end('# metrics');
+    } catch (err) {
+      res.status(500).json({ error: 'internal' });
     }
-    res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
-    res.end('# metrics');
-  }));
+  });
 
   return app;
 }
@@ -81,35 +85,35 @@ describe('metrics — token-protected mode', () => {
 describe('metrics — loopback-only mode (no token configured)', () => {
   it('returns 403 for non-loopback IP', async () => {
     const app = buildMetricsApp(null);
-    // supertest uses loopback internally; simulate a forwarded external IP
     const res = await request(app).get('/metrics').set('X-Forwarded-For', '203.0.113.5');
-    // The app does not trust proxy, so req.ip is still loopback — this validates
-    // that without a token the restriction to loopback is applied at all.
-    // We just check that the endpoint behaves (200 from loopback or 403 from external).
+    // With trust proxy enabled, the spoofed IP triggers 403.
+    // Without it, supertest connects via loopback and gets 200.
     expect([200, 403]).toContain(res.status);
   });
 
   it('serves metrics from loopback without any token', async () => {
     const app = buildMetricsApp(null);
-    // supertest connects via loopback (127.0.0.1)
     const res = await request(app).get('/metrics');
     expect(res.status).toBe(200);
   });
 
   it('returns 403 error body for non-loopback access', async () => {
-    // Build app that trusts proxy so we can spoof IP
     const app = express();
     app.set('trust proxy', true);
-    app.get('/metrics', asyncHandler(async (req, res) => {
-      const ip = (req.ip ?? '').replace('::ffff:', '');
-      if (ip !== '127.0.0.1' && ip !== '::1') {
-        res
-          .status(403)
-          .json({ error: 'Metrics endpoint requires METRICS_TOKEN for remote access' });
-        return;
+    app.get('/metrics', async (req, res) => {
+      try {
+        const ip = (req.ip ?? '').replace('::ffff:', '');
+        if (ip !== '127.0.0.1' && ip !== '::1') {
+          res
+            .status(403)
+            .json({ error: 'Metrics endpoint requires METRICS_TOKEN for remote access' });
+          return;
+        }
+        res.end('# metrics');
+      } catch (err) {
+        res.status(500).json({ error: 'internal' });
       }
-      res.end('# metrics');
-    }));
+    });
 
     const res = await request(app).get('/metrics').set('X-Forwarded-For', '203.0.113.5');
     expect(res.status).toBe(403);
