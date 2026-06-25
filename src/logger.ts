@@ -1,17 +1,26 @@
+import { traceStorage } from './middleware/correlation';
+
 type LogLevel = 'info' | 'warn' | 'error' | 'debug';
 
 interface LogEntry {
   level: LogLevel;
   message: string;
   timestamp: string;
+  requestId?: string;
+  traceId?: string;
+  spanId?: string;
   [key: string]: unknown;
 }
 
 function log(level: LogLevel, message: string, meta?: Record<string, unknown>): void {
+  const ctx = traceStorage.getStore();
   const entry: LogEntry = {
     level,
     message,
     timestamp: new Date().toISOString(),
+    ...(ctx?.requestId ? { requestId: ctx.requestId } : {}),
+    ...(ctx?.traceId ? { traceId: ctx.traceId } : {}),
+    ...(ctx?.spanId ? { spanId: ctx.spanId } : {}),
     ...meta,
   };
   const output = JSON.stringify(entry);

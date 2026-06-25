@@ -1,9 +1,13 @@
+// OTel SDK must be initialised before any other imports.
+import './tracer';
+
 import express from 'express';
 import { createServer, Server } from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
+import { correlationMiddleware } from './middleware/correlation';
 import { config } from './config';
 import { router } from './api/router';
 import { prismaWrite as prisma, prismaRead } from './db';
@@ -62,7 +66,12 @@ const app = express();
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
-app.use(morgan('dev'));
+// Correlation IDs first — requestId is needed by morgan token and logger.
+app.use(correlationMiddleware);
+morgan.token('request-id', (req) => (req as express.Request).requestId ?? '-');
+app.use(
+  morgan(':method :url :status :res[content-length] - :response-time ms request-id=:request-id'),
+);
 app.use(express.json());
 app.use(networkRouter);
 // Auth must resolve before rate limiting so tier is known
