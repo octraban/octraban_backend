@@ -81,3 +81,7 @@ router.use('/data-market', dataMarketRouter);
 // ── NFT Collection Discovery, Rarity Engine, Marketplace Analytics & Portfolio ──
 import { nftRouter } from './nft';
 router.use('/nft', nftRouter);
+
+// ── Bridge Tracker ─────────────────────────────────────────────────────────────
+import { bridgeTrackerRouter } from './bridge-tracker';
+router.use('/bridge-tracker', bridgeTrackerRouter);
