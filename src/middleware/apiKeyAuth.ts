@@ -7,6 +7,7 @@
  */
 
 import crypto from 'crypto';
+import * as ipaddr from 'ipaddr.js';
 import type { Request, Response, NextFunction } from 'express';
 import { prismaRead, prismaWrite } from '../db';
 import { logger } from '../logger';
@@ -37,13 +38,18 @@ function hashKey(raw: string): string {
 }
 
 function ipMatchesCidr(ip: string, cidr: string): boolean {
-  // Simple prefix match — production should use a proper CIDR library
-  if (cidr === ip) return true;
-  if (cidr.includes('/')) {
-    const [network] = cidr.split('/');
-    return ip.startsWith(network.split('.').slice(0, 3).join('.'));
+  try {
+    // ipaddr.process normalizes IPv4-mapped IPv6 (::ffff:x.x.x.x) to plain IPv4
+    const addr = ipaddr.process(ip);
+    if (cidr.includes('/')) {
+      const range = ipaddr.parseCIDR(cidr);
+      if (addr.kind() !== range[0].kind()) return false;
+      return addr.match(range);
+    }
+    return ipaddr.process(cidr).toString() === addr.toString();
+  } catch {
+    return false;
   }
-  return false;
 }
 
 function endpointAllowed(path: string, allowedEndpoints: string[]): boolean {
@@ -132,7 +138,7 @@ export async function apiKeyAuth(req: Request, res: Response, next: NextFunction
   }
 
   // IP whitelist check
-  const clientIp = (req.ip ?? '').replace('::ffff:', '');
+  const clientIp = req.ip ?? '';
   if (ctx.allowedIps && ctx.allowedIps.length > 0) {
     if (!ctx.allowedIps.some((cidr) => ipMatchesCidr(clientIp, cidr))) {
       logger.warn('[api-key] IP not in whitelist', { keyId: ctx.id, ip: clientIp });
