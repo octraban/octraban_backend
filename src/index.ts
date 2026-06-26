@@ -43,6 +43,7 @@ import { startArbitrageScanner as startArbitrageScannerImpl } from './indexer/ar
 import { startPoolPriceMonitor as startPoolPriceMonitorImpl } from './indexer/pool-price-monitor';
 import { startFeeAggregator as startFeeAggregatorImpl } from './indexer/fee-aggregator';
 import { attachArbitrageWebSocket as attachArbitrageWebSocketImpl } from './ws/arbitrageBroadcaster';
+import { attachComposabilityWebSocket as attachComposabilityWebSocketImpl } from './ws/composabilityBroadcaster';
 
 let isShuttingDown = false;
 let wssRef: ReturnType<typeof attachWebSocketServer> | null = null;
@@ -50,42 +51,16 @@ let wssRef: ReturnType<typeof attachWebSocketServer> | null = null;
 const SHUTDOWN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_TIMEOUT_MS ?? '30000');
 const STATE_DUMP_PATH = process.env.STATE_DUMP_PATH ?? './data/state';
 
-// Stub functions for features that still depend on unresolved schema models
-function attachComposabilityWebSocket(_server: unknown): void {
-  logger.debug('Composability WebSocket disabled — schema models not yet available');
-}
-function attachArbitrageWebSocket(server: unknown): void {
-  try {
-    attachArbitrageWebSocketImpl(server);
-    logger.debug('Arbitrage WebSocket attached');
-  } catch (err) {
-    logger.warn('Arbitrage WebSocket attachment failed', { error: String(err) });
-  }
-}
-function startPoolPriceMonitor(): void {
-  try {
-    startPoolPriceMonitorImpl();
-    logger.debug('Pool price monitor started');
-  } catch (err) {
-    logger.warn('Pool price monitor failed to start', { error: String(err) });
-  }
-}
-function startArbitrageScanner(): void {
-  try {
-    startArbitrageScannerImpl();
-    logger.debug('Arbitrage scanner started');
-  } catch (err) {
-    logger.warn('Arbitrage scanner failed to start', { error: String(err) });
-  }
-}
-function startFeeAggregator(): void {
-  try {
-    startFeeAggregatorImpl();
-    logger.debug('Fee aggregator started');
-  } catch (err) {
-    logger.warn('Fee aggregator failed to start', { error: String(err) });
-  }
-}
+// Feature flags — set env var to 'true' to enable each optional service.
+const ENABLE_PRIVACY_WS = process.env.ENABLE_PRIVACY_WS === 'true';
+const ENABLE_COMPOSABILITY_WS = process.env.ENABLE_COMPOSABILITY_WS === 'true';
+const ENABLE_ARBITRAGE_WS = process.env.ENABLE_ARBITRAGE_WS === 'true';
+const ENABLE_POOL_MONITOR = process.env.ENABLE_POOL_MONITOR === 'true';
+const ENABLE_ARBITRAGE_SCANNER = process.env.ENABLE_ARBITRAGE_SCANNER === 'true';
+const ENABLE_FEE_AGGREGATOR = process.env.ENABLE_FEE_AGGREGATOR === 'true';
+
+// Tracks which optional services are disabled, for /readyz reporting.
+const disabledServices: string[] = [];
 
 const app = express();
 app.set('trust proxy', config.trustProxy);
@@ -177,7 +152,10 @@ app.get('/ready', (_req, res) => {
     res.status(503).json({ status: 'unavailable', reason: failureReason });
     return;
   }
-  res.json({ status: 'ready' });
+  res.json({
+    status: 'ready',
+    ...(disabledServices.length > 0 && { disabledServices }),
+  });
 });
 
 app.use(errorHandler);
@@ -295,14 +273,76 @@ async function main() {
 
   const httpServer: Server = createServer(app);
   wssRef = attachWebSocketServer(httpServer);
-  attachPrivacyWebSocketReal(httpServer);
-  attachComposabilityWebSocket(httpServer);
-  attachArbitrageWebSocket(httpServer);
+
+  if (ENABLE_PRIVACY_WS) {
+    attachPrivacyWebSocketReal(httpServer);
+    logger.info('Privacy WebSocket attached');
+  } else {
+    disabledServices.push('privacyWS');
+    logger.debug('Privacy WebSocket disabled (ENABLE_PRIVACY_WS not set)');
+  }
+
+  if (ENABLE_COMPOSABILITY_WS) {
+    try {
+      attachComposabilityWebSocketImpl(httpServer);
+      logger.info('Composability WebSocket attached');
+    } catch (err) {
+      logger.warn('Composability WebSocket attachment failed', { error: String(err) });
+    }
+  } else {
+    disabledServices.push('composabilityWS');
+    logger.debug('Composability WebSocket disabled (ENABLE_COMPOSABILITY_WS not set)');
+  }
+
+  if (ENABLE_ARBITRAGE_WS) {
+    try {
+      attachArbitrageWebSocketImpl(httpServer);
+      logger.info('Arbitrage WebSocket attached');
+    } catch (err) {
+      logger.warn('Arbitrage WebSocket attachment failed', { error: String(err) });
+    }
+  } else {
+    disabledServices.push('arbitrageWS');
+    logger.debug('Arbitrage WebSocket disabled (ENABLE_ARBITRAGE_WS not set)');
+  }
 
   if (!process.env.DISABLE_INDEXER) {
-    startPoolPriceMonitor();
-    startArbitrageScanner();
-    startFeeAggregator();
+    if (ENABLE_POOL_MONITOR) {
+      try {
+        startPoolPriceMonitorImpl();
+        logger.info('Pool price monitor started');
+      } catch (err) {
+        logger.warn('Pool price monitor failed to start', { error: String(err) });
+      }
+    } else {
+      disabledServices.push('poolMonitor');
+      logger.debug('Pool price monitor disabled (ENABLE_POOL_MONITOR not set)');
+    }
+
+    if (ENABLE_ARBITRAGE_SCANNER) {
+      try {
+        startArbitrageScannerImpl();
+        logger.info('Arbitrage scanner started');
+      } catch (err) {
+        logger.warn('Arbitrage scanner failed to start', { error: String(err) });
+      }
+    } else {
+      disabledServices.push('arbitrageScanner');
+      logger.debug('Arbitrage scanner disabled (ENABLE_ARBITRAGE_SCANNER not set)');
+    }
+
+    if (ENABLE_FEE_AGGREGATOR) {
+      try {
+        startFeeAggregatorImpl();
+        logger.info('Fee aggregator started');
+      } catch (err) {
+        logger.warn('Fee aggregator failed to start', { error: String(err) });
+      }
+    } else {
+      disabledServices.push('feeAggregator');
+      logger.debug('Fee aggregator disabled (ENABLE_FEE_AGGREGATOR not set)');
+    }
+
     try {
       startBridgeWorker();
     } catch (err) {
