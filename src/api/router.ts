@@ -109,9 +109,17 @@ router.use('/predict', requireApiKey, predictRouter);
 // forecast.ts exposes alternative model-management paths under /forecast/predict/…
 router.use('/forecast', requireApiKey, forecastRouter);
 
+// ── Archival & Storage ────────────────────────────────────────────────────────
+// archiveRouter mounts at /contracts/:address/state inside contractRouter (mergeParams)
+import { storageRouter } from './storage';
+router.use('/storage', storageRouter);
+
 // ── Realtime Feed ─────────────────────────────────────────────────────────────
 import feedRouter from './feed';
 import feedSSERouter from './feedSSE';
-// SSE stream sits under /feed/sse; must be mounted before the broader /feed prefix
+import backfillRouter from './backfill';
+// Specific sub-paths must be mounted before the broad /feed prefix to avoid shadowing
 router.use('/feed/sse', feedSSERouter);
+// backfill POST mutations are protected by operatorAuth inside the router
+router.use('/feed/backfill', backfillRouter);
 router.use('/feed', feedRouter);
