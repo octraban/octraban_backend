@@ -201,7 +201,7 @@ export function startApi() {
   registerAdminRoutes(app);
 
   // ── API Documentation ────────────────────────────────────────────────────────
-  const openApiPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../openapi.yaml");
+  const openApiPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../docs/api/openapi.yaml");
   if (fs.existsSync(openApiPath)) {
     const yaml = fs.readFileSync(openApiPath, "utf8");
     import("yaml")
