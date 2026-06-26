@@ -146,7 +146,35 @@ const writeLimiter = rateLimit({
 export function startApi() {
   const app = express();
   app.use(helmet());
-  app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
+  const isWildcard = process.env.CORS_ORIGINS === '*';
+  const allowedOrigins = isWildcard
+    ? []
+    : process.env.CORS_ORIGINS
+      ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim())
+      : [];
+
+  const corsOptionsDelegate = (req, callback) => {
+    const corsOptions = {
+      methods: ['GET', 'POST', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
+      maxAge: 86400,
+    };
+
+    if (isWildcard) {
+      corsOptions.origin = '*';
+      corsOptions.credentials = false;
+    } else {
+      const origin = req.header('Origin');
+      const isAllowed = origin && allowedOrigins.includes(origin);
+      corsOptions.origin = isAllowed ? true : false;
+      if (isAllowed) {
+        corsOptions.credentials = true;
+      }
+    }
+    callback(null, corsOptions);
+  };
+
+  app.use(cors(corsOptionsDelegate));
 
   // Stripe webhook requires raw body — mount BEFORE express.json()
   app.use("/api/billing", stripeWebhookRouter);
