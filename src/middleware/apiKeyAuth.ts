@@ -21,6 +21,7 @@ export interface ApiKeyContext {
   rateLimitOverride?: number;
   allowedIps?: string[];
   allowedEndpoints?: string[];
+  allowedDomains?: string[];
 }
 
 declare global {
@@ -43,13 +44,52 @@ function ipMatchesCidr(ip: string, cidr: string): boolean {
     const addr = ipaddr.process(ip);
     if (cidr.includes('/')) {
       const range = ipaddr.parseCIDR(cidr);
-      if (addr.kind() !== range[0].kind()) return false;
-      return addr.match(range);
+      if (addr.kind() === 'ipv4' && range[0].kind() === 'ipv4') {
+        return (addr as ipaddr.IPv4).match(range as [ipaddr.IPv4, number]);
+      }
+      if (addr.kind() === 'ipv6' && range[0].kind() === 'ipv6') {
+        return (addr as ipaddr.IPv6).match(range as [ipaddr.IPv6, number]);
+      }
+      return false;
     }
     return ipaddr.process(cidr).toString() === addr.toString();
   } catch {
     return false;
   }
+}
+
+// Extract the effective origin hostname from Origin or Referer headers.
+// Returns null when neither header is present or parseable.
+function extractOriginHost(req: Request): string | null {
+  const origin = req.headers['origin'] as string | undefined;
+  if (origin) {
+    try {
+      return new URL(origin).hostname;
+    } catch {
+      return null;
+    }
+  }
+  const referer = req.headers['referer'] as string | undefined;
+  if (referer) {
+    try {
+      return new URL(referer).hostname;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function domainAllowed(host: string, allowedDomains: string[]): boolean {
+  if (allowedDomains.length === 0) return true;
+  return allowedDomains.some((pattern) => {
+    if (pattern.startsWith('*.')) {
+      // *.example.com matches sub.example.com but NOT bare example.com
+      const suffix = pattern.slice(1); // ".example.com"
+      return host.endsWith(suffix) && host.length > suffix.length;
+    }
+    return host === pattern;
+  });
 }
 
 function endpointAllowed(path: string, allowedEndpoints: string[]): boolean {
@@ -68,6 +108,11 @@ const KEY_CACHE_TTL = 60_000;
 /** Exposed for testing only — do not call in production code. */
 export function _keyCacheKeys(): string[] {
   return Array.from(keyCache.keys());
+}
+
+/** Exposed for testing only — do not call in production code. */
+export function _clearKeyCache(): void {
+  keyCache.clear();
 }
 
 async function resolveApiKey(raw: string): Promise<ApiKeyContext | null> {
@@ -106,6 +151,9 @@ async function resolveApiKey(raw: string): Promise<ApiKeyContext | null> {
       allowedEndpoints: Array.isArray(record.allowedEndpoints)
         ? (record.allowedEndpoints as string[])
         : undefined,
+      allowedDomains: Array.isArray(record.allowedDomains)
+        ? (record.allowedDomains as string[])
+        : undefined,
     };
 
     // Update lastUsedAt + usageCount async (non-blocking)
@@ -143,6 +191,16 @@ export async function apiKeyAuth(req: Request, res: Response, next: NextFunction
     if (!ctx.allowedIps.some((cidr) => ipMatchesCidr(clientIp, cidr))) {
       logger.warn('[api-key] IP not in whitelist', { keyId: ctx.id, ip: clientIp });
       res.status(403).json({ error: 'IP address not permitted for this key' });
+      return;
+    }
+  }
+
+  // Domain whitelist check (Origin then Referer)
+  if (ctx.allowedDomains && ctx.allowedDomains.length > 0) {
+    const host = extractOriginHost(req);
+    if (!host || !domainAllowed(host, ctx.allowedDomains)) {
+      logger.warn('[api-key] domain not in whitelist', { keyId: ctx.id, host });
+      res.status(403).json({ error: 'Origin domain not permitted for this key' });
       return;
     }
   }

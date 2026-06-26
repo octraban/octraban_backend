@@ -56,6 +56,75 @@ interface DiffReport {
   typeChanged: Array<{ model: string; field: string; oldType: string; newType: string }>;
 }
 
+// ─── Built-in JS / Prisma-client names to skip ──────────────────────────────
+
+const BUILTIN_SKIP = new Set([
+  // Array properties & methods
+  'length',
+  'map',
+  'filter',
+  'reduce',
+  'find',
+  'some',
+  'every',
+  'forEach',
+  'slice',
+  'reverse',
+  'flatMap',
+  'push',
+  'pop',
+  'shift',
+  'unshift',
+  'concat',
+  'join',
+  'includes',
+  'indexOf',
+  'lastIndexOf',
+  'sort',
+  'splice',
+  'flat',
+  'reduceRight',
+  'keys',
+  'values',
+  'entries',
+  'fill',
+  'at',
+  'findIndex',
+  // Set / Map
+  'add',
+  'delete',
+  'has',
+  'clear',
+  'size',
+  'get',
+  'set',
+  // Object / prototype
+  'constructor',
+  'toString',
+  'valueOf',
+  'hasOwnProperty',
+  'toJSON',
+  // Promise
+  'then',
+  'catch',
+  'finally',
+  // Prisma client query methods (appear on model accessors)
+  'findMany',
+  'findFirst',
+  'findUnique',
+  'findFirstOrThrow',
+  'findUniqueOrThrow',
+  'create',
+  'createMany',
+  'update',
+  'updateMany',
+  'upsert',
+  'deleteMany',
+  'count',
+  'aggregate',
+  'groupBy',
+]);
+
 // ─── Schema parser ───────────────────────────────────────────────────────────
 
 export function parsePrismaSchema(schemaPath: string): Map<string, PrismaModel> {
@@ -134,7 +203,8 @@ function inferVarModelMap(content: string): Map<string, string> {
   const map = new Map<string, string>();
 
   // prisma.transaction.findMany(...) → variable assigned on the left
-  const callRe = /prisma\.(\w+)\.(findMany|findFirst|findUnique|findFirstOrThrow|findUniqueOrThrow|create|update|upsert|delete)\s*\(/g;
+  const callRe =
+    /prisma\.(\w+)\.(findMany|findFirst|findUnique|findFirstOrThrow|findUniqueOrThrow|create|update|upsert|delete)\s*\(/g;
   let m: RegExpExecArray | null;
 
   while ((m = callRe.exec(content)) !== null) {
@@ -147,30 +217,12 @@ function inferVarModelMap(content: string): Map<string, string> {
     if (simple) map.set(simple[1], modelName);
 
     // const [rows, total] = await Promise.all([...
-    const destruct = before.match(/(?:const|let)\s+\[([^\]]+)\]\s*=\s*await\s+Promise\.all\s*\(\s*\[$/);
+    const destruct = before.match(
+      /(?:const|let)\s+\[([^\]]+)\]\s*=\s*await\s+Promise\.all\s*\(\s*\[$/,
+    );
     if (destruct) {
       const vars = destruct[1].split(',').map((v) => v.trim());
       if (vars[0]) map.set(vars[0], modelName);
-    }
-  }
-
-  // .map((tx) => ...) — conventional name guesses
-  const mapRe = /\.map\s*\(\s*\((\w+)\)\s*=>/g;
-  const guesses: Array<[string, string]> = [
-    ['tx', 'Transaction'],
-    ['transaction', 'Transaction'],
-    ['event', 'Event'],
-    ['ledger', 'Ledger'],
-    ['contract', 'Contract'],
-    ['wallet', 'SmartWallet'],
-  ];
-
-  while ((m = mapRe.exec(content)) !== null) {
-    const varName = m[1];
-    for (const [pat, model] of guesses) {
-      if (!map.has(varName) && (varName === pat || varName.startsWith(pat))) {
-        map.set(varName, model);
-      }
     }
   }
 
@@ -184,7 +236,10 @@ function posToLineCol(content: string, index: number): { line: number; col: numb
   return { line, col: index - lastNl };
 }
 
-function scanFile(filePath: string, models: Map<string, PrismaModel>): { phantoms: Ref[]; valid: number } {
+function scanFile(
+  filePath: string,
+  models: Map<string, PrismaModel>,
+): { phantoms: Ref[]; valid: number } {
   const content = fs.readFileSync(filePath, 'utf-8');
   const lines = content.split('\n');
   const phantoms: Ref[] = [];
@@ -196,12 +251,18 @@ function scanFile(filePath: string, models: Map<string, PrismaModel>): { phantom
     const model = models.get(modelName);
     if (!model) continue;
 
-    // Match <varName>.<identifier> — not followed by ( (method call)
-    const re = new RegExp(`\\b${varName}\\.(\\w+)(?!\\()`, 'g');
+    // Match <varName>.<identifier> with word boundaries to prevent partial matching
+    const re = new RegExp(`\\b${varName}\\.(\\w+)\\b`, 'g');
     let m: RegExpExecArray | null;
 
     while ((m = re.exec(content)) !== null) {
       const fieldName = m[1];
+      // Skip built-in JS/TS properties, methods, and Prisma client methods
+      if (BUILTIN_SKIP.has(fieldName)) continue;
+      // Skip method calls (identifier followed by open paren)
+      const afterMatch = content.slice(m.index + m[0].length);
+      if (/^\s*\(/.test(afterMatch)) continue;
+
       const { line, col } = posToLineCol(content, m.index);
       const snippet = (lines[line - 1] || '').trim();
       const exists = model.fields.some((f) => f.name === fieldName);
@@ -231,10 +292,14 @@ function collectTs(dir: string): string[] {
 
 export function runValidator(schemaPath: string, srcDir: string): ValidationResult {
   const models = parsePrismaSchema(schemaPath);
-  console.log(`📋  Parsed ${models.size} Prisma models from ${path.relative(process.cwd(), schemaPath)}`);
+  console.log(
+    `📋  Parsed ${models.size} Prisma models from ${path.relative(process.cwd(), schemaPath)}`,
+  );
 
   const files = collectTs(srcDir);
-  console.log(`🔍  Scanning ${files.length} TypeScript files in ${path.relative(process.cwd(), srcDir)}/\n`);
+  console.log(
+    `🔍  Scanning ${files.length} TypeScript files in ${path.relative(process.cwd(), srcDir)}/\n`,
+  );
 
   const phantoms: Ref[] = [];
   let validCount = 0;
@@ -250,7 +315,11 @@ export function runValidator(schemaPath: string, srcDir: string): ValidationResu
 
 // ─── Phase 3: Migration impact analysis ──────────────────────────────────────
 
-export function runDiffAnalysis(newSchemaPath: string, oldSchemaPath: string, srcDir: string): DiffReport {
+export function runDiffAnalysis(
+  newSchemaPath: string,
+  oldSchemaPath: string,
+  srcDir: string,
+): DiffReport {
   const newModels = parsePrismaSchema(newSchemaPath);
   const oldModels = parsePrismaSchema(oldSchemaPath);
   const files = collectTs(srcDir);
@@ -294,8 +363,15 @@ export function runDiffAnalysis(newSchemaPath: string, oldSchemaPath: string, sr
           for (const nf of newModel.fields) {
             const ol = oldField.name.toLowerCase();
             const nl = nf.name.toLowerCase();
-            if (nf.name !== oldField.name && (nl.includes(ol.slice(0, 5)) || ol.includes(nl.slice(0, 5)))) {
-              renameCandidates.push({ model: modelName, oldField: oldField.name, likelyNewField: nf.name });
+            if (
+              nf.name !== oldField.name &&
+              (nl.includes(ol.slice(0, 5)) || ol.includes(nl.slice(0, 5)))
+            ) {
+              renameCandidates.push({
+                model: modelName,
+                oldField: oldField.name,
+                likelyNewField: nf.name,
+              });
             }
           }
         }

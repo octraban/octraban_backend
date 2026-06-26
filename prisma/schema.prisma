@@ -8,11 +8,12 @@ datasource db {
 }
 
 model Ledger {
-  sequence     Int      @id
-  hash         String   @unique
-  closeTime    DateTime
-  txCount      Int      @default(0)
-  createdAt    DateTime @default(now())
+  sequence           Int      @id
+  hash               String   @unique
+  previousLedgerHash String?
+  closeTime          DateTime
+  txCount            Int      @default(0)
+  createdAt          DateTime @default(now())
 
   transactions Transaction[]
   events       Event[]
@@ -20,6 +21,7 @@ model Ledger {
   @@index([sequence])
   @@index([closeTime])
 }
+
 
 model Contract {
   id                 String   @id @default(cuid())
@@ -173,6 +175,25 @@ model IndexerState {
   lastLedger Int      @default(0)
   updatedAt  DateTime @updatedAt
 }
+
+model ReorgEvent {
+  id                String   @id @default(cuid())
+  ledgerSequence    Int
+  detectedAt        DateTime @default(now())
+  expectedHash      String
+  actualHash        String
+  previousHash      String
+  rolledBackLedgers Int[]
+}
+
+model LedgerGap {
+  id             String   @id @default(cuid())
+  startSequence  Int
+  endSequence    Int
+  detectedAt     DateTime @default(now())
+  resolved       Boolean  @default(false)
+}
+
 
 model SacMapping {
   id           String   @id @default(cuid())

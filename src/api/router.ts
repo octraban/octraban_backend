@@ -97,29 +97,6 @@ router.use('/nft', nftRouter);
 import { bridgeTrackerRouter } from './bridge-tracker';
 router.use('/bridge-tracker', bridgeTrackerRouter);
 
-// ── CSV Exports (auth required for all export operations) ─────────────────────
-router.use('/exports', requireApiKey, exportsRouter);
-
-// ── Freeze Management — requires API key; per-mutation adminAuth inside router ─
-router.use('/freeze', requireApiKey, freezeRouter);
-
-// ── Predictive Analytics ──────────────────────────────────────────────────────
-// predict/forecast run ML models — compute-heavy; key required
-router.use('/predict', requireApiKey, predictRouter);
-// forecast.ts exposes alternative model-management paths under /forecast/predict/…
-router.use('/forecast', requireApiKey, forecastRouter);
-
-// ── Archival & Storage ────────────────────────────────────────────────────────
-// archiveRouter mounts at /contracts/:address/state inside contractRouter (mergeParams)
-import { storageRouter } from './storage';
-router.use('/storage', storageRouter);
-
-// ── Realtime Feed ─────────────────────────────────────────────────────────────
-import feedRouter from './feed';
-import feedSSERouter from './feedSSE';
-import backfillRouter from './backfill';
-// Specific sub-paths must be mounted before the broad /feed prefix to avoid shadowing
-router.use('/feed/sse', feedSSERouter);
-// backfill POST mutations are protected by operatorAuth inside the router
-router.use('/feed/backfill', backfillRouter);
-router.use('/feed', feedRouter);
+// ── Admin ──────────────────────────────────────────────────────────────────────
+import { adminRouter } from './admin';
+router.use('/admin', adminRouter);

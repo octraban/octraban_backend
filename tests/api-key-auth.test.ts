@@ -13,6 +13,7 @@ import {
   requireApiKey,
   requireKeyTier,
   _keyCacheKeys,
+  _clearKeyCache,
 } from '../src/middleware/apiKeyAuth';
 import { prismaRead } from '../src/db';
 import crypto from 'crypto';
@@ -49,6 +50,7 @@ describe('apiKeyAuth', () => {
     next = vi.fn();
     mockFind.mockResolvedValue(null);
     vi.clearAllMocks();
+    _clearKeyCache();
   });
 
   it('calls next without setting apiKey when no header present', async () => {
@@ -99,6 +101,83 @@ describe('apiKeyAuth', () => {
     const { res, status } = makeRes();
     await apiKeyAuth(req, res, next);
     expect(status).toHaveBeenCalledWith(403);
+  });
+
+  describe('domain whitelist', () => {
+    const DOMAIN_RECORD = { ...VALID_RECORD, allowedDomains: ['example.com'] };
+
+    it('allows request when Origin matches allowedDomains', async () => {
+      mockFind.mockResolvedValue(DOMAIN_RECORD);
+      const req = makeReq({ 'x-api-key': 'valid', origin: 'https://example.com' });
+      const { res } = makeRes();
+      await apiKeyAuth(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('allows request when Referer hostname matches allowedDomains (fallback)', async () => {
+      mockFind.mockResolvedValue(DOMAIN_RECORD);
+      const req = makeReq({
+        'x-api-key': 'valid',
+        referer: 'https://example.com/some/path?q=1',
+      });
+      const { res } = makeRes();
+      await apiKeyAuth(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('returns 403 when Origin does not match allowedDomains', async () => {
+      mockFind.mockResolvedValue(DOMAIN_RECORD);
+      const req = makeReq({ 'x-api-key': 'valid', origin: 'https://evil.com' });
+      const { res, status } = makeRes();
+      await apiKeyAuth(req, res, next);
+      expect(status).toHaveBeenCalledWith(403);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when neither Origin nor Referer header is present', async () => {
+      mockFind.mockResolvedValue(DOMAIN_RECORD);
+      const req = makeReq({ 'x-api-key': 'valid' });
+      const { res, status } = makeRes();
+      await apiKeyAuth(req, res, next);
+      expect(status).toHaveBeenCalledWith(403);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('allows request when no domain restriction is configured', async () => {
+      mockFind.mockResolvedValue(VALID_RECORD); // allowedDomains: null
+      const req = makeReq({ 'x-api-key': 'valid', origin: 'https://any-domain.io' });
+      const { res } = makeRes();
+      await apiKeyAuth(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('wildcard *.example.com matches sub.example.com', async () => {
+      mockFind.mockResolvedValue({ ...VALID_RECORD, allowedDomains: ['*.example.com'] });
+      const req = makeReq({ 'x-api-key': 'valid', origin: 'https://app.example.com' });
+      const { res } = makeRes();
+      await apiKeyAuth(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('wildcard *.example.com does NOT match bare example.com', async () => {
+      mockFind.mockResolvedValue({ ...VALID_RECORD, allowedDomains: ['*.example.com'] });
+      const req = makeReq({ 'x-api-key': 'valid', origin: 'https://example.com' });
+      const { res, status } = makeRes();
+      await apiKeyAuth(req, res, next);
+      expect(status).toHaveBeenCalledWith(403);
+    });
+
+    it('prefers Origin header over Referer when both are present', async () => {
+      mockFind.mockResolvedValue(DOMAIN_RECORD);
+      const req = makeReq({
+        'x-api-key': 'valid',
+        origin: 'https://example.com',
+        referer: 'https://evil.com/page',
+      });
+      const { res } = makeRes();
+      await apiKeyAuth(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
   });
 
   it('returns 403 when endpoint not in whitelist', async () => {
