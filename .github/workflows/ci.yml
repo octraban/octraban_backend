@@ -24,6 +24,27 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate no duplicate keys in package.json
+        run: |
+          node -e "
+            const fs = require('fs');
+            const src = fs.readFileSync('package.json', 'utf8');
+            // Check each of the dependency sections for duplicate keys
+            const sections = ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'];
+            let failed = false;
+            for (const section of sections) {
+              const m = src.match(new RegExp('\"' + section + '\"\\\\s*:\\\\s*\\\\{([^}]+)\\\\}', 's'));
+              if (!m) continue;
+              const seen = new Set();
+              m[1].replace(/\"([^\"]+)\"\s*:/g, (_, k) => {
+                if (seen.has(k)) { console.error('Duplicate key in ' + section + ':', k); failed = true; }
+                seen.add(k);
+              });
+            }
+            if (failed) process.exit(1);
+            console.log('No duplicate dependency keys found.');
+          "
+
       # Pre-existing step — unchanged from original CI
       - name: TypeScript build (src/)
         run: npm run build
