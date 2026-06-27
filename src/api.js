@@ -1,57 +1,82 @@
 import express from "express";
 import { db } from "./db.js";
+import { requestIdMiddleware, createHttpLogger, metricsMiddleware, metricsRegistry, defaultLogger } from "./logger.js";
 
 const PORT = process.env.PORT || 3001;
 
-export function startApi() {
+export function createApi({ logDestination, dbOverride } = {}) {
   const app = express();
-  app.use(express.json());
+  const data = dbOverride ?? db;
 
-  // GET /api/events?contract=&fn=&page=
+  app.use(express.json());
+  app.use(requestIdMiddleware);
+  app.use(createHttpLogger(logDestination));
+  app.use(metricsMiddleware);
+
   app.get("/api/events", async (req, res) => {
     try {
-      const events = await db.getEvents({
+      const events = await data.getEvents({
         contract: req.query.contract,
         fn:       req.query.fn,
         page:     Number(req.query.page) || 1,
       });
       res.json(events);
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
-  // GET /api/events/:seq
   app.get("/api/events/:seq", async (req, res) => {
     try {
-      const ev = await db.getEvent(Number(req.params.seq));
+      const ev = await data.getEvent(Number(req.params.seq));
       if (!ev) return res.status(404).json({ error: "Not found" });
       res.json(ev);
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
-  // GET /api/contracts/:id
   app.get("/api/contracts/:id", async (req, res) => {
     try {
-      const meta = await db.getContractMeta(req.params.id);
+      const meta = await data.getContractMeta(req.params.id);
       if (!meta) return res.status(404).json({ error: "Not found" });
       res.json(meta);
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
-  // POST /api/contracts  — register ABI metadata
   app.post("/api/contracts", async (req, res) => {
     try {
-      await db.upsertContractMeta(req.body);
+      await data.upsertContractMeta(req.body);
       res.status(201).json({ ok: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
-  // GET /api/wallet/:address
   app.get("/api/wallet/:address", async (req, res) => {
     try {
-      const events = await db.getWalletEvents(req.params.address);
+      const events = await data.getWalletEvents(req.params.address);
       res.json(events);
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
-  app.listen(PORT, () => console.log(`API listening on :${PORT}`));
+  app.get("/metrics", async (req, res) => {
+    try {
+      res.setHeader("Content-Type", metricsRegistry.contentType);
+      res.end(await metricsRegistry.metrics());
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  return app;
+}
+
+export function startApi(options = {}) {
+  const app = createApi(options);
+  app.listen(PORT, () => defaultLogger.info({ msg: `API listening on :${PORT}` }));
 }
