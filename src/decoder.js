@@ -114,7 +114,10 @@ export async function decode(ev) {
   }
 
   // Look up registered ABI for richer description
-  const meta = await db.getContractMeta(contractId).catch(() => null);
+  // Use versioned lookup: find the ABI version active at the event's ledger
+  const meta = await db
+    .getContractMetaByLedger(contractId, ev.ledger)
+    .catch(() => null) ?? await db.getContractMeta(contractId).catch(() => null);
   const fnAbi = meta?.functions?.find((f) => f.name === fnName);
 
   // Check if this contract is a registered vault

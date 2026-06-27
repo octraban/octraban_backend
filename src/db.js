@@ -443,9 +443,9 @@ export const db = {
 
   async upsertContractMeta(meta) {
     await pool.query(
-      `INSERT INTO contracts (id, name, description, functions, registered_by, source_files, has_circuit_breaker, is_rwa, rwa_type, version)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       ON CONFLICT (id) DO UPDATE SET name=$2, description=$3, functions=$4, source_files=$6, has_circuit_breaker=$7, is_rwa=$8, rwa_type=$9, version=$10`,
+      `INSERT INTO contracts (id, name, description, functions, registered_by, source_files, has_circuit_breaker, is_rwa, rwa_type, version, abi_version, min_ledger)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       ON CONFLICT (id) DO UPDATE SET name=$2, description=$3, functions=$4, source_files=$6, has_circuit_breaker=$7, is_rwa=$8, rwa_type=$9, version=$10, abi_version=$11, min_ledger=$12`,
       [
         meta.id,
         meta.name,
@@ -457,8 +457,44 @@ export const db = {
         meta.is_rwa ?? false,
         meta.rwa_type ?? null,
         meta.version ?? 1,
+        meta.abi_version ?? 0,
+        meta.min_ledger ?? 0,
       ],
     );
+
+    // Also store in version history if abi_version is provided
+    if (meta.abi_version != null) {
+      await pool.query(
+        `INSERT INTO contract_versions (contract_id, abi_version, min_ledger, name, description, functions, registered_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT DO NOTHING`,
+        [
+          meta.id,
+          meta.abi_version,
+          meta.min_ledger ?? 0,
+          meta.name,
+          meta.description,
+          JSON.stringify(meta.functions),
+          meta.registered_by,
+        ],
+      );
+    }
+  },
+
+  /**
+   * Fetch contract metadata that was active at a given ledger.
+   * Returns the version whose min_ledger <= target_ledger, ordered by
+   * abi_version descending (latest applicable version wins).
+   */
+  async getContractMetaByLedger(contractId, targetLedger) {
+    const { rows } = await pool.query(
+      `SELECT * FROM contract_versions
+       WHERE contract_id = $1 AND min_ledger <= $2
+       ORDER BY abi_version DESC
+       LIMIT 1`,
+      [contractId, targetLedger],
+    );
+    return rows[0] ?? null;
   },
 
   Circuit breaker status tracking
