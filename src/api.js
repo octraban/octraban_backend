@@ -42,16 +42,6 @@ import { registry } from "./metrics.js";
 import pg from "pg";
 import { getBurnAlerts } from "./burnDetector.js";
 import { formatAmount } from "./formatAmount.js";
-import { auditLoggerMiddleware } from "./audit/auditLogger.js";
-import { apiKeyAuthenticator } from "./auth/apiKeyAuth.js";
-import { geoIpRateLimiter } from "./rateLimit/geoIpLimiter.js";
-import { concurrentRequestLimiter } from "./rateLimit/concurrentLimiter.js";
-import { tokenBucketMiddleware } from "./rateLimit/tokenBucket.js";
-import { graphqlComplexityLimiter } from "./rateLimit/graphqlComplexity.js";
-import { abuseDetector } from "./rateLimit/abuseDetector.js";
-import { rateLimitHeaderWriter } from "./rateLimit/headers.js";
-import registerAdminRoutes from "./routes/admin.js";
-import { stripeWebhookRouter } from "./billing/stripeWebhook.js";
 
 const PORT = process.env.PORT || 3001;
 const VERIFY_ON_UPLOAD = process.env.VERIFY_ABI !== "false";
