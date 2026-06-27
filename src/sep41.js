@@ -90,6 +90,26 @@ export function extractApprove(event) {
 }
 
 /**
+ * Extract a SEP-41 clawback event.
+ * Topics: [Symbol("clawback"), admin: Address, from: Address]
+ * Data:   amount (i128 as BigInt)
+ *
+ * @param {{ topics: any[], value: any }} event
+ * @returns {{ type: 'clawback', admin: string, from: string, amount: string } | null}
+ */
+export function extractClawback(event) {
+  const { topics, value } = event;
+  if (topics[0] !== "clawback") return null;
+  const [, admin, from] = topics;
+  return {
+    type: "clawback",
+    admin: String(admin),
+    from: String(from),
+    amount: String(value),
+  };
+}
+
+/**
  * Try all SEP-41 extractors in order and return the first match, or null.
  *
  * @param {{ topics: any[], value: any }} event
@@ -101,6 +121,7 @@ export function extractSep41Event(event) {
     extractMint(event) ??
     extractBurn(event) ??
     extractApprove(event) ??
+    extractClawback(event) ??
     null
   );
 }
