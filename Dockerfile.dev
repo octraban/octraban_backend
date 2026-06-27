@@ -1,18 +1,10 @@
-# Soroban Explorer Indexer — Development Image
-# Uses Node.js built-in --watch for hot-reload.
-FROM node:20-alpine
+FROM node:18-alpine
+
 WORKDIR /app
-
-RUN apk add --no-cache tini wget
-
-# Install deps first (layer caching)
 COPY package*.json ./
-RUN npm ci
+RUN npm install
+RUN npm install -g nodemon
 
-# Copy the rest of the source
 COPY . .
 
-EXPOSE 3001
-
-ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "--watch", "src/index.js"]
+CMD ["nodemon", "src/index.js"]

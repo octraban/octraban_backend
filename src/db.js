@@ -145,7 +145,9 @@ export const db = {
   },
 
   async getEvent(seq) {
-    const { rows } = await pool.query("SELECT * FROM events WHERE seq = $1", [seq]);
+    const sql = "SELECT * FROM events WHERE seq = $1";
+    logQuery(sql, [seq]);
+    const { rows } = await pool.query(sql, [seq]);
     return rows[0] ?? null;
   },
 
@@ -352,7 +354,9 @@ export const db = {
   },
 
   async getContractMeta(id) {
-    const { rows } = await pool.query("SELECT * FROM contracts WHERE id = $1", [id]);
+    const sql = "SELECT * FROM contracts WHERE id = $1";
+    logQuery(sql, [id]);
+    const { rows } = await pool.query(sql, [id]);
     return rows[0] ?? null;
   },
 
