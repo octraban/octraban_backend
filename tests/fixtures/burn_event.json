@@ -1,0 +1,6 @@
+{
+  "name": "burn_event", 
+  "description": "Native XLM unwrap (burn on SAC) event - converts Soroban XLM to Classic XLM",
+  "testnet_source": "Native XLM SAC testnet: CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+  "xdr_template": "ContractEvent with burn fn and address + amount parameters"
+}

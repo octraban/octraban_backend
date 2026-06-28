@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://soroban-smart-block-explorer.github.io/schemas/decodedEvent.schema.json",
+  "title": "Decoded Event",
+  "description": "Schema for decoded Soroban events before insertion into PostgreSQL.",
+  "type": "object",
+  "required": ["contract_id", "ledger", "tx_hash", "function", "description", "raw_topics", "raw_data"],
+  "additionalProperties": false,
+  "properties": {
+    "contract_id": {
+      "type": "string",
+      "description": "Contract identifier.",
+      "minLength": 1
+    },
+    "function": {
+      "type": "string",
+      "description": "Contract function name.",
+      "minLength": 1
+    },
+    "ledger": {
+      "type": "integer",
+      "description": "Ledger sequence number."
+    },
+    "tx_hash": {
+      "type": "string",
+      "description": "Transaction hash.",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable decoded event text.",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "raw_topics": {
+      "type": "array",
+      "description": "Decoded event topics.",
+      "items": { "type": "string" }
+    },
+    "raw_data": {
+      "type": "string",
+      "description": "JSON-encoded raw event data."
+    },
+    "is_high_bloat_risk": {
+      "type": "boolean"
+    },
+    "is_clawback": {
+      "type": "boolean"
+    },
+    "is_resource_limit_exceeded": {
+      "type": "boolean"
+    },
+    "fee_charged": {
+      "type": ["integer", "number"]
+    },
+    "cpu_instructions": {
+      "type": ["integer", "number"]
+    },
+    "mem_bytes": {
+      "type": ["integer", "number"]
+    },
+    "upgrade": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "oldHash": { "type": "string" },
+        "newHash": { "type": "string" }
+      },
+      "required": ["type", "oldHash", "newHash"],
+      "additionalProperties": false
+    },
+    "storage_tiers": {
+      "type": "object"
+    },
+    "ttl_extension": {
+      "type": "object"
+    },
+    "fee_bump": {
+      "type": ["object", "null"]
+    },
+    "archival_info": {
+      "type": ["object", "null"]
+    },
+    "zk_host_calls": {
+      "type": "object"
+    },
+    "heuristic_params": {
+      "type": "array"
+    },
+    "sac_asset": {
+      "type": "string"
+    }
+  }
+}

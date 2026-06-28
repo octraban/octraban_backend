@@ -1,0 +1,6 @@
+{
+  "name": "swap_event",
+  "description": "DEX swap event - swaps tokenA for tokenB",
+  "testnet_source": "Soroban DEX/router contracts on testnet",
+  "xdr_template": "ContractEvent with swap fn and from, amtIn, tokenIn, amtOut, tokenOut parameters"
+}

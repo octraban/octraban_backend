@@ -2,8 +2,36 @@ import { xdr, StrKey, scValToNative } from "@stellar/stellar-sdk";
 
 const EVENT_TYPES = { 0: "system", 1: "contract", 2: "diagnostic" };
 
+/**
+ * Resolve any strkey address string to its canonical form:
+ *  - M... (muxed) → base G... account address
+ *  - G... → unchanged
+ *  - C... → unchanged (contract address)
+ *  - anything else → unchanged
+ *
+ * This prevents broken navigation when users click on M... addresses in
+ * contract events — the explorer routes to /wallet/:address which only
+ * accepts G... keys.
+ *
+ * @param {string} addr
+ * @returns {string}
+ */
+export function resolveAddress(addr) {
+  if (typeof addr !== "string") return addr;
+  if (addr.startsWith("M")) {
+    try {
+      const buf = Buffer.from(StrKey.decodeMed25519PublicKey(addr));
+      return StrKey.encodeEd25519PublicKey(buf.subarray(8));
+    } catch {
+      // not a valid muxed address — return as-is
+    }
+  }
+  return addr;
+}
+
 function toJson(val) {
   if (typeof val === "bigint") return val.toString();
+  if (typeof val === "string") return resolveAddress(val);
   if (Array.isArray(val)) return val.map(toJson);
   if (val !== null && typeof val === "object") {
     return Object.fromEntries(Object.entries(val).map(([k, v]) => [k, toJson(v)]));
@@ -13,6 +41,9 @@ function toJson(val) {
 
 /**
  * Decode a base64 XDR ContractEvent string into a structured JSON object.
+ * Muxed M... addresses in topics/value are resolved to their base G... address.
+ * Contract C... addresses are preserved as-is.
+ *
  * @param {string} base64Xdr
  * @returns {{ contractId: string|null, type: string, topics: any[], value: any }}
  */

@@ -20,27 +20,35 @@ import {
   Address,
 } from "@stellar/stellar-sdk";
 
-const RPC_URL            = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
+const RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
-const DUMMY_SOURCE       = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
+const DUMMY_SOURCE = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
 
 const rpc = new SorobanRpc.Server(RPC_URL, { allowHttp: true });
 
 // Dummy ScVal arguments for each mandatory function signature
-const DUMMY_ADDR = nativeToScVal(Address.fromString(DUMMY_SOURCE), { type: "address" });
+const DUMMY_ADDR = nativeToScVal(Address.fromString(DUMMY_SOURCE), {
+  type: "address",
+});
 const DUMMY_I128 = nativeToScVal(0n, { type: "i128" });
 
 const SEP41_FUNCTIONS = [
-  { name: "name",        args: [] },
-  { name: "symbol",      args: [] },
-  { name: "decimals",    args: [] },
-  { name: "balance",     args: [DUMMY_ADDR] },
-  { name: "allowance",   args: [DUMMY_ADDR, DUMMY_ADDR] },
-  { name: "transfer",    args: [DUMMY_ADDR, DUMMY_ADDR, DUMMY_I128] },
-  { name: "transfer_from", args: [DUMMY_ADDR, DUMMY_ADDR, DUMMY_ADDR, DUMMY_I128] },
-  { name: "approve",     args: [DUMMY_ADDR, DUMMY_ADDR, DUMMY_I128, nativeToScVal(0, { type: "u32" })] },
-  { name: "burn",        args: [DUMMY_ADDR, DUMMY_I128] },
-  { name: "burn_from",   args: [DUMMY_ADDR, DUMMY_ADDR, DUMMY_I128] },
+  { name: "name", args: [] },
+  { name: "symbol", args: [] },
+  { name: "decimals", args: [] },
+  { name: "balance", args: [DUMMY_ADDR] },
+  { name: "allowance", args: [DUMMY_ADDR, DUMMY_ADDR] },
+  { name: "transfer", args: [DUMMY_ADDR, DUMMY_ADDR, DUMMY_I128] },
+  {
+    name: "transfer_from",
+    args: [DUMMY_ADDR, DUMMY_ADDR, DUMMY_ADDR, DUMMY_I128],
+  },
+  {
+    name: "approve",
+    args: [DUMMY_ADDR, DUMMY_ADDR, DUMMY_I128, nativeToScVal(0, { type: "u32" })],
+  },
+  { name: "burn", args: [DUMMY_ADDR, DUMMY_I128] },
+  { name: "burn_from", args: [DUMMY_ADDR, DUMMY_ADDR, DUMMY_I128] },
 ];
 
 // Errors that indicate the function exists but rejected our dummy inputs
@@ -54,7 +62,7 @@ const EXECUTION_ERROR_PATTERNS = [
 ];
 
 function isExecutionError(msg) {
-  return EXECUTION_ERROR_PATTERNS.some(p => p.test(msg));
+  return EXECUTION_ERROR_PATTERNS.some((p) => p.test(msg));
 }
 
 async function functionExists(contract, fnName, args) {
@@ -85,7 +93,7 @@ async function functionExists(contract, fnName, args) {
  */
 export async function validateSep41(contractId) {
   const contract = new Contract(contractId);
-  const results  = {};
+  const results = {};
 
   await Promise.all(
     SEP41_FUNCTIONS.map(async ({ name, args }) => {
@@ -94,7 +102,7 @@ export async function validateSep41(contractId) {
       } catch {
         results[name] = false;
       }
-    })
+    }),
   );
 
   const compliant = Object.values(results).every(Boolean);
@@ -104,14 +112,22 @@ export async function validateSep41(contractId) {
 // CLI entry point
 if (process.argv[1].endsWith("validateSep41.js")) {
   const contractId = process.argv[2];
-  if (!contractId) { console.error("Usage: node src/validateSep41.js <contractId>"); process.exit(1); }
+  if (!contractId) {
+    console.error("Usage: node src/validateSep41.js <contractId>");
+    process.exit(1);
+  }
 
-  validateSep41(contractId).then(({ compliant, results }) => {
-    console.log(`\nSEP-41 compliance for ${contractId}:`);
-    for (const [fn, ok] of Object.entries(results)) {
-      console.log(`  ${ok ? "✓" : "✗"} ${fn}`);
-    }
-    console.log(`\nResult: ${compliant ? "COMPLIANT ✓" : "NON-COMPLIANT ✗"}`);
-    process.exit(compliant ? 0 : 1);
-  }).catch(err => { console.error(err); process.exit(1); });
+  validateSep41(contractId)
+    .then(({ compliant, results }) => {
+      console.log(`\nSEP-41 compliance for ${contractId}:`);
+      for (const [fn, ok] of Object.entries(results)) {
+        console.log(`  ${ok ? "✓" : "✗"} ${fn}`);
+      }
+      console.log(`\nResult: ${compliant ? "COMPLIANT ✓" : "NON-COMPLIANT ✗"}`);
+      process.exit(compliant ? 0 : 1);
+    })
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
 }
