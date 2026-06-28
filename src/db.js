@@ -1,5 +1,6 @@
 import pg from "pg";
 import { runMigrations } from "./migrate.js";
+import { validateAndSanitizeDecodedEvent } from "./decoderValidator.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -112,6 +113,23 @@ export const db = {
         ev.zk_host_calls ? JSON.stringify(ev.zk_host_calls) : null,
       ],
     );
+  },
+
+  /**
+   * Validate and sanitize a decoded event, then insert into the database.
+   * On validation failure:
+   * - Sets decoded=false to mark as unverified
+   * - Sanitizes description to prevent corruption (strips HTML, control chars, limits length)
+   * - Logs structured error with failing field paths
+   * - Increments decoder_schema_violations_total metric
+   * - Still inserts the record with sanitized data (corruption guard)
+   *
+   * @param {object} ev - The decoded event object from decoder
+   * @param {object} logger - Optional logger instance (defaults to console)
+   */
+  async upsertEventValidated(ev, logger) {
+    const validated = validateAndSanitizeDecodedEvent(ev, logger);
+    await this.upsertEvent(validated);
   },
 
   async getEvents({ contract, fn, page = 1, limit = 25, type } = {}) {

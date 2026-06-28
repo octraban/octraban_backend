@@ -156,7 +156,7 @@ async function indexLedger(ledger) {
       decoded.fee_bump = feeBumpCache.get(ev.txHash) ?? null;
       attach restoration info when this tx is a RestoreFootprintOp
       decoded.archival_info = restoreCache.get(ev.txHash) ?? null;
-      await db.upsertEvent(decoded);
+      await db.upsertEventValidated(decoded);
 
       persist per-key state diffs for the timeline
       const diffs = extractStateDiffs(ev, decoded);

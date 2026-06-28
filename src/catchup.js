@@ -75,7 +75,7 @@ async function processLedger(ledger) {
       decoded.storage_tiers = classifyStorageWrites(ev);
 
       // ON CONFLICT DO NOTHING in upsertEvent prevents duplicate-key violations
-      await db.upsertEvent(decoded);
+      await db.upsertEventValidated(decoded);
     }
 
     pageCursor = res.events.length === PAGE_LIMIT ? res.cursor : undefined;
