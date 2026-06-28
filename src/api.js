@@ -328,7 +328,7 @@ export function createApi({ logDestination, dbOverride } = {}) {
     },
   );
 
-  GET /api/events/:seq/zk-costs
+  // GET /api/events/:seq/zk-costs
   // Returns the ZK host function call list and cost delta for a single event.
   app.get("/api/events/:seq/zk-costs", async (req, res) => {
     try {
@@ -392,7 +392,7 @@ export function createApi({ logDestination, dbOverride } = {}) {
     }
   });
 
-  single-transaction SSE stream (compat for frontend hook)
+  // single-transaction SSE stream (compat for frontend hook)
   app.get("/api/transactions/:hash/status/stream", async (req, res) => {
     try {
       const txHash = req.params.hash;
@@ -432,7 +432,7 @@ export function createApi({ logDestination, dbOverride } = {}) {
     }
   });
 
-  Transaction status polling endpoint
+  // Transaction status polling endpoint
   app.get("/api/transactions/:hash/status", async (req, res) => {
     try {
       const txHash = req.params.hash;
@@ -1127,13 +1127,7 @@ export function createApi({ logDestination, dbOverride } = {}) {
 
   app.post("/api/setup/db-init", blockInProduction, async (req, res) => {
     try {
-      // 1. Run migrations
       await db.init();
-
-      // 2. Load seed data using seed-lib
-      const { seed } = await import("./seed-lib.js");
-      await seed(process.env.DATABASE_URL);
-
       res.json({ success: true });
     } catch (e) {
       res.status(500).json({ error: e.message });
