@@ -9,7 +9,9 @@
  * plain in-process Map so the rest of the codebase works without Redis.
  */
 
-const TTL_SECONDS = Number(process.env.METADATA_CACHE_TTL ?? 60);
+import config from "./config.js";
+
+const TTL_SECONDS = config.METADATA_CACHE_TTL;
 
 // ── Redis client (lazy-initialised) ──────────────────────────────────────────
 

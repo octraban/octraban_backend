@@ -11,16 +11,16 @@
  */
 
 import { SorobanRpc } from "@stellar/stellar-sdk";
+import config from "./config.js";
 
-const RPC_URLS = (process.env.SOROBAN_RPC_URLS || process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org")
-  .split(",")
-  .map((u) => u.trim())
-  .filter(Boolean);
+const RPC_URLS = config.SOROBAN_RPC_URLS.length > 0 
+  ? config.SOROBAN_RPC_URLS 
+  : [config.SOROBAN_RPC_URL];
 
 // How many ledgers behind consensus before we consider a node lagging
-const LAG_THRESHOLD = Number(process.env.RPC_LAG_THRESHOLD || 5);
+const LAG_THRESHOLD = config.RPC_LAG_THRESHOLD;
 // Timeout (ms) for a single RPC call before we try the next node
-const CALL_TIMEOUT_MS = Number(process.env.RPC_CALL_TIMEOUT_MS || 1000);
+const CALL_TIMEOUT_MS = config.RPC_CALL_TIMEOUT_MS;
 
 const nodes = RPC_URLS.map((url) => ({
   url,

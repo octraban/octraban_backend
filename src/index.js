@@ -1,4 +1,5 @@
 import { SorobanRpc } from "@stellar/stellar-sdk";
+import config from "./config.js";
 import { startApi } from "./api.js";
 import { db, pool } from "./db.js";
 import { decode } from "./decoder.js";
@@ -28,9 +29,9 @@ import { eventsIngested, decodeLatency, rpcErrors, updateDbPoolMetrics } from ".
 import { startUsageFlushCron, startRetentionCleanupCron } from "./usage/usageTracker.js";
 import { startAuditPartitionCron } from "./audit/auditLogger.js";
 
-const RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
-const START_LEDGER = Number(process.env.START_LEDGER || 0);
-const POLL_MS = Number(process.env.POLL_MS || 5000);
+const RPC_URL = config.SOROBAN_RPC_URL;
+const START_LEDGER = config.START_LEDGER;
+const POLL_MS = config.POLL_MS;
 // Max events per RPC page — Soroban caps at 200
 const PAGE_LIMIT = 200;
 

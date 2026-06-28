@@ -7,9 +7,10 @@
  */
 
 import { db } from "./db.js";
+import config from "./config.js";
 
-const DLQ_MAX_RETRIES = Number(process.env.DLQ_MAX_RETRIES || 3);
-const DLQ_RETRY_DELAY_MS = Number(process.env.DLQ_RETRY_DELAY_MS || 30_000);
+const DLQ_MAX_RETRIES = config.DLQ_MAX_RETRIES;
+const DLQ_RETRY_DELAY_MS = config.DLQ_RETRY_DELAY_MS;
 
 /**
  * Classify whether an error message indicates a transient failure
