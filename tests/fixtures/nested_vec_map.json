@@ -1,0 +1,6 @@
+{
+  "name": "nested_vec_map_event",
+  "description": "Complex event with nested Vec/Map structures for testing recursive decoding",
+  "testnet_source": "Various complex contracts with structured return data",
+  "xdr_template": "ContractEvent with nested Vec and Map topics/value"
+}
