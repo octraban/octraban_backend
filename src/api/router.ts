@@ -40,17 +40,14 @@ import { marketRouter } from './market';
 import { tokenPricesRouter } from './token-prices';
 import { portfolioRouter } from './portfolio';
 import { alertsRouter } from './alerts';
+import { oracleIntelligenceRouter } from './oracle-intelligence';
 
 // ── CSV Exports ───────────────────────────────────────────────────────────────
-import { exportsRouter } from './exports';
 import { requireApiKey } from '../middleware/apiKeyAuth';
 
 // ── Freeze Management ─────────────────────────────────────────────────────────
-import { freezeRouter } from './freeze';
 
 // ── Predictive Analytics ──────────────────────────────────────────────────────
-import { predictRouter } from './predict';
-import forecastRouter from './forecast';
 
 export const router = Router();
 
@@ -80,6 +77,7 @@ router.use('/token-prices', tokenPricesRouter);
 router.use('/market', marketRouter);
 router.use('/portfolio', portfolioRouter);
 router.use('/market/alerts', alertsRouter);
+router.use('/oracles/intelligence', oracleIntelligenceRouter);
 
 // ── Natural Language Query Interface (#328) ───────────────────────────────────
 // nlq invokes LLM APIs — compute-heavy and billed per request; key required
