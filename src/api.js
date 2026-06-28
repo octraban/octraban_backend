@@ -223,13 +223,43 @@ export function startApi() {
     else res.status(404).json({ error: "Not found" });
   });
 
-  // ── Health check (used by Docker Compose) ──────────────────────────────
+  // ── Health check endpoints ──────────────────────────────────────────────
+  // Import health check module
+  const { getHealthStatus, getLivenessStatus, getReadinessStatus } = await import("./health.js");
+
+  // Comprehensive health check with dependency status
   app.get("/health", async (_req, res) => {
     try {
-      await db.query("SELECT 1");
-      res.json({ status: "ok" });
+      const health = await getHealthStatus();
+      const statusCode = health.status === "healthy" ? 200 : 
+                        health.status === "degraded" ? 200 : 503;
+      res.status(statusCode).json(health);
     } catch (e) {
-      res.status(503).json({ error: "Database connection failed" });
+      res.status(503).json({ 
+        status: "unhealthy",
+        error: e.message,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
+  // Liveness probe (Kubernetes-style)
+  app.get("/health/live", (_req, res) => {
+    res.json(getLivenessStatus());
+  });
+
+  // Readiness probe (Kubernetes-style)
+  app.get("/health/ready", async (_req, res) => {
+    try {
+      const readiness = await getReadinessStatus();
+      const statusCode = readiness.status === "ready" ? 200 : 503;
+      res.status(statusCode).json(readiness);
+    } catch (e) {
+      res.status(503).json({
+        status: "not_ready",
+        error: e.message,
+        timestamp: new Date().toISOString(),
+      });
     }
   });
 
