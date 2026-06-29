@@ -39,6 +39,8 @@ import { dataMarketRouter } from './data-market';
 import { marketRouter } from './market';
 import { tokenPricesRouter } from './token-prices';
 import { portfolioRouter } from './portfolio';
+import { exportsRouter } from './exports';
+import { rateLimitAdminRouter } from './rate-limits';
 import { alertsRouter } from './alerts';
 import { oracleIntelligenceRouter } from './oracle-intelligence';
 
@@ -80,6 +82,8 @@ router.use('/compliance', requireApiKey, complianceRouter);
 router.use('/token-prices', tokenPricesRouter);
 router.use('/market', marketRouter);
 router.use('/portfolio', portfolioRouter);
+router.use('/exports', exportsRouter);
+router.use('/admin/rate-limits', rateLimitAdminRouter);
 router.use('/market/alerts', alertsRouter);
 router.use('/oracles/intelligence', oracleIntelligenceRouter);
 
