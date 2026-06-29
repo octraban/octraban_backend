@@ -76,10 +76,17 @@ describe("REST API Integration Tests", () => {
   });
 
   describe("GET /health", () => {
-    it("should return 200 OK when DB is connected", async () => {
+    it("should return 200 OK with comprehensive status when healthy", async () => {
       const res = await request(app).get("/health");
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ status: "ok" });
+      expect(res.body).toHaveProperty("status");
+      expect(res.body).toHaveProperty("timestamp");
+      expect(res.body).toHaveProperty("dependencies");
+      expect(res.body.dependencies).toHaveProperty("database");
+      expect(res.body.dependencies).toHaveProperty("cache");
+      expect(res.body.dependencies).toHaveProperty("indexer");
+      expect(res.body.dependencies).toHaveProperty("workers");
+      expect(["healthy", "degraded"]).toContain(res.body.status);
     });
 
     it("should return 503 Service Unavailable when DB is failing", async () => {
@@ -88,7 +95,39 @@ describe("REST API Integration Tests", () => {
       
       const res = await request(app).get("/health");
       expect(res.status).toBe(503);
-      expect(res.body).toEqual({ error: "Database connection failed" });
+      expect(res.body).toHaveProperty("status", "unhealthy");
+      expect(res.body.dependencies.database.status).toBe("unhealthy");
+
+      db.query = originalQuery;
+    });
+  });
+
+  describe("GET /health/live", () => {
+    it("should return 200 OK for liveness check", async () => {
+      const res = await request(app).get("/health/live");
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty("status", "alive");
+      expect(res.body).toHaveProperty("timestamp");
+    });
+  });
+
+  describe("GET /health/ready", () => {
+    it("should return 200 OK when service is ready", async () => {
+      const res = await request(app).get("/health/ready");
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty("status", "ready");
+      expect(res.body).toHaveProperty("timestamp");
+      expect(res.body).toHaveProperty("dependencies");
+    });
+
+    it("should return 503 when service is not ready", async () => {
+      const originalQuery = db.query;
+      db.query = jest.fn().mockRejectedValueOnce(new Error("DB Connection Error"));
+      
+      const res = await request(app).get("/health/ready");
+      expect(res.status).toBe(503);
+      expect(res.body).toHaveProperty("status", "not_ready");
+      expect(res.body).toHaveProperty("reason");
 
       db.query = originalQuery;
     });

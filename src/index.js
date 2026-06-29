@@ -27,6 +27,7 @@ import { cacheInvalidate } from "./cacheLayer.js";
 import { eventsIngested, decodeLatency, rpcErrors, updateDbPoolMetrics } from "./metrics.js";
 import { startUsageFlushCron, startRetentionCleanupCron } from "./usage/usageTracker.js";
 import { startAuditPartitionCron } from "./audit/auditLogger.js";
+import { updateIndexerStatus, updateWorkerStatus } from "./health.js";
 
 const RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 const START_LEDGER = Number(process.env.START_LEDGER || 0);
@@ -240,6 +241,8 @@ async function run() {
   while (!shutdown) {
     try {
       const latest = await indexLedger(_cursor);
+      const lagSeconds = Math.floor((Date.now() - (_cursor * 5000)) / 1000); // approximate lag
+      updateIndexerStatus(_cursor, lagSeconds);
       _cursor = latest + 1;
       await db.saveCursor(_cursor);
     } catch (err) {
