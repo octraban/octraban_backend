@@ -1241,6 +1241,7 @@ model Developer {
   usageRecords UsageRecord[]
 
   @@index([email])
+  @@index([planId])
 }
 
 model DevApiKey {
@@ -1572,6 +1573,8 @@ model PriceDeviation {
   @@index([tokenA, tokenB, timestamp])
   @@index([deviationPercentage])
   @@index([timestamp])
+  @@index([poolIdA])
+  @@index([poolIdB])
 }
 
 model ArbitrageOpportunity {
@@ -1997,6 +2000,8 @@ model Endorsement {
   createdAt       DateTime @default(now())
 
   profile ReputationProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
 }
 
 model ExportJob {
@@ -2049,6 +2054,9 @@ model FuzzFinding {
   fuzzRunId   String?
   severity    String?
   createdAt   DateTime @default(now())
+
+  @@index([runId])
+  @@index([fuzzRunId])
 }
 
 model FuzzRun {
@@ -2151,6 +2159,7 @@ model GovernanceVote {
   proposal GovernanceProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
 
   @@unique([contractAddress, proposalId, voter])
+  @@index([proposalId])
 }
 
 model LinkedIdentity {
@@ -2381,6 +2390,8 @@ model ReputationBadge {
   createdAt DateTime @default(now())
 
   profile ReputationProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
 }
 
 model ReputationDelegation {
@@ -2497,6 +2508,8 @@ model ReputationSignal {
   createdAt       DateTime @default(now())
 
   profile ReputationProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
 }
 
 model RwaComplianceEvent {
@@ -2840,6 +2853,8 @@ model VerifiableCredential {
   createdAt           DateTime @default(now())
 
   profile ReputationProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
 }
 
 model VolumeAlert {
@@ -3168,6 +3183,7 @@ model SavedQuery {
   query      NlQuery?  @relation(fields: [queryId], references: [id])
 
   @@index([userId])
+  @@index([queryId])
   @@map("saved_queries")
 }
 
@@ -3401,6 +3417,7 @@ model DataRetrieval {
   completedAt  DateTime?
 
   @@index([requester])
+  @@index([epochId])
   @@index([nodeId])
   @@index([status])
   @@map("data_retrievals")
@@ -3453,6 +3470,7 @@ model ArchivalSlash {
   appeals       ArchivalAppeal[]
 
   @@index([nodeId])
+  @@index([challengeId])
   @@map("archival_slashes")
 }
 

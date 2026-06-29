@@ -1,5 +1,6 @@
 import { config } from './config';
 import type { RedisClientType } from 'redis';
+import { logger } from './logger';
 
 const CACHE_URL = config.cacheUrl ?? 'memory://';
 const USE_REDIS = CACHE_URL !== '' && !CACHE_URL.startsWith('memory://');
@@ -60,16 +61,19 @@ async function getRedisClient(): Promise<RedisClientType | null> {
     const { createClient } = await import('redis');
     const client = createClient({ url: CACHE_URL });
     client.on('error', (err: unknown) => {
-      console.error('[cache] Redis client error:', err);
+      logger.error('[cache] Redis client error', { backend: 'redis', error: String(err) });
       redisAvailable = false;
     });
     await client.connect();
     redisClient = client;
     redisAvailable = true;
-    console.log('[cache] Connected to Redis cache');
+    logger.info('[cache] Connected to Redis cache', { backend: 'redis' });
     return redisClient;
   } catch (err: unknown) {
-    console.warn('[cache] Could not connect to Redis, falling back to in-memory cache:', err);
+    logger.warn('[cache] Could not connect to Redis, falling back to in-memory cache', {
+      backend: 'redis',
+      error: String(err),
+    });
     redisAvailable = false;
     return null;
   }
@@ -96,6 +100,11 @@ export async function cacheConnect(): Promise<void> {
  */
 export function isCacheReady(): boolean {
   return !USE_REDIS || redisAvailable;
+}
+
+/** Returns which backing store is currently in use. */
+export function cacheBackendType(): 'redis' | 'memory' {
+  return USE_REDIS && redisAvailable ? 'redis' : 'memory';
 }
 
 export async function cacheClose(): Promise<void> {
@@ -146,7 +155,12 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
     lruSet(normalizedKey, { payload, expiresAt });
     return value;
   } catch (err) {
-    console.warn(`[cache] Failed to read key ${normalizedKey} from Redis:`, err);
+    logger.warn('[cache] Failed to read key from Redis', {
+      backend: 'redis',
+      operation: 'get',
+      key: redactKey(normalizedKey),
+      error: String(err),
+    });
     return null;
   }
 }
@@ -173,7 +187,12 @@ export async function cacheSet<T>(
       await client.set(normalizedKey, payload);
     }
   } catch (err) {
-    console.warn(`[cache] Failed to write key ${normalizedKey} to Redis:`, err);
+    logger.warn('[cache] Failed to write key to Redis', {
+      backend: 'redis',
+      operation: 'set',
+      key: redactKey(normalizedKey),
+      error: String(err),
+    });
   }
 }
 
@@ -186,6 +205,11 @@ export async function cacheDelete(key: string): Promise<void> {
   try {
     await client.del(normalizedKey);
   } catch (err) {
-    console.warn(`[cache] Failed to delete key ${normalizedKey} from Redis:`, err);
+    logger.warn('[cache] Failed to delete key from Redis', {
+      backend: 'redis',
+      operation: 'delete',
+      key: redactKey(normalizedKey),
+      error: String(err),
+    });
   }
 }
