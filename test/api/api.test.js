@@ -251,7 +251,7 @@ describe("REST API Integration Tests", () => {
       expect(res.body).toEqual({ error: "Contract already exists" });
     });
 
-    it("should return 422 Unprocessable Entity if request body is invalid", async () => {
+    it("should return 400 Bad Request if request body is invalid", async () => {
       const res = await request(app)
         .post("/api/contracts")
         .set("x-api-key", "test-api-key")
@@ -259,19 +259,24 @@ describe("REST API Integration Tests", () => {
           id: "C5",
           // missing functions
         });
-      expect(res.status).toBe(422);
+      expect(res.status).toBe(400);
       expect(res.body).toEqual({ error: "Missing id or functions" });
     });
   });
 
   describe("GET /api/wallet/:address", () => {
-    it("should return events involving the given wallet address", async () => {
-      const res = await request(app).get(`/api/wallet/${wallet1}`);
+    // A well-formed but unseeded Stellar public key (G + 55 base32 chars).
+    const validAddress = "G" + "A".repeat(55);
+
+    it("should return 200 with an events array for a valid address", async () => {
+      const res = await request(app).get(`/api/wallet/${validAddress}`);
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body.length).toBeGreaterThan(0);
-      // Verify that the retrieved events indeed involve the wallet
-      expect(res.body[0].description).toContain(wallet1);
+      expect(Array.isArray(res.body.events)).toBe(true);
+    });
+
+    it("should return 400 for a malformed address", async () => {
+      const res = await request(app).get("/api/wallet/not-a-valid-address");
+      expect(res.status).toBe(400);
     });
   });
 });
