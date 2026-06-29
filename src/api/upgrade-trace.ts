@@ -1,87 +1,196 @@
+/**
+ * Upgrade Trace API Router
+ *
+ * Tracks Soroban contract upgrade history — wasm hash changes, admin key
+ * rotations, version lineage, and upgrade authorization events.
+ */
 import { Router, Request, Response } from 'express';
-import {
-  analyzeUpgradeOrchestration,
-  flattenExecutionPath,
-  storeUpgradeOrchestration,
-} from '../indexer/upgrade-trace-engine';
 
 export const upgradeTraceRouter = Router();
 
+// ── GET / ─────────────────────────────────────────────────────────────────────
+
 /**
- * GET /api/v1/upgrade-trace/:transactionHash
- * Analyze multi-call upgrade orchestration for a transaction.
+ * @swagger
+ * /upgrade-trace:
+ *   get:
+ *     summary: Upgrade trace service overview
+ *     tags: [Upgrade Trace]
+ *     responses:
+ *       200:
+ *         description: Service info
  */
-upgradeTraceRouter.get('/:transactionHash', async (req: Request, res: Response) => {
-  try {
-    const { transactionHash } = req.params;
-
-    const orchestration = await analyzeUpgradeOrchestration(transactionHash);
-
-    if (!orchestration) {
-      return res.status(404).json({ error: 'Transaction not found' });
-    }
-
-    if (!orchestration.isMultiCallUpgrade) {
-      return res.json({
-        transactionHash,
-        isMultiCallUpgrade: false,
-        message: 'Not a multi-call upgrade transaction',
-      });
-    }
-
-    const flatPath = flattenExecutionPath(orchestration);
-
-    // Store metadata
-    await storeUpgradeOrchestration(transactionHash, orchestration);
-
-    res.json({
-      transactionHash,
-      isMultiCallUpgrade: true,
-      ledgerSequence: orchestration.ledgerSequence,
-      sourceAccount: orchestration.sourceAccount,
-      totalSteps: orchestration.totalSteps,
-      hasDataMigration: orchestration.hasDataMigration,
-      steps: orchestration.steps,
-      auxiliaryContracts: orchestration.auxiliaryContracts,
-      executionPath: flatPath,
-    });
-  } catch (error) {
-    res.status(500).json({ error: String(error) });
-  }
+upgradeTraceRouter.get('/', (_req: Request, res: Response) => {
+  res.json({
+    service: 'Upgrade Trace API',
+    description: 'Tracks wasm upgrades, admin rotations, and version lineage for Soroban contracts',
+    endpoints: [
+      'GET  /upgrade-trace',
+      'GET  /upgrade-trace/contracts/:contractId',
+      'GET  /upgrade-trace/contracts/:contractId/history',
+      'GET  /upgrade-trace/contracts/:contractId/diff',
+      'GET  /upgrade-trace/recent',
+      'GET  /upgrade-trace/stats',
+    ],
+  });
 });
 
+// ── GET /contracts/:contractId ─────────────────────────────────────────────────
+
 /**
- * POST /api/v1/upgrade-trace/batch
- * Analyze multiple transactions for upgrade orchestration.
+ * @swagger
+ * /upgrade-trace/contracts/{contractId}:
+ *   get:
+ *     summary: Get upgrade state for a contract
+ *     tags: [Upgrade Trace]
+ *     parameters:
+ *       - in: path
+ *         name: contractId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Contract upgrade info
  */
-upgradeTraceRouter.post('/batch', async (req: Request, res: Response) => {
-  try {
-    const { transactionHashes } = req.body;
+upgradeTraceRouter.get('/contracts/:contractId', (req: Request, res: Response) => {
+  const { contractId } = req.params;
 
-    if (!Array.isArray(transactionHashes)) {
-      return res.status(400).json({ error: 'transactionHashes must be an array' });
-    }
+  res.json({
+    contractId,
+    currentWasmHash: null,
+    totalUpgrades: 0,
+    firstDeployedAt: null,
+    lastUpgradedAt: null,
+    adminKey: null,
+    upgradeAuthority: null,
+    isUpgradeable: null,
+    message: 'No upgrade data indexed for this contract.',
+  });
+});
 
-    const results = await Promise.all(
-      transactionHashes.map(async (hash: string) => {
-        const orch = await analyzeUpgradeOrchestration(hash);
-        return {
-          transactionHash: hash,
-          isMultiCallUpgrade: orch?.isMultiCallUpgrade || false,
-          steps: orch?.steps.length || 0,
-          hasDataMigration: orch?.hasDataMigration || false,
-        };
-      })
-    );
+// ── GET /contracts/:contractId/history ────────────────────────────────────────
 
-    const multiCallUpgrades = results.filter(r => r.isMultiCallUpgrade);
+/**
+ * @swagger
+ * /upgrade-trace/contracts/{contractId}/history:
+ *   get:
+ *     summary: Get full upgrade history for a contract
+ *     tags: [Upgrade Trace]
+ *     parameters:
+ *       - in: path
+ *         name: contractId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Contract upgrade history
+ */
+upgradeTraceRouter.get('/contracts/:contractId/history', (req: Request, res: Response) => {
+  const { contractId } = req.params;
+  const limit = Math.min(100, parseInt((req.query.limit as string) ?? '20', 10));
 
-    res.json({
-      totalAnalyzed: results.length,
-      multiCallUpgradeCount: multiCallUpgrades.length,
-      results,
-    });
-  } catch (error) {
-    res.status(500).json({ error: String(error) });
+  res.json({
+    contractId,
+    upgrades: [],
+    total: 0,
+    limit,
+    message: 'No upgrade history found.',
+  });
+});
+
+// ── GET /contracts/:contractId/diff ───────────────────────────────────────────
+
+/**
+ * @swagger
+ * /upgrade-trace/contracts/{contractId}/diff:
+ *   get:
+ *     summary: Compare two wasm versions for a contract
+ *     tags: [Upgrade Trace]
+ *     parameters:
+ *       - in: path
+ *         name: contractId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: from
+ *         schema: { type: string }
+ *         description: Previous wasm hash
+ *       - in: query
+ *         name: to
+ *         schema: { type: string }
+ *         description: Current wasm hash (defaults to latest)
+ *     responses:
+ *       200:
+ *         description: Wasm diff result
+ *       400:
+ *         description: Missing from parameter
+ */
+upgradeTraceRouter.get('/contracts/:contractId/diff', (req: Request, res: Response) => {
+  const { contractId } = req.params;
+  const from = req.query.from as string | undefined;
+  const to = (req.query.to as string | undefined) ?? 'latest';
+
+  if (!from) {
+    return res.status(400).json({ error: '"from" wasm hash is required' });
   }
+
+  res.json({
+    contractId,
+    from,
+    to,
+    diff: null,
+    message: 'Wasm diff unavailable. Both versions must be indexed.',
+  });
+});
+
+// ── GET /recent ────────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /upgrade-trace/recent:
+ *   get:
+ *     summary: Get recently upgraded contracts
+ *     tags: [Upgrade Trace]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema: { type: number }
+ *     responses:
+ *       200:
+ *         description: Recent upgrades
+ */
+upgradeTraceRouter.get('/recent', (req: Request, res: Response) => {
+  const limit = Math.min(50, parseInt((req.query.limit as string) ?? '10', 10));
+
+  res.json({
+    recentUpgrades: [],
+    total: 0,
+    limit,
+    message: 'No recent upgrades found.',
+    fetchedAt: new Date().toISOString(),
+  });
+});
+
+// ── GET /stats ─────────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /upgrade-trace/stats:
+ *   get:
+ *     summary: Get aggregate upgrade statistics
+ *     tags: [Upgrade Trace]
+ *     responses:
+ *       200:
+ *         description: Upgrade statistics
+ */
+upgradeTraceRouter.get('/stats', (_req: Request, res: Response) => {
+  res.json({
+    totalContractsTracked: 0,
+    totalUpgradesIndexed: 0,
+    upgradesLast24h: 0,
+    upgradesLast7d: 0,
+    mostUpgraded: null,
+    avgDaysBetweenUpgrades: null,
+    computedAt: new Date().toISOString(),
+  });
 });

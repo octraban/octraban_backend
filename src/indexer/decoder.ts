@@ -4,45 +4,6 @@ import { parseInvokeHostFunction } from './xdr-parser';
 import { parseSep41Event, isSep41Event } from './sep41-parser';
 import { prismaRead as prisma } from '../db';
 
-/**
- * Look up a custom EventDefinition for a given contract + topic symbol.
- * Returns the humanTemplate string if found, otherwise null.
- */
-export async function lookupCustomEventTemplate(
-  contractAddress: string,
-  topicSymbol: string
-): Promise<string | null> {
-  const def = await prisma.eventDefinition.findUnique({
-    where: { contractAddress_topicSymbol: { contractAddress, topicSymbol } },
-    select: { humanTemplate: true },
-  });
-  return def?.humanTemplate ?? null;
-}
-
-/**
- * Render a custom template by substituting {{data.key}} and {{topics.N}} placeholders.
- * Supports: {{data.key}}, {{topics.0}}, {{topics.1}}, etc.
- */
-export function renderCustomTemplate(
-  template: string,
-  topicValues: unknown[],
-  dataValue: unknown
-): string {
-  return template.replace(/\{\{([\w.]+)\}\}/g, (_match, path: string) => {
-    const parts = path.split('.');
-    if (parts[0] === 'topics' && parts[1] !== undefined) {
-      return String(topicValues[Number(parts[1])] ?? '');
-    }
-    if (parts[0] === 'data') {
-      const val = parts[1] !== undefined && typeof dataValue === 'object' && dataValue !== null
-        ? (dataValue as Record<string, unknown>)[parts[1]]
-        : dataValue;
-      return String(val ?? '');
-    }
-    return _match;
-  });
-}
-
 export interface DecodedTransaction {
   contractAddress: string | null;
   functionName: string | null;
@@ -52,22 +13,47 @@ export interface DecodedTransaction {
 
 /**
  * Decode a raw transaction XDR into human-readable form.
+ *
+ * Handles envelopeTypeTx (v1), envelopeTypeTxV0 (v0), and
+ * envelopeTypeTxFeeBump by extracting the inner transaction and
+ * prefixing the human-readable output with "(fee-bump)".
  */
 export async function decodeTransaction(rawXdr: string): Promise<DecodedTransaction> {
+  // ── fee-bump fast path ────────────────────────────────────────────────────
+  try {
+    const envelope = xdr.TransactionEnvelope.fromXDR(rawXdr, 'base64');
+    if (envelope.switch().name === 'envelopeTypeTxFeeBump') {
+      // The inner transaction is itself a TransactionEnvelope (v1).
+      const innerEnvelope = envelope.feeBump().tx().innerTx();
+      const innerXdr = innerEnvelope.toXDR('base64');
+      const inner = await decodeTransaction(innerXdr);
+      return {
+        contractAddress: inner.contractAddress,
+        functionName: inner.functionName,
+        functionArgs: inner.functionArgs,
+        humanReadable: inner.humanReadable ? `(fee-bump) ${inner.humanReadable}` : '(fee-bump)',
+      };
+    }
+  } catch {
+    // Not a valid fee-bump envelope — fall through to standard decode
+  }
+
+  // ── standard v1 / v0 path ─────────────────────────────────────────────────
   const parsed = parseInvokeHostFunction(rawXdr);
   if (!parsed) {
     return { contractAddress: null, functionName: null, functionArgs: null, humanReadable: null };
   }
 
-  const { contractId: contractAddress, functionName } = parsed;
+  const { contractId: contractAddress, functionName, args } = parsed;
 
   // Re-parse raw args as xdr.ScVal[] for the existing registry helpers
   let rawArgs: xdr.ScVal[];
   try {
     const envelope = xdr.TransactionEnvelope.fromXDR(rawXdr, 'base64');
-    const ops = envelope.switch().name === 'envelopeTypeTx'
-      ? envelope.v1().tx().operations()
-      : envelope.v0().tx().operations();
+    const ops =
+      envelope.switch().name === 'envelopeTypeTx'
+        ? envelope.v1().tx().operations()
+        : envelope.v0().tx().operations();
     const invokeOp = ops.find((op) => op.body().switch().name === 'invokeHostFunction')!;
     rawArgs = invokeOp.body().invokeHostFunctionOp().hostFunction().invokeContract().args();
   } catch {
@@ -76,7 +62,12 @@ export async function decodeTransaction(rawXdr: string): Promise<DecodedTransact
 
   const abi = await getContractAbi(contractAddress);
   if (!abi) {
-    return { contractAddress, functionName, functionArgs: null, humanReadable: `Called ${functionName} on ${contractAddress}` };
+    return {
+      contractAddress,
+      functionName,
+      functionArgs: null,
+      humanReadable: `Called ${functionName} on ${contractAddress}`,
+    };
   }
 
   const contract = await prisma.contract.findUnique({ where: { address: contractAddress } });
@@ -94,15 +85,13 @@ export async function decodeTransaction(rawXdr: string): Promise<DecodedTransact
 export function decodeEvent(
   topics: string[],
   data: string,
-  contractName?: string | null
+  contractName?: string | null,
 ): { eventType: string; topicSymbol: string | null; decoded: Record<string, unknown> } {
   try {
     const topicVals = topics.map((t) => xdr.ScVal.fromXDR(t, 'base64'));
 
     // First topic is usually the event name symbol
-    const rawSymbol = topicVals[0]
-      ? String(scValToNative(topicVals[0]))
-      : 'unknown';
+    const rawSymbol = topicVals[0] ? String(scValToNative(topicVals[0])) : 'unknown';
 
     // ── SEP-41 fast path ────────────────────────────────────────────────────
     if (isSep41Event(rawSymbol)) {
@@ -113,9 +102,7 @@ export function decodeEvent(
         const decoded: Record<string, unknown> = {
           event: rawSymbol,
           humanReadable: parsed.humanReadable,
-          ...Object.fromEntries(
-            Object.entries(parsed.fields).map(([k, v]) => [k, v.formatted])
-          ),
+          ...Object.fromEntries(Object.entries(parsed.fields).map(([k, v]) => [k, v.formatted])),
         };
         return { eventType: normalizeEventType(rawSymbol), topicSymbol: rawSymbol, decoded };
       }

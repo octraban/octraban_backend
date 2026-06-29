@@ -1,5 +1,5 @@
-import { createClient, type RedisClientType } from 'redis';
 import { config } from './config';
+import type { RedisClientType } from 'redis';
 
 const CACHE_URL = config.cacheUrl ?? 'memory://';
 const USE_REDIS = CACHE_URL !== '' && !CACHE_URL.startsWith('memory://');
@@ -22,8 +22,9 @@ async function getRedisClient(): Promise<RedisClientType | null> {
   if (redisClient) return redisClient;
 
   try {
+    const { createClient } = await import('redis');
     const client = createClient({ url: CACHE_URL });
-    client.on('error', (err) => {
+    client.on('error', (err: unknown) => {
       console.error('[cache] Redis client error:', err);
       redisAvailable = false;
     });
@@ -32,7 +33,7 @@ async function getRedisClient(): Promise<RedisClientType | null> {
     redisAvailable = true;
     console.log('[cache] Connected to Redis cache');
     return redisClient;
-  } catch (err) {
+  } catch (err: unknown) {
     console.warn('[cache] Could not connect to Redis, falling back to in-memory cache:', err);
     redisAvailable = false;
     return null;
@@ -51,6 +52,15 @@ function buildExpiry(ttlSeconds: number | null | undefined): number | null {
 
 export async function cacheConnect(): Promise<void> {
   await getRedisClient();
+}
+
+/**
+ * Returns true when the cache layer is operational:
+ * - always true when using the in-process memory store (no Redis configured)
+ * - true only after a successful Redis connection when a Redis URL is configured
+ */
+export function isCacheReady(): boolean {
+  return !USE_REDIS || redisAvailable;
 }
 
 export async function cacheClose(): Promise<void> {
@@ -100,7 +110,11 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
   }
 }
 
-export async function cacheSet<T>(key: string, value: T, ttlSeconds?: number | null): Promise<void> {
+export async function cacheSet<T>(
+  key: string,
+  value: T,
+  ttlSeconds?: number | null,
+): Promise<void> {
   const normalizedKey = key;
   const payload = JSON.stringify(value);
   memoryStore.set(normalizedKey, {

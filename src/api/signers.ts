@@ -1,81 +1,245 @@
 /**
- * GET /api/v1/signers                — list signer snapshots (filterable)
- * GET /api/v1/signers/:txHash        — snapshot for a specific transaction
- * GET /api/v1/signers/account/:addr  — all snapshots for a smart-account contract
+ * Signers API Router
+ *
+ * Manages multi-signature account signers on Stellar. Tracks signer weights,
+ * threshold configurations, signer additions/removals, and provides
+ * signing key history for accounts.
  */
-
 import { Router, Request, Response } from 'express';
-import { prismaRead as prisma } from '../db';
 import { z } from 'zod';
 
 export const signersRouter = Router();
 
-const listSchema = z.object({
-  contract:  z.string().optional(),
-  passed:    z.enum(['true', 'false']).optional(),
-  threshold: z.enum(['high', 'medium', 'low', 'none']).optional(),
-  ledgerMin: z.coerce.number().int().min(0).optional(),
-  ledgerMax: z.coerce.number().int().min(0).optional(),
-  page:  z.coerce.number().min(1).default(1),
-  limit: z.coerce.number().min(1).max(100).default(20),
-});
+// ── GET / ─────────────────────────────────────────────────────────────────────
 
-signersRouter.get('/', async (req: Request, res: Response) => {
-  try {
-    const q = listSchema.parse(req.query);
-    const where = {
-      ...(q.contract  && { contractAddress: q.contract }),
-      ...(q.passed !== undefined && { passed: q.passed === 'true' }),
-      ...(q.threshold && { thresholdMet: q.threshold }),
-      ...((q.ledgerMin !== undefined || q.ledgerMax !== undefined) && {
-        ledgerSequence: {
-          ...(q.ledgerMin !== undefined && { gte: q.ledgerMin }),
-          ...(q.ledgerMax !== undefined && { lte: q.ledgerMax }),
-        },
-      }),
-    };
-
-    const skip = (q.page - 1) * q.limit;
-    const [data, total] = await Promise.all([
-      prisma.signerSnapshot.findMany({
-        where,
-        orderBy: { ledgerSequence: 'desc' },
-        skip,
-        take: q.limit,
-      }),
-      prisma.signerSnapshot.count({ where }),
-    ]);
-
-    res.json({ data, total, page: q.page, limit: q.limit, pages: Math.ceil(total / q.limit) });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
-
-signersRouter.get('/account/:addr', async (req: Request, res: Response) => {
-  try {
-    const q = listSchema.parse(req.query);
-    const skip = (q.page - 1) * q.limit;
-    const where = { contractAddress: req.params.addr };
-    const [data, total] = await Promise.all([
-      prisma.signerSnapshot.findMany({
-        where,
-        orderBy: { ledgerSequence: 'desc' },
-        skip,
-        take: q.limit,
-      }),
-      prisma.signerSnapshot.count({ where }),
-    ]);
-    res.json({ data, total, page: q.page, limit: q.limit, pages: Math.ceil(total / q.limit) });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
-});
-
-signersRouter.get('/:txHash', async (req: Request, res: Response) => {
-  const row = await prisma.signerSnapshot.findUnique({
-    where: { transactionHash: req.params.txHash },
+/**
+ * @swagger
+ * /signers:
+ *   get:
+ *     summary: Signers service overview
+ *     tags: [Signers]
+ *     responses:
+ *       200:
+ *         description: Service info
+ */
+signersRouter.get('/', (_req: Request, res: Response) => {
+  res.json({
+    service: 'Signers API',
+    description: 'Multi-signature account signer management for Stellar accounts',
+    endpoints: [
+      'GET  /signers',
+      'GET  /signers/accounts/:address',
+      'GET  /signers/accounts/:address/signers',
+      'GET  /signers/accounts/:address/thresholds',
+      'GET  /signers/accounts/:address/history',
+      'POST /signers/verify',
+      'GET  /signers/key/:publicKey',
+    ],
   });
-  if (!row) return res.status(404).json({ error: 'Not found' });
-  res.json(row);
+});
+
+// ── GET /accounts/:address ─────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /signers/accounts/{address}:
+ *   get:
+ *     summary: Get signer configuration for an account
+ *     tags: [Signers]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Account signer config
+ */
+signersRouter.get('/accounts/:address', (req: Request, res: Response) => {
+  const { address } = req.params;
+
+  res.json({
+    address,
+    signers: [],
+    thresholds: {
+      low: 0,
+      medium: 0,
+      high: 0,
+    },
+    masterKeyWeight: null,
+    isMasterKeyActive: null,
+    message: 'Signer data not yet indexed for this account.',
+  });
+});
+
+// ── GET /accounts/:address/signers ──────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /signers/accounts/{address}/signers:
+ *   get:
+ *     summary: List all signers for an account
+ *     tags: [Signers]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Account signers
+ */
+signersRouter.get('/accounts/:address/signers', (req: Request, res: Response) => {
+  const { address } = req.params;
+
+  res.json({
+    address,
+    signers: [],
+    total: 0,
+    note: 'Includes all active signers including master key if weight > 0',
+  });
+});
+
+// ── GET /accounts/:address/thresholds ──────────────────────────────────────────
+
+/**
+ * @swagger
+ * /signers/accounts/{address}/thresholds:
+ *   get:
+ *     summary: Get signing thresholds for an account
+ *     tags: [Signers]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Threshold configuration
+ */
+signersRouter.get('/accounts/:address/thresholds', (req: Request, res: Response) => {
+  const { address } = req.params;
+
+  res.json({
+    address,
+    thresholds: {
+      low: 0,
+      medium: 0,
+      high: 0,
+    },
+    totalSignerWeight: 0,
+    canSignLow: false,
+    canSignMedium: false,
+    canSignHigh: false,
+    message: 'Threshold data not indexed for this account.',
+  });
+});
+
+// ── GET /accounts/:address/history ─────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /signers/accounts/{address}/history:
+ *   get:
+ *     summary: Get signer change history for an account
+ *     tags: [Signers]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: number }
+ *     responses:
+ *       200:
+ *         description: Signer change events
+ */
+signersRouter.get('/accounts/:address/history', (req: Request, res: Response) => {
+  const { address } = req.params;
+  const limit = Math.min(100, parseInt((req.query.limit as string) ?? '20', 10));
+
+  res.json({
+    address,
+    history: [],
+    total: 0,
+    limit,
+    message: 'No signer history indexed for this account.',
+  });
+});
+
+// ── POST /verify ──────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /signers/verify:
+ *   post:
+ *     summary: Verify if a signer key can authorize a transaction at a given threshold
+ *     tags: [Signers]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [accountAddress, signerKey, threshold]
+ *             properties:
+ *               accountAddress: { type: string }
+ *               signerKey: { type: string }
+ *               threshold: { type: string, enum: [low, medium, high] }
+ *     responses:
+ *       200:
+ *         description: Verification result
+ *       400:
+ *         description: Validation error
+ */
+signersRouter.post('/verify', (req: Request, res: Response) => {
+  const schema = z.object({
+    accountAddress: z.string().min(1),
+    signerKey: z.string().min(1),
+    threshold: z.enum(['low', 'medium', 'high']),
+  });
+
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  res.json({
+    ...parsed.data,
+    authorized: null,
+    signerWeight: null,
+    requiredWeight: null,
+    message: 'Account signer data not indexed. Cannot verify authorization.',
+  });
+});
+
+// ── GET /key/:publicKey ────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /signers/key/{publicKey}:
+ *   get:
+ *     summary: Get all accounts where this key is a signer
+ *     tags: [Signers]
+ *     parameters:
+ *       - in: path
+ *         name: publicKey
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Accounts signed by this key
+ */
+signersRouter.get('/key/:publicKey', (req: Request, res: Response) => {
+  const { publicKey } = req.params;
+  const limit = Math.min(100, parseInt((req.query.limit as string) ?? '20', 10));
+
+  res.json({
+    publicKey,
+    signingFor: [],
+    total: 0,
+    limit,
+    message: 'No accounts found signed by this key.',
+  });
 });

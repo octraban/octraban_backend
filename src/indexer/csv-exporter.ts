@@ -10,6 +10,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Writable } from 'stream';
+import { Prisma } from '@prisma/client';
 import { prismaRead, prismaWrite } from '../db';
 
 const EXPORT_DIR = process.env.EXPORT_DIR ?? '/tmp/soroban-exports';
@@ -38,13 +39,29 @@ function rowToCsv(headers: string[], obj: Record<string, unknown>): string {
 // ---------------------------------------------------------------------------
 
 const TX_HEADERS = [
-  'hash', 'ledgerSequence', 'ledgerCloseTime', 'sourceAccount',
-  'contractAddress', 'functionName', 'status', 'humanReadable', 'feeCharged', 'createdAt',
+  'hash',
+  'ledgerSequence',
+  'ledgerCloseTime',
+  'sourceAccount',
+  'contractAddress',
+  'functionName',
+  'status',
+  'humanReadable',
+  'feeCharged',
+  'createdAt',
 ];
 
 const EVENT_HEADERS = [
-  'id', 'transactionHash', 'contractAddress', 'eventType',
-  'topics', 'data', 'decoded', 'ledgerSequence', 'ledgerCloseTime', 'createdAt',
+  'id',
+  'transactionHash',
+  'contractAddress',
+  'eventType',
+  'topics',
+  'data',
+  'decoded',
+  'ledgerSequence',
+  'ledgerCloseTime',
+  'createdAt',
 ];
 
 async function streamTransactions(
@@ -57,6 +74,7 @@ async function streamTransactions(
   let cursor: string | undefined;
   let total = 0;
 
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     const rows = await prismaRead.transaction.findMany({
       where,
@@ -80,16 +98,14 @@ async function streamTransactions(
   return total;
 }
 
-async function streamEvents(
-  filters: Record<string, unknown>,
-  out: Writable,
-): Promise<number> {
+async function streamEvents(filters: Record<string, unknown>, out: Writable): Promise<number> {
   out.write(EVENT_HEADERS.join(',') + '\n');
 
   const where = buildEventWhere(filters);
   let cursor: string | undefined;
   let total = 0;
 
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     const rows = await prismaRead.event.findMany({
       where,
@@ -118,30 +134,30 @@ async function streamEvents(
 // ---------------------------------------------------------------------------
 
 function buildTxWhere(f: Record<string, unknown>) {
-  return {
-    ...(f.contract   && { contractAddress: f.contract }),
-    ...(f.account    && { sourceAccount: f.account }),
-    ...(f.status     && { status: f.status }),
-    ...((f.ledgerMin !== undefined || f.ledgerMax !== undefined) && {
-      ledgerSequence: {
-        ...(f.ledgerMin !== undefined && { gte: Number(f.ledgerMin) }),
-        ...(f.ledgerMax !== undefined && { lte: Number(f.ledgerMax) }),
-      },
-    }),
-  };
+  const where: Record<string, unknown> = {};
+  if (f.contract) where.contractAddress = String(f.contract);
+  if (f.account) where.sourceAccount = String(f.account);
+  if (f.status) where.status = String(f.status);
+  if (f.ledgerMin !== undefined || f.ledgerMax !== undefined) {
+    where.ledgerSequence = {
+      ...(f.ledgerMin !== undefined && { gte: Number(f.ledgerMin) }),
+      ...(f.ledgerMax !== undefined && { lte: Number(f.ledgerMax) }),
+    };
+  }
+  return where;
 }
 
 function buildEventWhere(f: Record<string, unknown>) {
-  return {
-    ...(f.contract   && { contractAddress: f.contract }),
-    ...(f.eventType  && { eventType: f.eventType }),
-    ...((f.ledgerMin !== undefined || f.ledgerMax !== undefined) && {
-      ledgerSequence: {
-        ...(f.ledgerMin !== undefined && { gte: Number(f.ledgerMin) }),
-        ...(f.ledgerMax !== undefined && { lte: Number(f.ledgerMax) }),
-      },
-    }),
-  };
+  const where: Record<string, unknown> = {};
+  if (f.contract) where.contractAddress = String(f.contract);
+  if (f.eventType) where.eventType = String(f.eventType);
+  if (f.ledgerMin !== undefined || f.ledgerMax !== undefined) {
+    where.ledgerSequence = {
+      ...(f.ledgerMin !== undefined && { gte: Number(f.ledgerMin) }),
+      ...(f.ledgerMax !== undefined && { lte: Number(f.ledgerMax) }),
+    };
+  }
+  return where;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,9 +165,16 @@ function buildEventWhere(f: Record<string, unknown>) {
 // ---------------------------------------------------------------------------
 
 const WALLET_HISTORY_HEADERS = [
-  'type', 'hash', 'ledgerSequence', 'ledgerCloseTime',
-  'contractAddress', 'functionName', 'status', 'humanReadable',
-  'feeCharged', 'createdAt',
+  'type',
+  'hash',
+  'ledgerSequence',
+  'ledgerCloseTime',
+  'contractAddress',
+  'functionName',
+  'status',
+  'humanReadable',
+  'feeCharged',
+  'createdAt',
 ];
 
 async function streamWalletHistory(
@@ -176,11 +199,11 @@ async function streamWalletHistory(
   let cursor: string | undefined;
   let total = 0;
 
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     const rows = await prismaRead.transaction.findMany({
       where,
       orderBy: [{ ledgerSequence: 'asc' }, { id: 'asc' }],
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       take: BATCH_SIZE,
       select: {
         id: true,
@@ -220,12 +243,10 @@ export async function enqueueExport(
   filters: Record<string, unknown> = {},
 ): Promise<string> {
   const job = await prismaWrite.exportJob.create({
-    data: { exportType, filters, status: 'pending' },
+    data: { exportType, filters: filters as Prisma.InputJsonValue, status: 'pending' },
   });
   // Fire-and-forget; caller can poll job status
-  runExportJob(job.id).catch((err) =>
-    console.error(`[csv-exporter] job ${job.id} failed:`, err),
-  );
+  runExportJob(job.id).catch((err) => console.error(`[csv-exporter] job ${job.id} failed:`, err));
   return job.id;
 }
 

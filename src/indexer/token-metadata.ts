@@ -17,7 +17,7 @@
  */
 
 import axios from 'axios';
-import { SorobanRpc, xdr, scValToNative, Address, nativeToScVal } from '@stellar/stellar-sdk';
+import { SorobanRpc, xdr, scValToNative, Address } from '@stellar/stellar-sdk';
 import { prismaRead } from '../db';
 import { config } from '../config';
 import { formatAmount } from './args-decoder';
@@ -51,7 +51,10 @@ function cacheEvictIfFull(): void {
   }
 }
 
-async function readCachedMetadata(localKey: string, remoteKey: string): Promise<TokenMetadata | null> {
+async function readCachedMetadata(
+  localKey: string,
+  remoteKey: string,
+): Promise<TokenMetadata | null> {
   const local = metaCache.get(localKey);
   if (local) return local;
 
@@ -63,7 +66,12 @@ async function readCachedMetadata(localKey: string, remoteKey: string): Promise<
   return remote;
 }
 
-async function writeCachedMetadata(localKey: string, remoteKey: string, meta: TokenMetadata, ttlSeconds?: number | null): Promise<void> {
+async function writeCachedMetadata(
+  localKey: string,
+  remoteKey: string,
+  meta: TokenMetadata,
+  ttlSeconds?: number | null,
+): Promise<void> {
   metaCache.delete(localKey);
   cacheEvictIfFull();
   metaCache.set(localKey, meta);
@@ -133,6 +141,7 @@ async function simulateViewCall(
  */
 function buildSimulateTx(hostFn: xdr.HostFunction): any {
   // Import lazily to avoid circular deps at module load time
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { TransactionBuilder, Account, Operation, BASE_FEE } = require('@stellar/stellar-sdk');
   const DUMMY_SOURCE = 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN';
   const account = new Account(DUMMY_SOURCE, '0');
@@ -359,17 +368,13 @@ export async function warmTokenMetadataCache(): Promise<void> {
   ]);
 
   for (const t of tokens) {
-    await writeCachedMetadata(
-      t.address,
-      `${TOKEN_METADATA_PREFIX}${t.address}`,
-      {
-        address: t.address,
-        symbol: t.tokenSymbol ?? null,
-        name: t.tokenName ?? null,
-        decimals: t.tokenDecimals ?? 7,
-        source: 'db',
-      },
-    );
+    await writeCachedMetadata(t.address, `${TOKEN_METADATA_PREFIX}${t.address}`, {
+      address: t.address,
+      symbol: t.tokenSymbol ?? null,
+      name: t.tokenName ?? null,
+      decimals: t.tokenDecimals ?? 7,
+      source: 'db',
+    });
   }
 
   for (const s of sacMappings) {

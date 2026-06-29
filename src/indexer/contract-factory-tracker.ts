@@ -9,7 +9,7 @@ export async function trackContractDeployment(
   childContractAddress: string,
   creationTransactionHash: string,
   creationLedgerSequence: number,
-  creationTimestamp: Date
+  creationTimestamp: Date,
 ): Promise<void> {
   await prisma.contractFactory.upsert({
     where: {
@@ -54,13 +54,13 @@ export async function getFactoryTree(parentContractAddress: string) {
   });
 
   const childDetails = await Promise.all(
-    children.map(async (child) => {
+    children.map(async (child: { childContractAddress: string }) => {
       const contract = await prismaRead.contract.findUnique({
         where: { address: child.childContractAddress },
         select: { address: true, name: true, isToken: true },
       });
       return { ...child, contractMetadata: contract };
-    })
+    }),
   );
 
   return {
@@ -76,9 +76,6 @@ export async function getFactoryTree(parentContractAddress: string) {
 export async function getDexInstances(factoryAddress: string) {
   return prismaRead.contractFactory.findMany({
     where: { parentContractAddress: factoryAddress },
-    include: {
-      // Would need to join with Contract table for full metadata
-    },
     orderBy: { creationLedgerSequence: 'desc' },
   });
 }

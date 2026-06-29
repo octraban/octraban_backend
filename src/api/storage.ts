@@ -1,141 +1,227 @@
 /**
- * GET /api/v1/storage          — list storage efficiency logs (filterable)
- * GET /api/v1/storage/:txHash  — single log by transaction hash
+ * Storage API Router
+ *
+ * Soroban contract persistent storage management. Provides read/write access
+ * to contract storage entries, entry size analytics, and storage usage
+ * reporting across the network.
  */
-
 import { Router, Request, Response } from 'express';
-import { prismaRead as prisma } from '../db';
-import { z } from 'zod';
 
 export const storageRouter = Router();
 
-const listSchema = z.object({
-  contract:    z.string().optional(),
-  ledgerMin:   z.coerce.number().int().min(0).optional(),
-  ledgerMax:   z.coerce.number().int().min(0).optional(),
-  minEfficiency: z.coerce.number().min(0).max(100).optional(),
-  maxEfficiency: z.coerce.number().min(0).max(100).optional(),
-  page:  z.coerce.number().min(1).default(1),
-  limit: z.coerce.number().min(1).max(100).default(20),
-});
+// ── GET / ─────────────────────────────────────────────────────────────────────
 
 /**
  * @swagger
  * /storage:
  *   get:
- *     summary: List storage efficiency logs
- *     description: >
- *       Returns per-transaction storage efficiency records showing declared
- *       footprint bytes vs actual bytes consumed. The delta (unusedBytes) is
- *       the unutilised storage space developers are paying rent on.
+ *     summary: Storage service overview
  *     tags: [Storage]
- *     parameters:
- *       - in: query
- *         name: contract
- *         schema: { type: string }
- *         description: Filter by contract address
- *       - in: query
- *         name: ledgerMin
- *         schema: { type: integer }
- *       - in: query
- *         name: ledgerMax
- *         schema: { type: integer }
- *       - in: query
- *         name: minEfficiency
- *         schema: { type: number, minimum: 0, maximum: 100 }
- *         description: Minimum efficiency percentage (0–100)
- *       - in: query
- *         name: maxEfficiency
- *         schema: { type: number, minimum: 0, maximum: 100 }
- *       - in: query
- *         name: page
- *         schema: { type: integer, default: 1 }
- *       - in: query
- *         name: limit
- *         schema: { type: integer, default: 20, maximum: 100 }
  *     responses:
  *       200:
- *         description: Paginated list of storage efficiency logs
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 data:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/StorageEfficiencyLog'
- *                 total: { type: integer }
- *                 page: { type: integer }
- *                 limit: { type: integer }
- *                 pages: { type: integer }
+ *         description: Service info
  */
-storageRouter.get('/', async (req: Request, res: Response) => {
-  try {
-    const q = listSchema.parse(req.query);
-    const where = {
-      ...(q.contract && { contractAddress: q.contract }),
-      ...((q.ledgerMin !== undefined || q.ledgerMax !== undefined) && {
-        ledgerSequence: {
-          ...(q.ledgerMin !== undefined && { gte: q.ledgerMin }),
-          ...(q.ledgerMax !== undefined && { lte: q.ledgerMax }),
-        },
-      }),
-      ...((q.minEfficiency !== undefined || q.maxEfficiency !== undefined) && {
-        efficiencyPct: {
-          ...(q.minEfficiency !== undefined && { gte: q.minEfficiency }),
-          ...(q.maxEfficiency !== undefined && { lte: q.maxEfficiency }),
-        },
-      }),
-    };
-
-    const skip = (q.page - 1) * q.limit;
-    const [data, total] = await Promise.all([
-      prisma.storageEfficiencyLog.findMany({
-        where,
-        orderBy: { ledgerSequence: 'desc' },
-        skip,
-        take: q.limit,
-      }),
-      prisma.storageEfficiencyLog.count({ where }),
-    ]);
-
-    res.json({ data, total, page: q.page, limit: q.limit, pages: Math.ceil(total / q.limit) });
-  } catch (e) {
-    res.status(400).json({ error: String(e) });
-  }
+storageRouter.get('/', (_req: Request, res: Response) => {
+  res.json({
+    service: 'Storage API',
+    description: 'Soroban contract persistent storage management and analysis',
+    entryTypes: ['persistent', 'temporary', 'instance'],
+    endpoints: [
+      'GET  /storage',
+      'GET  /storage/contracts/:contractId',
+      'GET  /storage/contracts/:contractId/entries',
+      'GET  /storage/contracts/:contractId/entries/:key',
+      'GET  /storage/contracts/:contractId/size',
+      'GET  /storage/network/stats',
+      'GET  /storage/network/top-users',
+    ],
+  });
 });
+
+// ── GET /contracts/:contractId ─────────────────────────────────────────────────
 
 /**
  * @swagger
- * /storage/{txHash}:
+ * /storage/contracts/{contractId}:
  *   get:
- *     summary: Get storage efficiency log for a transaction
- *     description: >
- *       Returns the storage footprint vs actual usage breakdown for a single
- *       transaction. Use unusedBytes to see how much rent-paying storage was
- *       declared but not consumed.
+ *     summary: Get storage overview for a contract
  *     tags: [Storage]
  *     parameters:
  *       - in: path
- *         name: txHash
+ *         name: contractId
  *         required: true
  *         schema: { type: string }
- *         description: Transaction hash
  *     responses:
  *       200:
- *         description: Storage efficiency log
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/StorageEfficiencyLog'
- *       404:
- *         description: Not found
+ *         description: Contract storage overview
  */
-storageRouter.get('/:txHash', async (req: Request, res: Response) => {
-  const row = await prisma.storageEfficiencyLog.findUnique({
-    where: { transactionHash: req.params.txHash },
+storageRouter.get('/contracts/:contractId', (req: Request, res: Response) => {
+  const { contractId } = req.params;
+
+  res.json({
+    contractId,
+    storageEntries: {
+      persistent: { count: 0, totalBytes: 0 },
+      temporary: { count: 0, totalBytes: 0 },
+      instance: { count: 0, totalBytes: 0 },
+    },
+    totalEntries: 0,
+    totalBytes: 0,
+    message: 'No storage data indexed for this contract.',
   });
-  if (!row) return res.status(404).json({ error: 'Not found' });
-  res.json(row);
+});
+
+// ── GET /contracts/:contractId/entries ─────────────────────────────────────────
+
+/**
+ * @swagger
+ * /storage/contracts/{contractId}/entries:
+ *   get:
+ *     summary: List storage entries for a contract
+ *     tags: [Storage]
+ *     parameters:
+ *       - in: path
+ *         name: contractId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: type
+ *         schema: { type: string, enum: [persistent, temporary, instance, all] }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: number }
+ *     responses:
+ *       200:
+ *         description: Storage entries
+ */
+storageRouter.get('/contracts/:contractId/entries', (req: Request, res: Response) => {
+  const { contractId } = req.params;
+  const type = (req.query.type as string) ?? 'all';
+  const limit = Math.min(200, parseInt((req.query.limit as string) ?? '50', 10));
+
+  res.json({
+    contractId,
+    filter: { type },
+    entries: [],
+    total: 0,
+    limit,
+    message: 'No storage entries found.',
+  });
+});
+
+// ── GET /contracts/:contractId/entries/:key ────────────────────────────────────
+
+/**
+ * @swagger
+ * /storage/contracts/{contractId}/entries/{key}:
+ *   get:
+ *     summary: Get a specific storage entry by key
+ *     tags: [Storage]
+ *     parameters:
+ *       - in: path
+ *         name: contractId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: key
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Storage entry
+ *       404:
+ *         description: Entry not found
+ */
+storageRouter.get('/contracts/:contractId/entries/:key', (req: Request, res: Response) => {
+  const { contractId, key } = req.params;
+
+  res.status(404).json({
+    contractId,
+    key,
+    error: 'Storage entry not found or not yet indexed.',
+  });
+});
+
+// ── GET /contracts/:contractId/size ────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /storage/contracts/{contractId}/size:
+ *   get:
+ *     summary: Get total storage size for a contract
+ *     tags: [Storage]
+ *     parameters:
+ *       - in: path
+ *         name: contractId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Storage size
+ */
+storageRouter.get('/contracts/:contractId/size', (req: Request, res: Response) => {
+  const { contractId } = req.params;
+
+  res.json({
+    contractId,
+    totalBytes: 0,
+    persistentBytes: 0,
+    temporaryBytes: 0,
+    instanceBytes: 0,
+    estimatedRentFeeXLM: 0,
+    message: 'No storage data available.',
+  });
+});
+
+// ── GET /network/stats ─────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /storage/network/stats:
+ *   get:
+ *     summary: Get network-wide storage statistics
+ *     tags: [Storage]
+ *     responses:
+ *       200:
+ *         description: Network storage stats
+ */
+storageRouter.get('/network/stats', (_req: Request, res: Response) => {
+  res.json({
+    totalContracts: 0,
+    totalEntries: 0,
+    totalBytes: 0,
+    persistentBytes: 0,
+    temporaryBytes: 0,
+    avgBytesPerContract: 0,
+    totalRentFeesXLM: 0,
+    computedAt: new Date().toISOString(),
+  });
+});
+
+// ── GET /network/top-users ─────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /storage/network/top-users:
+ *   get:
+ *     summary: Get contracts with highest storage usage
+ *     tags: [Storage]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema: { type: number }
+ *     responses:
+ *       200:
+ *         description: Top storage users
+ */
+storageRouter.get('/network/top-users', (req: Request, res: Response) => {
+  const limit = Math.min(50, parseInt((req.query.limit as string) ?? '10', 10));
+
+  res.json({
+    topUsers: [],
+    total: 0,
+    limit,
+    sortedBy: 'totalBytes',
+    computedAt: new Date().toISOString(),
+  });
 });

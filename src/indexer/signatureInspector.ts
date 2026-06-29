@@ -24,7 +24,7 @@ const PASSKEY_LABEL = 'Signed via Apple iCloud Keychain / Google Passkey';
 export async function inspectSignature(
   txHash: string,
   ledgerSequence: number,
-  rawXdr: string
+  rawXdr: string,
 ): Promise<void> {
   if (!rawXdr) return;
 
@@ -35,6 +35,7 @@ export async function inspectSignature(
   let label: string | undefined;
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { xdr } = require('@stellar/stellar-sdk');
     const envelope = xdr.TransactionEnvelope.fromXDR(rawXdr, 'base64');
     const ops = envelope.v1?.tx?.operations() ?? envelope.v0?.tx?.operations() ?? [];
@@ -75,7 +76,15 @@ export async function inspectSignature(
   await prisma.signatureInspection.upsert({
     where: { transactionHash: txHash },
     update: { curveType, isPasskey, pubKeyX, pubKeyY, label },
-    create: { transactionHash: txHash, ledgerSequence, curveType, isPasskey, pubKeyX, pubKeyY, label },
+    create: {
+      transactionHash: txHash,
+      ledgerSequence,
+      curveType,
+      isPasskey,
+      pubKeyX,
+      pubKeyY,
+      label,
+    },
   });
 }
 
