@@ -54,6 +54,14 @@ export const dbPoolWaiting = new Gauge({
   registers: [registry],
 });
 
+/** Decoder schema violations (validation failures before DB insert). */
+export const decoderSchemaViolationsTotal = new Counter({
+  name: "soroban_decoder_schema_violations_total",
+  help: "Total decoder schema validation failures by field",
+  labelNames: ["field"],
+  registers: [registry],
+});
+
 /**
  * Update DB pool gauges from a pg.Pool instance.
  * Call this periodically (e.g. every 15 s).

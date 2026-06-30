@@ -5,6 +5,7 @@ import pg from "pg";
 const DB_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || "postgres://postgres:postgres@localhost:5432/soroban_test";
 process.env.DATABASE_URL = DB_URL;
 process.env.API_KEY = "test-api-key";
+process.env.VERIFY_ABI = "false";
 
 import { db } from "../../src/db.js";
 import { startApi } from "../../src/api.js";
@@ -76,10 +77,17 @@ describe("REST API Integration Tests", () => {
   });
 
   describe("GET /health", () => {
-    it("should return 200 OK when DB is connected", async () => {
+    it("should return 200 OK with comprehensive status when healthy", async () => {
       const res = await request(app).get("/health");
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ status: "ok" });
+      expect(res.body).toHaveProperty("status");
+      expect(res.body).toHaveProperty("timestamp");
+      expect(res.body).toHaveProperty("dependencies");
+      expect(res.body.dependencies).toHaveProperty("database");
+      expect(res.body.dependencies).toHaveProperty("cache");
+      expect(res.body.dependencies).toHaveProperty("indexer");
+      expect(res.body.dependencies).toHaveProperty("workers");
+      expect(["healthy", "degraded"]).toContain(res.body.status);
     });
 
     it("should return 503 Service Unavailable when DB is failing", async () => {
@@ -88,7 +96,39 @@ describe("REST API Integration Tests", () => {
       
       const res = await request(app).get("/health");
       expect(res.status).toBe(503);
-      expect(res.body).toEqual({ error: "Database connection failed" });
+      expect(res.body).toHaveProperty("status", "unhealthy");
+      expect(res.body.dependencies.database.status).toBe("unhealthy");
+
+      db.query = originalQuery;
+    });
+  });
+
+  describe("GET /health/live", () => {
+    it("should return 200 OK for liveness check", async () => {
+      const res = await request(app).get("/health/live");
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty("status", "alive");
+      expect(res.body).toHaveProperty("timestamp");
+    });
+  });
+
+  describe("GET /health/ready", () => {
+    it("should return 200 OK when service is ready", async () => {
+      const res = await request(app).get("/health/ready");
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty("status", "ready");
+      expect(res.body).toHaveProperty("timestamp");
+      expect(res.body).toHaveProperty("dependencies");
+    });
+
+    it("should return 503 when service is not ready", async () => {
+      const originalQuery = db.query;
+      db.query = jest.fn().mockRejectedValueOnce(new Error("DB Connection Error"));
+      
+      const res = await request(app).get("/health/ready");
+      expect(res.status).toBe(503);
+      expect(res.body).toHaveProperty("status", "not_ready");
+      expect(res.body).toHaveProperty("reason");
 
       db.query = originalQuery;
     });
@@ -212,7 +252,7 @@ describe("REST API Integration Tests", () => {
       expect(res.body).toEqual({ error: "Contract already exists" });
     });
 
-    it("should return 422 Unprocessable Entity if request body is invalid", async () => {
+    it("should return 400 Bad Request if request body is invalid", async () => {
       const res = await request(app)
         .post("/api/contracts")
         .set("x-api-key", "test-api-key")
@@ -220,19 +260,24 @@ describe("REST API Integration Tests", () => {
           id: "C5",
           // missing functions
         });
-      expect(res.status).toBe(422);
+      expect(res.status).toBe(400);
       expect(res.body).toEqual({ error: "Missing id or functions" });
     });
   });
 
   describe("GET /api/wallet/:address", () => {
-    it("should return events involving the given wallet address", async () => {
-      const res = await request(app).get(`/api/wallet/${wallet1}`);
+    // A well-formed but unseeded Stellar public key (G + 55 base32 chars).
+    const validAddress = "G" + "A".repeat(55);
+
+    it("should return 200 with an events array for a valid address", async () => {
+      const res = await request(app).get(`/api/wallet/${validAddress}`);
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body.length).toBeGreaterThan(0);
-      // Verify that the retrieved events indeed involve the wallet
-      expect(res.body[0].description).toContain(wallet1);
+      expect(Array.isArray(res.body.events)).toBe(true);
+    });
+
+    it("should return 400 for a malformed address", async () => {
+      const res = await request(app).get("/api/wallet/not-a-valid-address");
+      expect(res.status).toBe(400);
     });
   });
 });

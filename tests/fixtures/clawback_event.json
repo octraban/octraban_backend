@@ -1,0 +1,6 @@
+{
+  "name": "clawback_event",
+  "description": "Asset clawback event - authority recovers tokens from an account",
+  "testnet_source": "SEP-41 compliant contracts on Soroban testnet",
+  "xdr_template": "ContractEvent with clawback fn and admin, from, amount, token parameters"
+}

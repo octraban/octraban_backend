@@ -1,5 +1,6 @@
 import pg from "pg";
 import { runMigrations } from "./migrate.js";
+import { validateAndSanitizeDecodedEvent } from "./decoderValidator.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -114,6 +115,23 @@ export const db = {
     );
   },
 
+  /**
+   * Validate and sanitize a decoded event, then insert into the database.
+   * On validation failure:
+   * - Sets decoded=false to mark as unverified
+   * - Sanitizes description to prevent corruption (strips HTML, control chars, limits length)
+   * - Logs structured error with failing field paths
+   * - Increments decoder_schema_violations_total metric
+   * - Still inserts the record with sanitized data (corruption guard)
+   *
+   * @param {object} ev - The decoded event object from decoder
+   * @param {object} logger - Optional logger instance (defaults to console)
+   */
+  async upsertEventValidated(ev, logger) {
+    const validated = validateAndSanitizeDecodedEvent(ev, logger);
+    await this.upsertEvent(validated);
+  },
+
   async getEvents({ contract, fn, page = 1, limit = 25, type } = {}) {
     const conditions = [];
     const params = [];
@@ -125,7 +143,7 @@ export const db = {
       params.push(fn);
       conditions.push(`function = $${params.length}`);
     }
-    filter by transaction type
+    // filter by transaction type
     // "soroban"  → contract_id is non-empty (Soroban invocations/deployments)
     // "classic"  → contract_id is empty string or NULL
     if (type === "soroban") {
@@ -145,7 +163,8 @@ export const db = {
   },
 
   async getEvent(seq) {
-    const { rows } = await pool.query("SELECT * FROM events WHERE seq = $1", [seq]);
+    const sql = "SELECT * FROM events WHERE seq = $1";
+    const { rows } = await pool.query(sql, [seq]);
     return rows[0] ?? null;
   },
 
@@ -352,7 +371,8 @@ export const db = {
   },
 
   async getContractMeta(id) {
-    const { rows } = await pool.query("SELECT * FROM contracts WHERE id = $1", [id]);
+    const sql = "SELECT * FROM contracts WHERE id = $1";
+    const { rows } = await pool.query(sql, [id]);
     return rows[0] ?? null;
   },
 
@@ -443,9 +463,9 @@ export const db = {
 
   async upsertContractMeta(meta) {
     await pool.query(
-      `INSERT INTO contracts (id, name, description, functions, registered_by, source_files, has_circuit_breaker, is_rwa, rwa_type, version)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       ON CONFLICT (id) DO UPDATE SET name=$2, description=$3, functions=$4, source_files=$6, has_circuit_breaker=$7, is_rwa=$8, rwa_type=$9, version=$10`,
+      `INSERT INTO contracts (id, name, description, functions, registered_by, source_files, has_circuit_breaker, is_rwa, rwa_type, version, abi_version, min_ledger)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       ON CONFLICT (id) DO UPDATE SET name=$2, description=$3, functions=$4, source_files=$6, has_circuit_breaker=$7, is_rwa=$8, rwa_type=$9, version=$10, abi_version=$11, min_ledger=$12`,
       [
         meta.id,
         meta.name,
@@ -457,11 +477,47 @@ export const db = {
         meta.is_rwa ?? false,
         meta.rwa_type ?? null,
         meta.version ?? 1,
+        meta.abi_version ?? 0,
+        meta.min_ledger ?? 0,
       ],
     );
+
+    // Also store in version history if abi_version is provided
+    if (meta.abi_version != null) {
+      await pool.query(
+        `INSERT INTO contract_versions (contract_id, abi_version, min_ledger, name, description, functions, registered_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT DO NOTHING`,
+        [
+          meta.id,
+          meta.abi_version,
+          meta.min_ledger ?? 0,
+          meta.name,
+          meta.description,
+          JSON.stringify(meta.functions),
+          meta.registered_by,
+        ],
+      );
+    }
   },
 
-  Circuit breaker status tracking
+  /**
+   * Fetch contract metadata that was active at a given ledger.
+   * Returns the version whose min_ledger <= target_ledger, ordered by
+   * abi_version descending (latest applicable version wins).
+   */
+  async getContractMetaByLedger(contractId, targetLedger) {
+    const { rows } = await pool.query(
+      `SELECT * FROM contract_versions
+       WHERE contract_id = $1 AND min_ledger <= $2
+       ORDER BY abi_version DESC
+       LIMIT 1`,
+      [contractId, targetLedger],
+    );
+    return rows[0] ?? null;
+  },
+
+  // Circuit breaker status tracking
   async updateCircuitBreakerStatus(contractId, isPaused, ledger) {
     await pool.query(`UPDATE contracts SET is_paused = $1, pause_status_ledger = $2 WHERE id = $3`, [
       isPaused,
@@ -823,7 +879,7 @@ export const db = {
     );
   },
 
-  data export — events (CSV/JSON)
+  // data export — events (CSV/JSON)
   async getEventsForExport({ contract, fn, type, limit = 10000 } = {}) {
     const conditions = [];
     const params = [];
@@ -852,7 +908,7 @@ export const db = {
     return rows;
   },
 
-  data export — registered contracts (CSV/JSON)
+  // data export — registered contracts (CSV/JSON)
   async getContractsForExport() {
     const { rows } = await pool.query(
       `SELECT id, name, description, registered_by, has_circuit_breaker, is_paused, is_rwa, rwa_type, created_at

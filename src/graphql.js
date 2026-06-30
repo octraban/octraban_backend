@@ -18,7 +18,9 @@ export const typeDefs = `
     seq: Int
     contract_id: String
     function: String
+    function_name: String
     ledger: Int
+    ledger_sequence: Int
     tx_hash: String
     description: String
     cpu_instructions: Int
@@ -63,6 +65,13 @@ const resolvers = {
       return db.getEvent(args.seq);
     },
   },
+  // Field aliases so introspection and queries using the canonical names work.
+  // The DB columns are `function` and `ledger`; these expose them under the
+  // names required by the issue acceptance criteria.
+  Event: {
+    function_name: (row) => row.function ?? null,
+    ledger_sequence: (row) => row.ledger ?? null,
+  },
 };
 
 // ── Minimal GraphQL execution (no external runtime needed) ────────────────────
@@ -99,6 +108,19 @@ function parseQuery(query) {
 }
 
 /**
+ * Apply Event-level field resolvers to a raw DB row so alias fields
+ * (function_name, ledger_sequence) are present before projection.
+ */
+function resolveEventFields(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    function_name: resolvers.Event.function_name(row),
+    ledger_sequence: resolvers.Event.ledger_sequence(row),
+  };
+}
+
+/**
  * Project an object to only the requested fields.
  */
 function project(obj, fields) {
@@ -125,15 +147,79 @@ async function execute(parsed) {
       out.next_cursor = page.next_cursor;
     }
     if (!parsed.topFields || parsed.topFields.some((f) => f === "data" || parsed.dataFields)) {
-      out.data = (page.data || []).map((ev) => (parsed.dataFields ? project(ev, parsed.dataFields) : ev));
+      out.data = (page.data || []).map((ev) => {
+        const resolved = resolveEventFields(ev);
+        return parsed.dataFields ? project(resolved, parsed.dataFields) : resolved;
+      });
     }
     return out;
   }
 
   // Single event
-  if (parsed.dataFields) return project(result, parsed.dataFields);
-  if (parsed.topFields) return project(result, parsed.topFields);
-  return result;
+  const resolved = resolveEventFields(result);
+  if (parsed.dataFields) return project(resolved, parsed.dataFields);
+  if (parsed.topFields) return project(resolved, parsed.topFields);
+  return resolved;
+}
+
+// ── Introspection ─────────────────────────────────────────────────────────────
+
+/**
+ * Build a minimal introspection response covering the Event type and Query
+ * type so that clients can verify the schema without a full graphql-js runtime.
+ */
+function buildIntrospectionResponse() {
+  const eventFields = [
+    { name: "seq", type: { name: "Int", kind: "SCALAR" } },
+    { name: "contract_id", type: { name: "String", kind: "SCALAR" } },
+    { name: "function", type: { name: "String", kind: "SCALAR" } },
+    { name: "function_name", type: { name: "String", kind: "SCALAR" } },
+    { name: "ledger", type: { name: "Int", kind: "SCALAR" } },
+    { name: "ledger_sequence", type: { name: "Int", kind: "SCALAR" } },
+    { name: "tx_hash", type: { name: "String", kind: "SCALAR" } },
+    { name: "description", type: { name: "String", kind: "SCALAR" } },
+    { name: "cpu_instructions", type: { name: "Int", kind: "SCALAR" } },
+    { name: "mem_bytes", type: { name: "Int", kind: "SCALAR" } },
+    { name: "fee_charged", type: { name: "Int", kind: "SCALAR" } },
+    { name: "is_high_bloat_risk", type: { name: "Boolean", kind: "SCALAR" } },
+    { name: "is_clawback", type: { name: "Boolean", kind: "SCALAR" } },
+  ];
+
+  return {
+    __schema: {
+      queryType: { name: "Query" },
+      types: [
+        {
+          kind: "OBJECT",
+          name: "Event",
+          fields: eventFields,
+        },
+        {
+          kind: "OBJECT",
+          name: "EventPage",
+          fields: [
+            { name: "data", type: { name: "Event", kind: "OBJECT" } },
+            { name: "next_cursor", type: { name: "Int", kind: "SCALAR" } },
+          ],
+        },
+        {
+          kind: "OBJECT",
+          name: "Query",
+          fields: [
+            { name: "events", type: { name: "EventPage", kind: "OBJECT" } },
+            { name: "event", type: { name: "Event", kind: "OBJECT" } },
+          ],
+        },
+      ],
+    },
+  };
+}
+
+/**
+ * Returns true when the query body is a GraphQL introspection request.
+ */
+function isIntrospectionQuery(query) {
+  return typeof query === "string" && query.includes("__schema");
 }
 
 // ── Express middleware ────────────────────────────────────────────────────────
@@ -147,6 +233,11 @@ export function attachGraphQL(app) {
   app.post("/graphql", async (req, res) => {
     const { query, variables } = req.body;
     if (!query) return res.status(400).json({ errors: [{ message: "Missing query" }] });
+
+    // Handle introspection queries without parsing as a data query
+    if (isIntrospectionQuery(query)) {
+      return res.json({ data: buildIntrospectionResponse() });
+    }
 
     try {
       const parsed = parseQuery(query);
@@ -166,6 +257,9 @@ export function attachGraphQL(app) {
       return res.json({
         info: "POST a JSON body with { query } to use GraphQL",
       });
+    }
+    if (isIntrospectionQuery(String(query))) {
+      return res.json({ data: buildIntrospectionResponse() });
     }
     try {
       const parsed = parseQuery(String(query));

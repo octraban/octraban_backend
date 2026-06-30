@@ -1,0 +1,6 @@
+{
+  "name": "mint_event",
+  "description": "Native XLM wrap (mint on SAC) event - converts classic XLM to Soroban XLM",
+  "testnet_source": "Native XLM SAC testnet: CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+  "xdr_template": "ContractEvent with mint fn and address + amount parameters"
+}

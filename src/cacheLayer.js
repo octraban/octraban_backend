@@ -130,6 +130,14 @@ async function _getRedis() {
     await _redis.connect();
     console.log("[cache:l2] connected:", url);
     _setupPubSub(url).catch((e) => console.warn("[cache:pubsub] setup failed:", e.message));
+    
+    // Register Redis client for health checks
+    try {
+      const { setRedisClient } = await import("./health.js");
+      setRedisClient(_redis);
+    } catch {
+      // Health module may not be available yet
+    }
   } catch (err) {
     console.warn("[cache:l2] unavailable, using L1 only:", err.message);
     _redis = null;

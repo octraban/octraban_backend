@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { SorobanRpc } from "@stellar/stellar-sdk";
 import config from "./config.js";
 import { startApi } from "./api.js";
@@ -28,6 +29,7 @@ import { cacheInvalidate } from "./cacheLayer.js";
 import { eventsIngested, decodeLatency, rpcErrors, updateDbPoolMetrics } from "./metrics.js";
 import { startUsageFlushCron, startRetentionCleanupCron } from "./usage/usageTracker.js";
 import { startAuditPartitionCron } from "./audit/auditLogger.js";
+import { updateIndexerStatus, updateWorkerStatus } from "./health.js";
 
 const RPC_URL = config.SOROBAN_RPC_URL;
 const START_LEDGER = config.START_LEDGER;
@@ -103,10 +105,10 @@ async function indexLedger(ledger) {
     // Flag footprint contention across transactions in this page's events
     scanFootprintContention(res.events);
 
-    build a per-page txHash → feeBump cache to avoid redundant
+    // Build a per-page txHash → feeBump cache to avoid redundant
     // getTransaction calls when multiple events share the same transaction.
     const feeBumpCache = new Map();
-    const restoreCache = new Map(); txHash → archival_info
+    const restoreCache = new Map(); // txHash → archival_info
     const uniqueTxHashes = [...new Set(res.events.map((e) => e.txHash).filter(Boolean))];
     await Promise.all(
       uniqueTxHashes.map(async (txHash) => {
@@ -114,7 +116,7 @@ async function indexLedger(ledger) {
           const txResult = await withRetry(() => rpc.getTransaction(txHash));
           if (txResult?.envelopeXdr) {
             feeBumpCache.set(txHash, parseFeeBump(txResult.envelopeXdr));
-            parse RestoreFootprintOp if present
+            // parse RestoreFootprintOp if present
             const restore = parseAndDescribeRestore(txResult.envelopeXdr, txResult.resultMetaXdr ?? null);
             if (restore.isRestoreOp) restoreCache.set(txHash, restore);
           }
@@ -155,15 +157,15 @@ async function indexLedger(ledger) {
 
       decoded.storage_tiers = classifyStorageWrites(ev);
       decoded.fee_bump = feeBumpCache.get(ev.txHash) ?? null;
-      attach restoration info when this tx is a RestoreFootprintOp
+      // attach restoration info when this tx is a RestoreFootprintOp
       decoded.archival_info = restoreCache.get(ev.txHash) ?? null;
-      await db.upsertEvent(decoded);
+      await db.upsertEventValidated(decoded);
 
-      persist per-key state diffs for the timeline
+      // persist per-key state diffs for the timeline
       const diffs = extractStateDiffs(ev, decoded);
       if (diffs.length) await db.insertStateDiffs(diffs).catch(() => {});
 
-      detect evicted ledger keys (TTL → 0) in this transaction
+      // detect evicted ledger keys (TTL → 0) in this transaction
       const evictions = detectEvictions(ev, ev.ledger, ev.txHash);
       if (evictions.length) {
         await db
@@ -172,10 +174,10 @@ async function indexLedger(ledger) {
         console.log(`[${ev.ledger}] EVICTED ${evictions.length} key(s) in tx ${ev.txHash}`);
       }
 
-      publish(decoded); push to WS clients
+      publish(decoded); // push to WS clients
       handleVaultEvent(decoded); // vault ratio update (async, non-blocking)
 
-      Process circuit breaker events
+      // process circuit breaker events
       const meta = await db.getContractMeta(ev.contractId).catch(() => null);
       if (meta) {
         processCircuitBreakerEvent(decoded, meta).catch((err) =>
@@ -189,7 +191,7 @@ async function indexLedger(ledger) {
     // Scan transactions for UploadContractWasm operations (non-blocking)
     indexWasmUploads(uniqueTxHashes, ledger).catch((err) => console.error("[wasmUpload] batch error:", err.message));
 
-    record the latest ledger hash for re-org detection
+    // record the latest ledger hash for re-org detection
     if (res.latestLedger && res.latestLedgerHash) {
       await recordLedgerHash(res.latestLedger, res.latestLedgerHash).catch(() => {});
     }
@@ -230,7 +232,7 @@ async function run() {
   // Periodic ratio refresh every 60s for vaults that accrue without emitting events
   setInterval(() => refreshAllVaults().catch(() => {}), 60_000);
 
-  resume from the highest indexed ledger so no events are missed
+  // resume from the highest indexed ledger so no events are missed
   // after a restart. Fall back to START_LEDGER or (latest - 100) for first run.
   const dbMax = await db.getMaxLedger();
   _cursor =
@@ -241,6 +243,8 @@ async function run() {
   while (!shutdown) {
     try {
       const latest = await indexLedger(_cursor);
+      const lagSeconds = Math.floor((Date.now() - (_cursor * 5000)) / 1000); // approximate lag
+      updateIndexerStatus(_cursor, lagSeconds);
       _cursor = latest + 1;
       await db.saveCursor(_cursor);
     } catch (err) {

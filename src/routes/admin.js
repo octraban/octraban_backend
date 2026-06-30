@@ -100,9 +100,7 @@ function rowsToCsv(rows, columns) {
  */
 export default function registerAdminRoutes(app) {
   // ── Legacy utility routes (no auth) ───────────────────────────────────────
-  // These existed before the auth system and are preserved for compatibility.
-  app.get('/health', (_req, res) => res.json({ status: 'ok' }));
-
+  // /health is registered by api.js (comprehensive check via health.js). Skip it here.
   app.get('/api/doctor', async (_req, res) => {
     try {
       const checks = await runAllChecks();
