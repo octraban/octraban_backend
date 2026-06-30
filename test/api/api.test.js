@@ -5,6 +5,7 @@ import pg from "pg";
 const DB_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || "postgres://postgres:postgres@localhost:5432/soroban_test";
 process.env.DATABASE_URL = DB_URL;
 process.env.API_KEY = "test-api-key";
+process.env.VERIFY_ABI = "false";
 
 import { db } from "../../src/db.js";
 import { startApi } from "../../src/api.js";

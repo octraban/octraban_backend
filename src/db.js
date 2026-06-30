@@ -143,7 +143,7 @@ export const db = {
       params.push(fn);
       conditions.push(`function = $${params.length}`);
     }
-    filter by transaction type
+    // filter by transaction type
     // "soroban"  → contract_id is non-empty (Soroban invocations/deployments)
     // "classic"  → contract_id is empty string or NULL
     if (type === "soroban") {
@@ -164,7 +164,6 @@ export const db = {
 
   async getEvent(seq) {
     const sql = "SELECT * FROM events WHERE seq = $1";
-    logQuery(sql, [seq]);
     const { rows } = await pool.query(sql, [seq]);
     return rows[0] ?? null;
   },
@@ -373,7 +372,6 @@ export const db = {
 
   async getContractMeta(id) {
     const sql = "SELECT * FROM contracts WHERE id = $1";
-    logQuery(sql, [id]);
     const { rows } = await pool.query(sql, [id]);
     return rows[0] ?? null;
   },
@@ -519,7 +517,7 @@ export const db = {
     return rows[0] ?? null;
   },
 
-  Circuit breaker status tracking
+  // Circuit breaker status tracking
   async updateCircuitBreakerStatus(contractId, isPaused, ledger) {
     await pool.query(`UPDATE contracts SET is_paused = $1, pause_status_ledger = $2 WHERE id = $3`, [
       isPaused,
@@ -881,7 +879,7 @@ export const db = {
     );
   },
 
-  data export — events (CSV/JSON)
+  // data export — events (CSV/JSON)
   async getEventsForExport({ contract, fn, type, limit = 10000 } = {}) {
     const conditions = [];
     const params = [];
@@ -910,7 +908,7 @@ export const db = {
     return rows;
   },
 
-  data export — registered contracts (CSV/JSON)
+  // data export — registered contracts (CSV/JSON)
   async getContractsForExport() {
     const { rows } = await pool.query(
       `SELECT id, name, description, registered_by, has_circuit_breaker, is_paused, is_rwa, rwa_type, created_at

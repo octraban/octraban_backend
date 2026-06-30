@@ -11,7 +11,7 @@
  * Readiness: Service can handle traffic (dependencies healthy)
  */
 
-import { pool } from "./db.js";
+import { db, pool } from "./db.js";
 
 // ── Health check state ────────────────────────────────────────────────────────
 let _indexerStatus = { healthy: true, lastLedger: 0, lastSync: Date.now(), lagSeconds: 0 };
@@ -67,9 +67,9 @@ export function reportWorkerError() {
 async function checkDatabase() {
   const start = Date.now();
   try {
-    await pool.query("SELECT 1 AS health_check");
+    await db.query("SELECT 1 AS health_check");
     const responseTime = Date.now() - start;
-    
+
     // Get pool stats
     const totalCount = pool.totalCount || 0;
     const idleCount = pool.idleCount || 0;
