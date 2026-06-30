@@ -586,7 +586,7 @@ export function createApi({ logDestination, dbOverride } = {}) {
       const { id, functions } = req.body;
 
       if (!id || !functions) {
-        return res.status(422).json({ error: "Missing id or functions" });
+        return res.status(400).json({ error: "Missing id or functions" });
       }
 
       const existing = await db.getContractMeta(id);
@@ -800,10 +800,17 @@ export function createApi({ logDestination, dbOverride } = {}) {
     }
   });
 
+  // GET /api/wallet/:address — events involving a Stellar/Soroban wallet.
+  // Returns 200 with { events: [...] } (empty array for an unknown address) and
+  // 400 when the address is not a well-formed Stellar public key (G... base32).
   app.get("/api/wallet/:address", async (req, res) => {
     try {
-      const events = await db.getWalletEvents(req.params.address);
-      res.json(events);
+      const address = req.params.address;
+      if (!/^G[A-Z2-7]{55}$/.test(address)) {
+        return res.status(400).json({ error: "Invalid wallet address format" });
+      }
+      const events = await db.getWalletEvents(address);
+      res.json({ events });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
@@ -1172,6 +1179,13 @@ export function createApi({ logDestination, dbOverride } = {}) {
     }
   });
 
+  // POST /api/setup/db-init — create/upgrade the schema only.
+  //
+  // INTENTIONALLY MINIMAL (issue #417): this handler must call db.init() and
+  // nothing else. It does NOT seed sample data. The old seed-lib.js helper
+  // (which generated fake Stellar addresses) was removed during cleanup and must
+  // never be re-introduced here — no static import, no `await import("./seed-lib.js")`.
+  // The schema-init test in test/api/setup-db-init.test.js guards this invariant.
   app.post("/api/setup/db-init", blockInProduction, async (req, res) => {
     try {
       await db.init();
@@ -1299,6 +1313,52 @@ export function createApi({ logDestination, dbOverride } = {}) {
 
   // ── Batch Multi-Call Endpoints ───────────────────────────────────────
 
+  // POST /api/batch — dispatch a list of HTTP sub-requests against this API and
+  // return their results in the SAME order they were submitted. A sub-request
+  // that fails (e.g. 404) is captured as its own result entry and does NOT
+  // abort the sibling sub-requests.
+  //
+  // Body: { requests: [{ method?, path, body? }, ...] } (or a bare array).
+  // Response: [{ status, body }, ...] — one entry per submitted request, in order.
+  app.post("/api/batch", async (req, res) => {
+    try {
+      const items = Array.isArray(req.body) ? req.body : req.body?.requests;
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ error: "requests must be an array" });
+      }
+
+      const base = `http://${req.headers.host}`;
+      const apiKey = req.headers["x-api-key"];
+
+      // Promise.all preserves array order; each sub-request resolves to its own
+      // { status, body } so an individual failure never rejects the batch.
+      const results = await Promise.all(
+        items.map(async (item) => {
+          try {
+            const method = String(item?.method || "GET").toUpperCase();
+            const subPath = item?.path || item?.url || "/";
+            const init = { method, headers: {} };
+            if (apiKey) init.headers["x-api-key"] = apiKey;
+            if (item?.body !== undefined && method !== "GET" && method !== "HEAD") {
+              init.headers["content-type"] = "application/json";
+              init.body = JSON.stringify(item.body);
+            }
+            const r = await fetch(base + subPath, init);
+            const contentType = r.headers.get("content-type") || "";
+            const body = contentType.includes("application/json") ? await r.json() : await r.text();
+            return { status: r.status, body };
+          } catch (e) {
+            return { status: 500, body: { error: e.message } };
+          }
+        }),
+      );
+
+      res.json(results);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // POST /api/batch/simulate — simulate full batch with per-call results
   app.post("/api/batch/simulate", async (req, res) => {
     try {
@@ -1398,4 +1458,6 @@ export function createApi({ logDestination, dbOverride } = {}) {
   return server;
 }
 
-export const startApi = createApi;
+// `startApi` is the name used by src/index.js and the test suite; `createApi`
+// is kept for callers that pass { logDestination, dbOverride }. They are aliases.
+export { createApi as startApi };

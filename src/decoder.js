@@ -205,7 +205,7 @@ export async function decode(ev) {
  * mint on native SAC = Classic XLM → Soroban (wrap)
  * burn on native SAC = Soroban → Classic XLM (unwrap)
  */
-function nativeXlmDescription(fnName, args, data) {
+export function nativeXlmDescription(fnName, args, data) {
   if (fnName === "mint") {
     const [to, amount] = args;
     const amt = amount ?? data;
@@ -247,7 +247,14 @@ function vaultDescription(fn, args, data, contractName, vaultMeta) {
   }
 }
 
-function buildDescription(fn, args, data, contractName) {
+/**
+ * Build a human-readable description from decoded ABI-matched function arguments.
+ *
+ * SEP-41 transfer format:
+ *   "Address {short-from} transferred {amount} {token} to {short-to} on {contractName}"
+ * where short addresses are truncated to "AAAAAA…ZZZZ" (6 + 4 chars).
+ */
+export function buildDescription(fn, args, data, contractName) {
   switch (fn) {
     case "swap": {
       const [from, amtIn, tokenIn, amtOut, tokenOut] = args;
