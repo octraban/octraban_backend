@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { SorobanRpc } from "@stellar/stellar-sdk";
 import { startApi } from "./api.js";
 import { db, pool } from "./db.js";
