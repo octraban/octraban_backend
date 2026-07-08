@@ -1,4 +1,4 @@
-# Soroban Smart Block Explorer — Backend
+# Octraban — Backend
 
 Human-readable Soroban contract explorer. Decodes raw XDR into plain English:
 > "Address GABC... swapped 100 USDC → 98.7 XLM on StellarSwap at ledger 4521983."
@@ -112,3 +112,19 @@ STELLAR_RPC_URL=https://mainnet.stellar.validationcloud.io/v1/<API_KEY>
 HORIZON_URL=https://horizon.stellar.org
 NETWORK_PASSPHRASE=Public Global Stellar Network ; September 2015
 ```
+
+## Octraban service topology
+
+This repository is the **backend** tier of the Octraban stack, split across three repos:
+
+- **octraban_frontend** — Vite/React explorer UI. Reads from the indexer via `VITE_INDEXER_URL` (default `http://localhost:3001`).
+- **octraban_backend** (this repo) — the API service plus the **indexer** (under `indexer/`) that ingests on-chain data.
+  - API service: `PORT=3000`
+  - Indexer API: `PORT=3001` (what the frontend queries)
+- **octraban_contract** — Soroban smart contracts (explorer, ticket) deployed to **testnet**.
+
+### Local wiring
+1. Start the indexer (`indexer/`) → serves on `:3001`.
+2. Start the API (root) → serves on `:3000`.
+3. Point the frontend at the indexer: `VITE_INDEXER_URL=http://localhost:3001`.
+4. Set `TESTNET_RPC_URL=https://soroban-testnet.stellar.org` for chain access.
