@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://soroban-smart-block-explorer.github.io/schemas/decodedEvent.schema.json",
+  "$id": "https://octraban.github.io/schemas/decodedEvent.schema.json",
   "title": "Decoded Event",
   "description": "Schema for decoded Soroban events before insertion into PostgreSQL.",
   "type": "object",

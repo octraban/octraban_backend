@@ -18,7 +18,7 @@ import cron from "node-cron";
 import { db } from "./db.js";
 
 const GITHUB_API = "https://api.github.com";
-const ABI_REPO = process.env.ABI_REPO || "Soroban-Smart-Block-Explorer/verified-abis";
+const ABI_REPO = process.env.ABI_REPO || "Octraban/verified-abis";
 const ABI_PATH = process.env.ABI_PATH || "contracts";
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || "";
 // Default: run every 10 minutes

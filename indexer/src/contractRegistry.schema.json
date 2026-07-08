@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://soroban-smart-block-explorer.github.io/schemas/contractRegistry.schema.json",
+  "$id": "https://octraban.github.io/schemas/contractRegistry.schema.json",
   "title": "Community Contract Registry Entry",
   "description": "Schema for manually submitted Soroban contract metadata and custom ABI interpretations.",
   "type": "object",

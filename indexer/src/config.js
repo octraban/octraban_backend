@@ -138,7 +138,7 @@ const configSchema = z.object({
   // ── GitHub ABI Sync ─────────────────────────────────────────────────────────
   GITHUB_TOKEN: z.string().optional(),
 
-  ABI_REPO: z.string().default("Soroban-Smart-Block-Explorer/verified-abis"),
+  ABI_REPO: z.string().default("Octraban/verified-abis"),
 
   ABI_PATH: z.string().default("contracts"),
 

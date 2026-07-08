@@ -1,5 +1,5 @@
 /**
- * Prometheus metrics for the Soroban Explorer indexer.
+ * Prometheus metrics for the Octraban indexer.
  * Exposes: event ingestion rate, decode latency, DB pool utilisation, RPC errors.
  */
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from "prom-client";
