@@ -1,6 +1,6 @@
 # Health Check Endpoints
 
-This document describes the health check endpoints available in the Soroban Smart Block Backend API.
+This document describes the health check endpoints available in the Octraban Backend API.
 
 ## Overview
 

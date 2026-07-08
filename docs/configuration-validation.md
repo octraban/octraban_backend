@@ -1,6 +1,6 @@
 # Configuration Validation
 
-This document describes the environment variable validation system implemented in the Soroban Smart Block Backend.
+This document describes the environment variable validation system implemented in the Octraban Backend.
 
 ## Overview
 
