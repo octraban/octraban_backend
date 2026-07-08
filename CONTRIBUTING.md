@@ -1,4 +1,4 @@
-# Contributing to Soroban Smart Block Explorer
+# Contributing to Octraban
 
 Thanks for your interest in contributing! This project is part of the **Stellar Wave Program** on [Drips](https://www.drips.network/wave/stellar).
 
@@ -12,8 +12,8 @@ Thanks for your interest in contributing! This project is part of the **Stellar 
 ### Steps
 
 ```bash
-git clone https://github.com/<your-org>/soroban-block-explorer-backend
-cd soroban-block-explorer-backend
+git clone https://github.com/<your-org>/octraban-backend
+cd octraban-backend
 
 cp .env.example .env
 # Edit .env — at minimum set DATABASE_URL
@@ -152,7 +152,7 @@ FK field lacks an index.
 
 ## Freeze Management System Architecture
 
-The Soroban Smart Block Explorer includes a robust CAP-0077 Consensus Asset-Freeze transaction interceptor and management system:
+The Octraban includes a robust CAP-0077 Consensus Asset-Freeze transaction interceptor and management system:
 - **`FrozenLedgerKey` Model**: Maintains a registry of currently frozen ledger keys.
 - **`FreezeViolation` Model**: Records transactions that touched frozen keys, along with a severity level (`low`, `medium`, `high`, `critical`).
 - **`AuditLog` Model**: Stores an immutable event log for all freeze-related state changes (freezing, thawing, resolving violations).
