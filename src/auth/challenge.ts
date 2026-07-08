@@ -18,7 +18,7 @@ export interface ChallengeData {
 
 export function buildChallengeMessage(address: string, nonce: string, appId: string, domain: string): string {
   const ts = new Date().toISOString();
-  return `Sign this message to authenticate with Soroban Explorer: ${domain} ${ts} [nonce: ${nonce}] [appId: ${appId}]`;
+  return `Sign this message to authenticate with Octraban: ${domain} ${ts} [nonce: ${nonce}] [appId: ${appId}]`;
 }
 
 export async function createChallenge(

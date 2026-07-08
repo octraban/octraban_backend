@@ -13,7 +13,7 @@ import {
 } from '@opentelemetry/semantic-conventions';
 
 const OTLP_ENDPOINT = process.env.OTLP_ENDPOINT ?? 'http://localhost:4318';
-const SERVICE_NAME = process.env.SERVICE_NAME ?? 'soroban-block-explorer';
+const SERVICE_NAME = process.env.SERVICE_NAME ?? 'octraban';
 const SERVICE_VERSION = process.env.npm_package_version ?? '1.0.0';
 
 const resource = new Resource({

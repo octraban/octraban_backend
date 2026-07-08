@@ -98,7 +98,7 @@ authWebhooksRouter.post(
       event: 'test',
       userId: req.user!.id,
       address: req.user!.address,
-      message: 'This is a test event from Soroban Explorer',
+      message: 'This is a test event from Octraban',
     };
     const body = JSON.stringify({ ...testPayload, timestamp: new Date().toISOString() });
     const sig = createHmac('sha256', hook.secret).update(body).digest('hex');

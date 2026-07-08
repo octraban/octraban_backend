@@ -545,11 +545,11 @@ scheduleRouter.get('/calendar', async (req: Request, res: Response) => {
  *             example: |
  *               BEGIN:VCALENDAR
  *               VERSION:2.0
- *               PRODID:-//Soroban Explorer//Temporal Orchestrator//EN
+ *               PRODID:-//Octraban//Temporal Orchestrator//EN
  *               CALSCALE:GREGORIAN
  *               METHOD:PUBLISH
  *               BEGIN:VEVENT
- *               UID:clz9q1x4t0000s6h2schedop1@soroban-explorer
+ *               UID:clz9q1x4t0000s6h2schedop1@octraban
  *               DTSTART:20260619T072426Z
  *               DTEND:20260619T082426Z
  *               SUMMARY:[VESTING] release @ CALLD5GH
@@ -580,7 +580,7 @@ scheduleRouter.get('/calendar.ics', async (_req: Request, res: Response) => {
 
     const events = ops
       .map((op) => {
-        const uid = `${op.id}@soroban-explorer`;
+        const uid = `${op.id}@octraban`;
         const dtstart = formatDt(op.triggerTime);
         const dtend = formatDt(new Date(op.triggerTime.getTime() + 3600 * 1000));
         const summary = `[${op.timerType}] ${op.functionName} @ ${op.contractAddress.slice(0, 8)}`;
@@ -599,7 +599,7 @@ scheduleRouter.get('/calendar.ics', async (_req: Request, res: Response) => {
     const ics = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//Soroban Explorer//Temporal Orchestrator//EN',
+      'PRODID:-//Octraban//Temporal Orchestrator//EN',
       'CALSCALE:GREGORIAN',
       'METHOD:PUBLISH',
       events,

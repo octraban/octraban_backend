@@ -5,7 +5,7 @@ const options: swaggerJsdoc.Options = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'Soroban Smart Block Explorer API',
+      title: 'Octraban API',
       version: '1.0.0',
       description: 'Human-readable Soroban contract explorer. Decodes raw XDR into plain English.',
     },

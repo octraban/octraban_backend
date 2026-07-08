@@ -32,7 +32,7 @@ portalRouter.post('/sdks/generate', (req: Request, res: Response) => {
   res.status(202).json({
     id: sdkId,
     language,
-    packageName: packageName ?? `soroban-explorer-${language}`,
+    packageName: packageName ?? `octraban-${language}`,
     features: features ?? [],
     status: 'generating',
     message: `SDK generation for ${language} queued. Download will be available shortly.`,

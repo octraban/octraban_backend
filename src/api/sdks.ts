@@ -36,62 +36,62 @@ const SDK_REGISTRY: Record<
   }
 > = {
   typescript: {
-    npm: '@soroban-explorer/client',
+    npm: '@octraban/client',
     platform: 'npm',
-    docs: 'https://docs.soroban-explorer.io/sdk/typescript',
+    docs: 'https://docs.octraban.io/sdk/typescript',
   },
   python: {
-    pypi: 'soroban-explorer-client',
+    pypi: 'octraban-client',
     platform: 'pypi',
-    docs: 'https://docs.soroban-explorer.io/sdk/python',
+    docs: 'https://docs.octraban.io/sdk/python',
   },
   rust: {
-    crates: 'soroban-explorer-client',
+    crates: 'octraban-client',
     platform: 'crates',
-    docs: 'https://docs.soroban-explorer.io/sdk/rust',
+    docs: 'https://docs.octraban.io/sdk/rust',
   },
   go: {
-    go: 'github.com/soroban-explorer/client-go',
+    go: 'github.com/octraban/client-go',
     platform: 'go-modules',
-    docs: 'https://docs.soroban-explorer.io/sdk/go',
+    docs: 'https://docs.octraban.io/sdk/go',
   },
   java: {
     maven: 'com.soroban.explorer:client',
     platform: 'maven',
-    docs: 'https://docs.soroban-explorer.io/sdk/java',
+    docs: 'https://docs.octraban.io/sdk/java',
   },
   kotlin: {
-    gradle: 'io.github.soroban-explorer:client',
+    gradle: 'io.github.octraban:client',
     platform: 'maven',
-    docs: 'https://docs.soroban-explorer.io/sdk/kotlin',
+    docs: 'https://docs.octraban.io/sdk/kotlin',
   },
   swift: {
-    spm: 'soroban-explorer-client',
+    spm: 'octraban-client',
     platform: 'spm',
-    docs: 'https://docs.soroban-explorer.io/sdk/swift',
+    docs: 'https://docs.octraban.io/sdk/swift',
   },
   csharp: {
-    nuget: 'SorobanExplorer.Client',
+    nuget: 'Octraban.Client',
     platform: 'nuget',
-    docs: 'https://docs.soroban-explorer.io/sdk/csharp',
+    docs: 'https://docs.octraban.io/sdk/csharp',
   },
 };
 
 const INSTALL_INSTRUCTIONS: Record<string, string[]> = {
   typescript: [
-    'npm install @soroban-explorer/client',
+    'npm install @octraban/client',
     '# or',
-    'yarn add @soroban-explorer/client',
-    'pnpm add @soroban-explorer/client',
+    'yarn add @octraban/client',
+    'pnpm add @octraban/client',
   ],
-  python: ['pip install soroban-explorer-client', '# or', 'poetry add soroban-explorer-client'],
+  python: ['pip install octraban-client', '# or', 'poetry add octraban-client'],
   rust: [
-    'cargo add soroban-explorer-client',
+    'cargo add octraban-client',
     '# or add to Cargo.toml:',
     '[dependencies]',
-    'soroban-explorer-client = "2.1.0"',
+    'octraban-client = "2.1.0"',
   ],
-  go: ['go get github.com/soroban-explorer/client-go@v2.1.0'],
+  go: ['go get github.com/octraban/client-go@v2.1.0'],
   java: [
     '<!-- Maven -->',
     '<dependency>',
@@ -100,21 +100,21 @@ const INSTALL_INSTRUCTIONS: Record<string, string[]> = {
     '  <version>2.1.0</version>',
     '</dependency>',
   ],
-  kotlin: ['// Gradle', 'implementation("io.github.soroban-explorer:client:2.1.0")'],
+  kotlin: ['// Gradle', 'implementation("io.github.octraban:client:2.1.0")'],
   swift: [
     '// Package.swift',
-    '.package(url: "https://github.com/soroban-explorer/client-swift", from: "2.1.0")',
+    '.package(url: "https://github.com/octraban/client-swift", from: "2.1.0")',
   ],
   csharp: [
-    'dotnet add package SorobanExplorer.Client --version 2.1.0',
+    'dotnet add package Octraban.Client --version 2.1.0',
     '# or in .csproj:',
-    '<PackageReference Include="SorobanExplorer.Client" Version="2.1.0" />',
+    '<PackageReference Include="Octraban.Client" Version="2.1.0" />',
   ],
 };
 
 const CODE_EXAMPLES: Record<string, Record<string, string>> = {
   typescript: {
-    'get-transactions': `import { SorobanClient } from '@soroban-explorer/client';
+    'get-transactions': `import { SorobanClient } from '@octraban/client';
 
 const client = new SorobanClient({ apiKey: 'YOUR_API_KEY' });
 
@@ -423,8 +423,8 @@ openApiSpecRouter.get(
       info: {
         title: 'Soroban Block Explorer API',
         version: CURRENT_API_VERSION,
-        description: 'REST API for the Soroban Smart Block Explorer',
-        contact: { email: 'api@soroban-explorer.io' },
+        description: 'REST API for the Octraban',
+        contact: { email: 'api@octraban.io' },
       },
       servers: [{ url: '/api/v1', description: 'Production' }],
       tags: [

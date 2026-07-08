@@ -14,13 +14,13 @@
  *             target: ''
  *       output.elasticsearch:
  *         hosts: ['${ELASTICSEARCH_URL}']
- *         index: 'soroban-explorer-%{+yyyy.MM.dd}'
+ *         index: 'octraban-%{+yyyy.MM.dd}'
  *
  * Datadog:
  *   env DD_LOGS_ENABLED=true
  *   env DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL=true
  *   Labels:
- *     com.datadoghq.ad.logs: '[{"source":"nodejs","service":"soroban-block-explorer"}]'
+ *     com.datadoghq.ad.logs: '[{"source":"nodejs","service":"octraban"}]'
  *
  * The log format already includes:  level, message, timestamp,
  *   requestId, traceId, spanId — all fields expected by both collectors.

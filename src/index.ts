@@ -460,7 +460,7 @@ async function main() {
   await feedOrchestrator.initialize(httpServer);
 
   httpServer.listen(config.port, () => {
-    logger.info('Soroban Explorer API started', { port: config.port });
+    logger.info('Octraban API started', { port: config.port });
   });
 }
 

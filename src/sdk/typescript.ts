@@ -1,7 +1,7 @@
 /**
  * Soroban Feed SDK - TypeScript/JavaScript Client
  *
- * Real-time data streaming client for Soroban Smart Block Explorer
+ * Real-time data streaming client for Octraban
  */
 
 export interface FeedConfig {

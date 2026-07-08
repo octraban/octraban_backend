@@ -25,8 +25,8 @@ const yoga = createYoga({
   graphqlEndpoint: '/api/graphql',
   graphiql: graphiqlEnabled
     ? {
-        title: 'Soroban Explorer GraphQL API',
-        defaultQuery: `# Welcome to the Soroban Explorer GraphQL API
+        title: 'Octraban GraphQL API',
+        defaultQuery: `# Welcome to the Octraban GraphQL API
 # Example: fetch the latest 5 transactions
 query LatestTransactions {
   transactions(limit: 5) {

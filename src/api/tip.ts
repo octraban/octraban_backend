@@ -1008,7 +1008,7 @@ tipRouter.get(
       `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"><channel>
 <title>Soroban Threat Intelligence</title>
-<link>https://soroban-explorer.local/api/v1/tip/feeds/rss</link>
+<link>https://octraban.local/api/v1/tip/feeds/rss</link>
 <description>Security advisories for Soroban smart contracts</description>
 ${entries}
 </channel></rss>`,
