@@ -1,5 +1,5 @@
 {
-  "name": "soroban-block-explorer-backend",
+  "name": "octraban-backend",
   "version": "1.0.0",
   "description": "Human-readable Soroban smart contract block explorer backend",
   "main": "dist/index.js",
