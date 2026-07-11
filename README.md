@@ -3,6 +3,18 @@
 Human-readable Soroban contract explorer. Decodes raw XDR into plain English:
 > "Address GABC... swapped 100 USDC → 98.7 XLM on StellarSwap at ledger 4521983."
 
+## 🟢 Live on Testnet
+
+The Octraban Soroban contracts this backend indexes are **deployed and verifiable on the Stellar test network**:
+
+| Contract | Contract ID | Stellar Explorer |
+|----------|-------------|------------------|
+| **Explorer / registry** | `CBKPNRQ4D3KTAAE7MMJ4HL6JNF2J2EBG2PSSRW4YHOMHTRHUU734CFWJ` | [View ↗](https://stellar.expert/explorer/testnet/contract/CBKPNRQ4D3KTAAE7MMJ4HL6JNF2J2EBG2PSSRW4YHOMHTRHUU734CFWJ) |
+| **Ticket** | `CDX3V6OE72KUIEEJTBLFCQZFXZCAKOYWYXK2KPRM57M6FLZFAVUSVL42` | [View ↗](https://stellar.expert/explorer/testnet/contract/CDX3V6OE72KUIEEJTBLFCQZFXZCAKOYWYXK2KPRM57M6FLZFAVUSVL42) |
+
+> **Network:** `Test SDF Network ; September 2015` · **RPC:** `https://soroban-testnet.stellar.org`
+> Contracts live in the [octraban_contract](https://github.com/octraban/octraban_contract) repo.
+
 ## Stack
 - **Node.js + Express + TypeScript**
 - **PostgreSQL + Prisma ORM**
