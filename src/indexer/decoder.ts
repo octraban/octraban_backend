@@ -95,7 +95,7 @@ export function decodeEvent(
 
     // ── SEP-41 fast path ────────────────────────────────────────────────────
     if (isSep41Event(rawSymbol)) {
-      const parsed = parseSep41Event(topics, data);
+      const parsed = parseSep41Event(topics, data, 7, '', contractName);
       if (parsed) {
         // Flatten { raw, formatted } entries to their formatted strings for
         // storage compatibility, and keep the full structured fields too.

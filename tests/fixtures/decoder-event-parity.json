@@ -1,0 +1,47 @@
+{
+  "description": "Shared regression fixture for issue #6 (consolidate duplicated XDR decoder implementations). Each case is rendered independently by indexer/src/decoder.js (buildDescription, authoritative — this is what octraban_frontend consumes) and by src/indexer/sep41-parser.ts (SEP41_EVENTS + renderSep41Template). Both must produce the exact `expected` string. See tests/indexer/decoder-parity.test.ts and indexer/tests/decoder-parity.test.js.",
+  "cases": [
+    {
+      "function": "transfer",
+      "contractName": "USDC Token",
+      "token": "USDC",
+      "values": {
+        "from": "GABC123DEF456GHI789JKL012MNO345PQR678STU901VWX234YZ",
+        "to": "GXYZ987ZYX654WVU321TSR098QPO765NML432KJI109HGF876ED",
+        "amount": "100000000"
+      },
+      "expected": "Address GABC12…34YZ transferred 100000000 USDC to GXYZ98…76ED on USDC Token"
+    },
+    {
+      "function": "mint",
+      "contractName": "USDC Token",
+      "token": "USDC",
+      "values": {
+        "to": "GXYZ987ZYX654WVU321TSR098QPO765NML432KJI109HGF876ED",
+        "amount": "100000000"
+      },
+      "expected": "100000000 USDC minted to GXYZ98…76ED on USDC Token"
+    },
+    {
+      "function": "burn",
+      "contractName": "USDC Token",
+      "token": "USDC",
+      "values": {
+        "from": "GABC123DEF456GHI789JKL012MNO345PQR678STU901VWX234YZ",
+        "amount": "100000000"
+      },
+      "expected": "100000000 USDC burned from GABC12…34YZ on USDC Token"
+    },
+    {
+      "function": "clawback",
+      "contractName": "USDC Token",
+      "token": "USDC",
+      "values": {
+        "admin": "GADMIN000111222333444555666777888999000111222333444",
+        "from": "GABC123DEF456GHI789JKL012MNO345PQR678STU901VWX234YZ",
+        "amount": "100000000"
+      },
+      "expected": "CLAWBACK: 100000000 USDC recovered from GABC12…34YZ by authority GADMIN…3444 on USDC Token"
+    }
+  ]
+}

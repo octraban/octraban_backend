@@ -160,6 +160,13 @@ export interface Sep41EventDef {
 /**
  * SEP-41 event table.
  * Keyed by the raw symbol string emitted as topics[0].
+ *
+ * The `transfer`, `mint`, `burn`, and `clawback` templates are kept in sync
+ * (by convention) with the wording produced by `indexer/src/decoder.js`'s
+ * `buildDescription()` — the authoritative decoder the frontend consumes —
+ * so both implementations render identical human-readable text for the same
+ * event. See tests/indexer/decoder-parity.test.ts for the regression fixture
+ * asserting this.
  */
 export const SEP41_EVENTS: Record<string, Sep41EventDef> = {
   transfer: {
@@ -169,7 +176,7 @@ export const SEP41_EVENTS: Record<string, Sep41EventDef> = {
       { name: 'to', type: 'address' },
     ],
     dataParam: { name: 'amount', type: 'i128' },
-    humanTemplate: '{from|truncate} → {to|truncate}: {amount} {token}',
+    humanTemplate: 'Address {from|truncate} transferred {amount} {token} to {to|truncate}',
   },
   mint: {
     symbol: 'mint',
@@ -178,13 +185,13 @@ export const SEP41_EVENTS: Record<string, Sep41EventDef> = {
       { name: 'to', type: 'address' },
     ],
     dataParam: { name: 'amount', type: 'i128' },
-    humanTemplate: 'Minted {amount} {token} to {to|truncate}',
+    humanTemplate: '{amount} {token} minted to {to|truncate}',
   },
   burn: {
     symbol: 'burn',
     topicParams: [{ name: 'from', type: 'address' }],
     dataParam: { name: 'amount', type: 'i128' },
-    humanTemplate: '{from|truncate} burned {amount} {token}',
+    humanTemplate: '{amount} {token} burned from {from|truncate}',
   },
   approve: {
     symbol: 'approve',
@@ -202,7 +209,8 @@ export const SEP41_EVENTS: Record<string, Sep41EventDef> = {
       { name: 'from', type: 'address' },
     ],
     dataParam: { name: 'amount', type: 'i128' },
-    humanTemplate: 'Admin clawed back {amount} {token} from {from|truncate}',
+    humanTemplate:
+      'CLAWBACK: {amount} {token} recovered from {from|truncate} by authority {admin|truncate}',
   },
   set_admin: {
     symbol: 'set_admin',
@@ -278,12 +286,14 @@ export function parseSep41Call(
  * @param data        - Base64-encoded XDR ScVal string (event data)
  * @param decimals    - Token decimal places (default 7)
  * @param tokenSymbol - Token symbol for display
+ * @param contractName - Contract label appended as " on {contractName}" when provided
  */
 export function parseSep41Event(
   topics: string[],
   data: string,
   decimals = 7,
   tokenSymbol = '',
+  contractName?: string | null,
 ): Sep41ParsedEvent | null {
   if (topics.length === 0) return null;
 
@@ -331,7 +341,7 @@ export function parseSep41Event(
     fields[def.dataParam.name] = { raw: data, formatted: data };
   }
 
-  const human = renderSep41Template(def.humanTemplate, fields, decimals, tokenSymbol);
+  const human = renderSep41Template(def.humanTemplate, fields, decimals, tokenSymbol, contractName);
 
   return { symbol, fields, humanReadable: human };
 }
@@ -345,26 +355,36 @@ export function parseSep41Event(
  *   {key}          — resolved display value
  *   {key|truncate} — address truncated to first 6 + "…" + last 4 chars
  *   {token}        — tokenSymbol (empty string if not provided)
+ *
+ * When `contractName` is provided, " on {contractName}" is appended — matching
+ * the convention used by `indexer/src/decoder.js`'s `buildDescription()` and
+ * by `template-engine.ts`'s `renderTemplate()`.
  */
 export function renderSep41Template(
   template: string,
   args: Record<string, { raw: unknown; formatted: string }>,
   decimals = 7,
   tokenSymbol = '',
+  contractName?: string | null,
 ): string {
-  return template.replace(/\{(\w+)(?:\|(\w+))?\}/g, (_match, key: string, modifier?: string) => {
-    if (key === 'token') return tokenSymbol;
+  const text = template.replace(
+    /\{(\w+)(?:\|(\w+))?\}/g,
+    (_match, key: string, modifier?: string) => {
+      if (key === 'token') return tokenSymbol;
 
-    const entry = args[key];
-    if (!entry) return '';
+      const entry = args[key];
+      if (!entry) return '';
 
-    const display = entry.formatted;
+      const display = entry.formatted;
 
-    if (modifier === 'truncate' && display.length > 12) {
-      return `${display.slice(0, 6)}…${display.slice(-4)}`;
-    }
-    return display;
-  });
+      if (modifier === 'truncate' && display.length > 12) {
+        return `${display.slice(0, 6)}…${display.slice(-4)}`;
+      }
+      return display;
+    },
+  );
+
+  return contractName ? `${text} on ${contractName}` : text;
 }
 
 // ─── ABI export (for registry integration) ────────────────────────────────────
