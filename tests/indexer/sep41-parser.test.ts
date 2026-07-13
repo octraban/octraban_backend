@@ -274,6 +274,13 @@ describe('parseSep41Event — transfer', () => {
     expect(result!.humanReadable).toContain('USDC');
     expect(result!.humanReadable).toContain('5.0000000');
   });
+
+  it('appends " on {contractName}" when a contract name is provided', () => {
+    const topics = [symXdr('transfer'), addrXdr(ADDR_A), addrXdr(ADDR_B)];
+    const data = i128Xdr(50_000_000n);
+    const result = parseSep41Event(topics, data, 7, 'USDC', 'MyToken');
+    expect(result!.humanReadable.endsWith(' on MyToken')).toBe(true);
+  });
 });
 
 describe('parseSep41Event — mint', () => {
@@ -285,7 +292,7 @@ describe('parseSep41Event — mint', () => {
     expect(result!.fields.admin.formatted).toBe(ADDR_C);
     expect(result!.fields.to.formatted).toBe(ADDR_A);
     expect(result!.fields.amount.formatted).toBe('10.0000000');
-    expect(result!.humanReadable).toContain('Minted');
+    expect(result!.humanReadable).toContain('minted');
   });
 });
 
@@ -322,7 +329,8 @@ describe('parseSep41Event — clawback', () => {
     expect(result).not.toBeNull();
     expect(result!.fields.admin.formatted).toBe(ADDR_C);
     expect(result!.fields.from.formatted).toBe(ADDR_A);
-    expect(result!.humanReadable).toContain('clawed back');
+    expect(result!.humanReadable).toContain('CLAWBACK');
+    expect(result!.humanReadable).toContain('recovered');
   });
 });
 
@@ -407,6 +415,18 @@ describe('renderSep41Template', () => {
   it('returns empty string for missing keys', () => {
     const out = renderSep41Template('{missing}', {});
     expect(out).toBe('');
+  });
+
+  it('appends " on {contractName}" when contractName is provided', () => {
+    const args = { amount: { raw: 1n, formatted: '1.0000000' } };
+    const out = renderSep41Template('{amount} {token}', args, 7, 'USDC', 'StellarSwap');
+    expect(out).toBe('1.0000000 USDC on StellarSwap');
+  });
+
+  it('omits the contractName suffix when not provided', () => {
+    const args = { amount: { raw: 1n, formatted: '1.0000000' } };
+    const out = renderSep41Template('{amount} {token}', args, 7, 'USDC');
+    expect(out).toBe('1.0000000 USDC');
   });
 });
 
