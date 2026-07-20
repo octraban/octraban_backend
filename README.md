@@ -188,3 +188,24 @@ npx prisma migrate dev
 npm run dev              # start API server
 npm run index             # start the in-process TS indexer poller (separate terminal)
 ```
+
+## On-Chain Registry Contract Relationship (issue #10)
+
+The [octraban_contract](https://github.com/octraban/octraban_contract) repo deploys an
+on-chain **registry and event-ledger** contract to testnet
+(`CBKPNRQ4D3KTAAE7MMJ4HL6JNF2J2EBG2PSSRW4YHOMHTRHUU734CFWJ`). The relationship between
+that contract and this backend's off-chain indexer is:
+
+**The off-chain Postgres database is the primary store of truth.** The on-chain registry
+contract is treated as a read-augmented, verifiable mirror — not the primary source.
+
+- The indexer can optionally call `get_contract` on the on-chain registry to verify or
+  bootstrap a contract's metadata. This is enabled by setting
+  `REGISTRY_CONTRACT_ID_TESTNET` (see `.env.example`).
+- Decoded events are **not** submitted on-chain via `submit_event`. The volume of events
+  makes on-chain storage impractical.
+- If `REGISTRY_CONTRACT_ID_<NETWORK>` is unset, the on-chain read path is skipped entirely
+  (safe default for local development).
+
+See **[docs/on-chain-registry.md](docs/on-chain-registry.md)** for the full design decision,
+integration points, and future work.
