@@ -131,6 +131,14 @@ const configSchema = z.object({
 
   EXPLORER_CONTRACT_ID: z.string().optional(),
 
+  // ── On-chain registry contract IDs (issue #10) ──────────────────────────────
+  // The deployed Octraban on-chain registry/explorer contract per network.
+  // Leave unset to disable on-chain registry reads for that network.
+  // See docs/on-chain-registry.md for the design decision.
+  REGISTRY_CONTRACT_ID_TESTNET: z.string().optional(),
+  REGISTRY_CONTRACT_ID_MAINNET: z.string().optional(),
+  REGISTRY_CONTRACT_ID_DEVNET: z.string().optional(),
+
   API_KEY: z.string().optional(),
 
   CORS_ORIGINS: z.string().default("*"),
