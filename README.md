@@ -188,3 +188,54 @@ npx prisma migrate dev
 npm run dev              # start API server
 npm run index             # start the in-process TS indexer poller (separate terminal)
 ```
+
+## Docker Compose — service naming and the `indexer` alias (issue #18)
+
+The `octraban_frontend` nginx configuration proxies all `/api/` traffic to a Docker host
+named **`indexer`** on port `3001`:
+
+```nginx
+location /api/ { proxy_pass http://indexer:3001; }
+```
+
+This repository's `docker-compose.yml` defines per-network services named
+`indexer-testnet`, `indexer-mainnet`, and `indexer-devnet`. To make the frontend's proxy
+target resolve correctly without renaming the services, each indexer service declares a
+**Docker network alias** of `indexer` on the default Compose network:
+
+```yaml
+indexer-testnet:
+  networks:
+    default:
+      aliases:
+        - indexer
+```
+
+This means a frontend container joined to the same Compose network can always reach the
+active indexer at `http://indexer:3001`, regardless of which network profile is active.
+
+### Starting the full stack for local development (testnet — the default)
+
+```bash
+# Copy and configure environment variables
+cp .env.example .env
+# Set at minimum: POSTGRES_PASSWORD
+
+# Start the testnet stack (db + api + indexer)
+docker compose up
+
+# The indexer is now reachable as both:
+#   http://indexer-testnet:3001   (service name)
+#   http://indexer:3001            (alias — what the frontend uses)
+```
+
+For mainnet or devnet, activate the corresponding profile:
+
+```bash
+docker compose --profile mainnet up
+docker compose --profile devnet   up
+```
+
+> **Note for frontend contributors:** Set `VITE_INDEXER_URL=http://localhost:3001` when
+> running the frontend outside Docker. Inside a shared Compose network, use
+> `http://indexer:3001`.
