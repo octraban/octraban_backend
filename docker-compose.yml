@@ -166,6 +166,10 @@ services:
         condition: service_healthy
       api-testnet:
         condition: service_healthy
+    networks:
+      default:
+        aliases:
+          - indexer
     deploy:
       resources: *indexer-resources
     logging: *logging
@@ -236,6 +240,10 @@ services:
         condition: service_healthy
       api-mainnet:
         condition: service_healthy
+    networks:
+      default:
+        aliases:
+          - indexer
     deploy:
       resources: *indexer-resources
     logging: *logging
@@ -307,6 +315,10 @@ services:
         condition: service_healthy
       api-devnet:
         condition: service_healthy
+    networks:
+      default:
+        aliases:
+          - indexer
     deploy:
       resources: *indexer-resources
     logging: *logging
