@@ -74,3 +74,16 @@ jobs:
           DATABASE_URL: postgresql://test:test@localhost:5432/test
           TESTNET_DATABASE_URL: postgresql://test:test@localhost:5432/test
           STELLAR_NETWORK: testnet
+
+  openapi-drift:
+    name: Indexer OpenAPI Drift Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Check docs/api/openapi.yaml matches implemented indexer routes
+        run: node indexer/scripts/openapi-drift.js --check
