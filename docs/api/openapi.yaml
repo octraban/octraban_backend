@@ -1,0 +1,441 @@
+openapi: 3.0.0
+info:
+  title: Octraban Indexer API
+  version: "1.0.0"
+  description: >-
+    Route inventory for the indexer service (default PORT 3001). Every path
+    and HTTP method below is generated from the Express route registrations
+    in indexer/src/api.js, indexer/src/routes/admin.js, and
+    indexer/src/billing/stripeWebhook.js by indexer/scripts/openapi-drift.js.
+    `node indexer/scripts/openapi-drift.js --check` runs in CI and fails the
+    build if this file and the implemented routes disagree. See
+    docs/OPENAPI.md for how to regenerate it.
+
+    This file intentionally documents route *existence* (path + method), not
+    full request/response schemas — response bodies below are sketched
+    generically and path parameters aren't declared. Maintainers may
+    hand-enrich any entry (add real request/response schemas, mark an
+    endpoint experimental or mock-data-returning with `x-status: experimental`
+    or `x-status: mock`) without breaking the drift check, as long as the
+    path and method keys stay present — the generator only ever adds missing
+    entries and never rewrites or removes existing ones.
+servers:
+  - url: http://localhost:3001
+    description: Local indexer (default PORT)
+paths:
+  /api/admin/analytics/rate-limit-hits:
+    get:
+      summary: "GET /api/admin/analytics/rate-limit-hits"
+      responses:
+        '200':
+          description: Successful response.
+  /api/admin/analytics/top-users:
+    get:
+      summary: "GET /api/admin/analytics/top-users"
+      responses:
+        '200':
+          description: Successful response.
+  /api/admin/analytics/upgrade-recommendations:
+    get:
+      summary: "GET /api/admin/analytics/upgrade-recommendations"
+      responses:
+        '200':
+          description: Successful response.
+  /api/admin/analytics/violation-heatmap:
+    get:
+      summary: "GET /api/admin/analytics/violation-heatmap"
+      responses:
+        '200':
+          description: Successful response.
+  /api/admin/api-keys:
+    get:
+      summary: "GET /api/admin/api-keys"
+      responses:
+        '200':
+          description: Successful response.
+    post:
+      summary: "POST /api/admin/api-keys"
+      responses:
+        '200':
+          description: Successful response.
+  /api/admin/api-keys/{id}:
+    patch:
+      summary: "PATCH /api/admin/api-keys/{id}"
+      responses:
+        '200':
+          description: Successful response.
+    delete:
+      summary: "DELETE /api/admin/api-keys/{id}"
+      responses:
+        '204':
+          description: No content.
+  /api/admin/api-keys/{id}/rotate:
+    post:
+      summary: "POST /api/admin/api-keys/{id}/rotate"
+      responses:
+        '200':
+          description: Successful response.
+  /api/admin/api-keys/{id}/usage:
+    get:
+      summary: "GET /api/admin/api-keys/{id}/usage"
+      responses:
+        '200':
+          description: Successful response.
+  /api/admin/audit-log:
+    get:
+      summary: "GET /api/admin/audit-log"
+      responses:
+        '200':
+          description: Successful response.
+  /api/admin/audit-log/export:
+    get:
+      summary: "GET /api/admin/audit-log/export"
+      responses:
+        '200':
+          description: Successful response.
+  /api/auth-tree:
+    post:
+      summary: "POST /api/auth-tree"
+      responses:
+        '200':
+          description: Successful response.
+  /api/batch:
+    post:
+      summary: "POST /api/batch"
+      responses:
+        '200':
+          description: Successful response.
+  /api/batch/estimate-gas:
+    post:
+      summary: "POST /api/batch/estimate-gas"
+      responses:
+        '200':
+          description: Successful response.
+  /api/batch/optimize:
+    post:
+      summary: "POST /api/batch/optimize"
+      responses:
+        '200':
+          description: Successful response.
+  /api/batch/simulate:
+    post:
+      summary: "POST /api/batch/simulate"
+      responses:
+        '200':
+          description: Successful response.
+  /api/batch/validate:
+    post:
+      summary: "POST /api/batch/validate"
+      responses:
+        '200':
+          description: Successful response.
+  /api/billing/stripe-webhook:
+    post:
+      summary: "POST /api/billing/stripe-webhook"
+      responses:
+        '200':
+          description: Successful response.
+  /api/burn-alerts:
+    get:
+      summary: "GET /api/burn-alerts"
+      responses:
+        '200':
+          description: Successful response.
+  /api/cache/stats:
+    get:
+      summary: "GET /api/cache/stats"
+      responses:
+        '200':
+          description: Successful response.
+  /api/contracts:
+    post:
+      summary: "POST /api/contracts"
+      responses:
+        '200':
+          description: Successful response.
+  /api/contracts/{id}:
+    get:
+      summary: "GET /api/contracts/{id}"
+      responses:
+        '200':
+          description: Successful response.
+  /api/contracts/{id}/abi:
+    get:
+      summary: "GET /api/contracts/{id}/abi"
+      responses:
+        '200':
+          description: Successful response.
+  /api/contracts/{id}/build-metadata:
+    get:
+      summary: "GET /api/contracts/{id}/build-metadata"
+      responses:
+        '200':
+          description: Successful response.
+  /api/contracts/{id}/circuit-breaker:
+    get:
+      summary: "GET /api/contracts/{id}/circuit-breaker"
+      responses:
+        '200':
+          description: Successful response.
+  /api/contracts/{id}/migration-status:
+    get:
+      summary: "GET /api/contracts/{id}/migration-status"
+      responses:
+        '200':
+          description: Successful response.
+  /api/contracts/{id}/rwa-metadata:
+    get:
+      summary: "GET /api/contracts/{id}/rwa-metadata"
+      responses:
+        '200':
+          description: Successful response.
+  /api/contracts/{id}/source-verifications:
+    get:
+      summary: "GET /api/contracts/{id}/source-verifications"
+      responses:
+        '200':
+          description: Successful response.
+    post:
+      summary: "POST /api/contracts/{id}/source-verifications"
+      responses:
+        '200':
+          description: Successful response.
+  /api/contracts/{id}/spec-full:
+    get:
+      summary: "GET /api/contracts/{id}/spec-full"
+      responses:
+        '200':
+          description: Successful response.
+  /api/contracts/{id}/state-diffs:
+    get:
+      summary: "GET /api/contracts/{id}/state-diffs"
+      responses:
+        '200':
+          description: Successful response.
+  /api/contracts/{id}/ttl:
+    get:
+      summary: "GET /api/contracts/{id}/ttl"
+      responses:
+        '200':
+          description: Successful response.
+  /api/contracts/{id}/upgrades:
+    get:
+      summary: "GET /api/contracts/{id}/upgrades"
+      responses:
+        '200':
+          description: Successful response.
+  /api/doctor:
+    get:
+      summary: "GET /api/doctor"
+      responses:
+        '200':
+          description: Successful response.
+  /api/events:
+    get:
+      summary: "GET /api/events"
+      responses:
+        '200':
+          description: Successful response.
+  /api/events/{seq}:
+    get:
+      summary: "GET /api/events/{seq}"
+      responses:
+        '200':
+          description: Successful response.
+  /api/events/{seq}/zk-costs:
+    get:
+      summary: "GET /api/events/{seq}/zk-costs"
+      responses:
+        '200':
+          description: Successful response.
+  /api/export/contracts:
+    get:
+      summary: "GET /api/export/contracts"
+      responses:
+        '200':
+          description: Successful response.
+  /api/export/events:
+    get:
+      summary: "GET /api/export/events"
+      responses:
+        '200':
+          description: Successful response.
+  /api/openapi.yaml:
+    get:
+      summary: "GET /api/openapi.yaml"
+      responses:
+        '200':
+          description: Successful response.
+  /api/rpc-metrics:
+    get:
+      summary: "GET /api/rpc-metrics"
+      responses:
+        '200':
+          description: Successful response.
+  /api/rpc-nodes:
+    get:
+      summary: "GET /api/rpc-nodes"
+      responses:
+        '200':
+          description: Successful response.
+  /api/sandbox:
+    post:
+      summary: "POST /api/sandbox"
+      responses:
+        '200':
+          description: Successful response.
+  /api/sandbox/{id}:
+    get:
+      summary: "GET /api/sandbox/{id}"
+      responses:
+        '200':
+          description: Successful response.
+    delete:
+      summary: "DELETE /api/sandbox/{id}"
+      responses:
+        '204':
+          description: No content.
+  /api/sandbox/simulate:
+    post:
+      summary: "POST /api/sandbox/simulate"
+      responses:
+        '200':
+          description: Successful response.
+  /api/sandboxes:
+    get:
+      summary: "GET /api/sandboxes"
+      responses:
+        '200':
+          description: Successful response.
+  /api/search:
+    get:
+      summary: "GET /api/search"
+      responses:
+        '200':
+          description: Successful response.
+  /api/setup/db-init:
+    post:
+      summary: "POST /api/setup/db-init"
+      responses:
+        '200':
+          description: Successful response.
+  /api/setup/doctor:
+    get:
+      summary: "GET /api/setup/doctor"
+      responses:
+        '200':
+          description: Successful response.
+  /api/setup/save-config:
+    post:
+      summary: "POST /api/setup/save-config"
+      responses:
+        '200':
+          description: Successful response.
+  /api/setup/test-db:
+    post:
+      summary: "POST /api/setup/test-db"
+      responses:
+        '200':
+          description: Successful response.
+  /api/simulate:
+    post:
+      summary: "POST /api/simulate"
+      responses:
+        '200':
+          description: Successful response.
+  /api/spec/{id}:
+    get:
+      summary: "GET /api/spec/{id}"
+      responses:
+        '200':
+          description: Successful response.
+  /api/spec/{id}/full:
+    get:
+      summary: "GET /api/spec/{id}/full"
+      responses:
+        '200':
+          description: Successful response.
+  /api/stats:
+    get:
+      summary: "GET /api/stats"
+      responses:
+        '200':
+          description: Successful response.
+  /api/tokens/{id}/holders:
+    get:
+      summary: "GET /api/tokens/{id}/holders"
+      responses:
+        '200':
+          description: Successful response.
+  /api/tokens/{id}/volume:
+    get:
+      summary: "GET /api/tokens/{id}/volume"
+      responses:
+        '200':
+          description: Successful response.
+  /api/transactions/status:
+    get:
+      summary: "GET /api/transactions/status"
+      responses:
+        '200':
+          description: Successful response.
+  /api/transactions/{hash}/status:
+    get:
+      summary: "GET /api/transactions/{hash}/status"
+      responses:
+        '200':
+          description: Successful response.
+  /api/transactions/{hash}/status/stream:
+    get:
+      summary: "GET /api/transactions/{hash}/status/stream"
+      responses:
+        '200':
+          description: Successful response.
+  /api/v1/contracts/{id}/transactions:
+    get:
+      summary: "GET /api/v1/contracts/{id}/transactions"
+      responses:
+        '200':
+          description: Successful response.
+  /api/v1/events:
+    get:
+      summary: "GET /api/v1/events"
+      responses:
+        '200':
+          description: Successful response.
+  /api/verify:
+    post:
+      summary: "POST /api/verify"
+      responses:
+        '200':
+          description: Successful response.
+  /api/wallet/{address}:
+    get:
+      summary: "GET /api/wallet/{address}"
+      responses:
+        '200':
+          description: Successful response.
+  /health:
+    get:
+      summary: "GET /health"
+      responses:
+        '200':
+          description: Successful response.
+  /health/live:
+    get:
+      summary: "GET /health/live"
+      responses:
+        '200':
+          description: Successful response.
+  /health/ready:
+    get:
+      summary: "GET /health/ready"
+      responses:
+        '200':
+          description: Successful response.
+  /metrics:
+    get:
+      summary: "GET /metrics"
+      responses:
+        '200':
+          description: Successful response.
