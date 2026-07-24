@@ -119,6 +119,7 @@ curl -X POST http://localhost:3000/api/v1/contracts \
 | `INDEXER_START_LEDGER`     | `0`             | Ledger to start indexing from |
 | `INDEXER_POLL_INTERVAL_MS` | `5000`          | Polling interval              |
 | `INDEXER_BATCH_SIZE`       | `100`           | Ledgers per batch             |
+| `ADMIN_SECRET`             | —               | Bearer token required by every `/api/admin/*` route (indexer). See [`docs/ADMIN_AUTH.md`](./docs/ADMIN_AUTH.md). |
 
 ## Mainnet Config
 
