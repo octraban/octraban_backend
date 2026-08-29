@@ -85,7 +85,10 @@ function handleAsync(handler: (req: Request, res: Response) => Promise<unknown>)
  *         description: Number of entries to return (clamped 1-100, never throws 400).
  *     responses:
  *       200:
- *         description: Leaderboard entries for the overall category
+ *         description: >
+ *           Leaderboard entries for the overall category. When no reputation
+ *           profiles have sufficient on-chain activity, `leaderboard` is an
+ *           empty array and `insufficientData` is true.
  *         content:
  *           application/json:
  *             schema:
@@ -96,6 +99,12 @@ function handleAsync(handler: (req: Request, res: Response) => Promise<unknown>)
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/LeaderboardEntry'
+ *                 insufficientData:
+ *                   type: boolean
+ *                   description: Present and true only when no real chain-derived entries are available.
+ *                 message:
+ *                   type: string
+ *                   description: Human-readable explanation, present only with insufficientData.
  * /api/v1/reputation/leaderboard/{category}:
  *   get:
  *     summary: Get reputation leaderboard for a specific category
@@ -138,6 +147,20 @@ reputationRouter.get(
     ).flat();
 
     const leaderboard = createLeaderboard(chainData, category, limit);
+
+    if (leaderboard.length === 0) {
+      // No real chain-derived reputation data is available for this category
+      // yet. Return an explicit "insufficient data" response instead of
+      // fabricating synthetic entries.
+      return res.json({
+        category,
+        leaderboard: [],
+        insufficientData: true,
+        message:
+          'No reputation profiles with sufficient on-chain activity are available for this category yet.',
+      });
+    }
+
     return res.json({ category, leaderboard });
   }),
 );
