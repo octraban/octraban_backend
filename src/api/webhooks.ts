@@ -32,7 +32,9 @@ const createSchema = z.object({
  *       Register a server endpoint to receive on-chain contract event
  *       notifications. Each delivery is signed with HMAC-SHA256 using the
  *       signing secret (X-Webhook-Signature header). Failed deliveries are
- *       retried with exponential backoff (up to 5 attempts).
+ *       retried with exponential backoff up to a configurable maximum number
+ *       of attempts, after which they are moved to a terminal dead-letter
+ *       state (visible via GET /webhooks/{id}/deliveries?status=dead_letter).
  *       The secret is returned only once in this response — store it securely.
  *     security:
  *       - ApiKeyAuth: []
@@ -251,7 +253,11 @@ webhooksRouter.patch(
  * /webhooks/{id}/deliveries:
  *   get:
  *     summary: Get delivery history for a webhook subscription
- *     description: Returns the last 50 delivery attempts including status, HTTP response, and retry schedule.
+ *     description: >
+ *       Returns the last 50 delivery attempts including status, HTTP response,
+ *       and retry schedule. Pass ?status=dead_letter to list only deliveries
+ *       that exhausted every retry attempt and were moved to the terminal
+ *       dead-letter state.
  *     security:
  *       - ApiKeyAuth: []
  *     tags: [Webhooks]
@@ -260,6 +266,13 @@ webhooksRouter.patch(
  *         name: id
  *         required: true
  *         schema: { type: string }
+ *       - in: query
+ *         name: status
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [pending, success, failed, cancelled, dead_letter]
+ *         description: Filter deliveries by terminal or in-flight status.
  *     responses:
  *       200:
  *         description: Delivery history
@@ -278,8 +291,13 @@ webhooksRouter.get(
     });
     if (!sub) return res.status(404).json({ error: 'Subscription not found' });
 
+    const statusFilter =
+      typeof req.query.status === 'string' && req.query.status.length > 0
+        ? req.query.status
+        : undefined;
+
     const deliveries = await prismaRead.webhookDelivery.findMany({
-      where: { subscriptionId: sub.id },
+      where: { subscriptionId: sub.id, ...(statusFilter ? { status: statusFilter } : {}) },
       orderBy: { createdAt: 'desc' },
       take: 50,
     });

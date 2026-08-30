@@ -3,8 +3,24 @@ import { prismaWrite as prisma } from '../db';
 import { processResponseBody } from './redaction';
 import { assertSafeUrl, safePost, SsrfBlockedError } from './ssrf-guard';
 
-// Maximum delivery attempts before a delivery is marked permanently failed
-export const MAX_ATTEMPTS = 5;
+/** Parse a positive integer from an env var, falling back when unset/invalid. */
+function positiveIntFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+// Maximum delivery attempts before a delivery is dead-lettered (#45).
+// Configurable via WEBHOOK_MAX_ATTEMPTS.
+export const MAX_ATTEMPTS = positiveIntFromEnv('WEBHOOK_MAX_ATTEMPTS', 5);
+// Base delay for the exponential backoff schedule (ms), configurable via
+// WEBHOOK_BACKOFF_BASE_MS (#45).
+export const BACKOFF_BASE_MS = positiveIntFromEnv('WEBHOOK_BACKOFF_BASE_MS', 10_000);
+// Upper bound on any single backoff delay (ms).
+export const BACKOFF_CAP_MS = 900_000;
+// Terminal state for deliveries that exhausted every retry attempt (#45).
+export const DEAD_LETTER_STATUS = 'dead_letter';
 // Hard timeout per HTTP request (ms)
 export const REQUEST_TIMEOUT_MS = 10_000;
 // How long a processing lease is held before it is considered stale (ms)
@@ -12,20 +28,52 @@ export const LEASE_DURATION_MS = 60_000;
 // Maximum concurrent outbound HTTP deliveries for fan-out and retry (#483)
 export const DISPATCH_CONCURRENCY = parseInt(process.env.WEBHOOK_DISPATCH_CONCURRENCY ?? '10', 10);
 
-/** Compute exponential backoff delay for a given attempt (1-based). */
+/**
+ * Compute exponential backoff delay for a given attempt (1-based).
+ * With the defaults this yields 10s, 30s, 90s, 270s, 810s … capped at 15 min.
+ */
 export function backoffMs(attempt: number): number {
-  // 10s, 30s, 90s, 270s, 810s — capped at 15 min
-  return Math.min(10_000 * 3 ** (attempt - 1), 900_000);
+  return Math.min(BACKOFF_BASE_MS * 3 ** (attempt - 1), BACKOFF_CAP_MS);
 }
 
 // ── Metrics (#483) ────────────────────────────────────────────────────────────
 
 let _queueDepth = 0;
 let _lastDeliveryLatencyMs = 0;
+// Count of deliveries dead-lettered since process start (#45).
+let _deadLetterCount = 0;
 
 /** Live dispatch metrics exported for observability. */
-export function getDispatchMetrics(): { queueDepth: number; lastDeliveryLatencyMs: number } {
-  return { queueDepth: _queueDepth, lastDeliveryLatencyMs: _lastDeliveryLatencyMs };
+export function getDispatchMetrics(): {
+  queueDepth: number;
+  lastDeliveryLatencyMs: number;
+  deadLetterCount: number;
+} {
+  return {
+    queueDepth: _queueDepth,
+    lastDeliveryLatencyMs: _lastDeliveryLatencyMs,
+    deadLetterCount: _deadLetterCount,
+  };
+}
+
+/**
+ * List deliveries that have landed in the terminal dead-letter state so
+ * operators can inspect permanently-failing endpoints (#45).
+ */
+export async function listDeadLetterDeliveries(
+  opts: {
+    subscriptionId?: string;
+    limit?: number;
+  } = {},
+): Promise<unknown[]> {
+  return prisma.webhookDelivery.findMany({
+    where: {
+      status: DEAD_LETTER_STATUS,
+      ...(opts.subscriptionId ? { subscriptionId: opts.subscriptionId } : {}),
+    },
+    orderBy: { createdAt: 'desc' },
+    take: opts.limit ?? 100,
+  });
 }
 
 // ── Concurrency pool (#483) ───────────────────────────────────────────────────
@@ -217,7 +265,7 @@ export async function retryPendingDeliveries(): Promise<void> {
  *
  * @param deliveryId  If provided, updates an existing delivery row; otherwise creates one.
  */
-async function deliverOnce(
+export async function deliverOnce(
   subscriptionId: string,
   url: string,
   secret: string,
@@ -369,13 +417,15 @@ async function scheduleRetryOrFail(
   const nextAttempt = attempt + 1;
 
   if (nextAttempt > MAX_ATTEMPTS) {
+    // Retries exhausted — move to the terminal dead-letter state (#45).
+    _deadLetterCount++;
     await prisma.webhookDelivery.update({
       where: { id: deliveryId },
       data: {
-        status: 'failed',
+        status: DEAD_LETTER_STATUS,
         processingStatus: 'done',
         leaseExpiresAt: null,
-        errorMsg,
+        errorMsg: `dead-lettered after ${attempt} attempts: ${errorMsg}`,
         httpStatus,
         responseBody,
         nextRetryAt: null,
