@@ -171,6 +171,55 @@ Because the server caches keys, a typical rotation involves:
 
 *Note: Never log or commit the `JWT_PRIVATE_KEY` to version control. The server performs a startup validation check and will crash if the keys are missing or malformed when `NODE_ENV=production`.*
 
+## Rate Limiting
+
+Every API request passes through `apiKeyAuth` followed by `tieredRateLimit` ([`src/middleware/tokenBucket.ts`](./src/middleware/tokenBucket.ts), [`src/middleware/rateLimit.ts`](./src/middleware/rateLimit.ts), [`src/middleware/apiKeyAuth.ts`](./src/middleware/apiKeyAuth.ts)). Quotas are enforced with an atomic Redis Lua token bucket when `REDIS_URL` is configured, and automatically fall back to an in-process token bucket when Redis is unavailable.
+
+### Tiers & Configuration
+
+Requests without an `X-Api-Key` header use the `unauthenticated` tier (keyed by client IP). Validated API keys resolve their tier from `DevApiKey.tier` (defaulting to `free`). Each tier's request limit and window duration are configurable via environment variables, falling back to the defaults below when unset or invalid:
+
+| Tier              | Default Limit | Default Window | Default Burst | Limit Variable                          | Window Variable                             |
+| ----------------- | ------------- | -------------- | ------------- | --------------------------------------- | ------------------------------------------- |
+| `unauthenticated` | `60`          | `60000` ms     | `10`          | `RATE_LIMIT_TIER_UNAUTHENTICATED_LIMIT` | `RATE_LIMIT_TIER_UNAUTHENTICATED_WINDOW_MS` |
+| `free`            | `1000`        | `60000` ms     | `50`          | `RATE_LIMIT_TIER_FREE_LIMIT`            | `RATE_LIMIT_TIER_FREE_WINDOW_MS`            |
+| `developer`       | `1000`        | `60000` ms     | `50`          | `RATE_LIMIT_TIER_DEVELOPER_LIMIT`       | `RATE_LIMIT_TIER_DEVELOPER_WINDOW_MS`       |
+| `pro`             | `10000`       | `60000` ms     | `200`         | `RATE_LIMIT_TIER_PRO_LIMIT`             | `RATE_LIMIT_TIER_PRO_WINDOW_MS`             |
+| `enterprise`      | `60000`       | `60000` ms     | `500`         | `RATE_LIMIT_TIER_ENTERPRISE_LIMIT`      | `RATE_LIMIT_TIER_ENTERPRISE_WINDOW_MS`      |
+
+Optional `RATE_LIMIT_TIER_<TIER>_BURST` variables can also be set to adjust per-tier burst allowances.
+
+### Endpoint Group Multipliers
+
+Resource-intensive route groups scale the effective quota for a request by a multiplier (`Math.ceil(limit * multiplier)`):
+
+| Route Pattern                         | Group       | Multiplier |
+| ------------------------------------- | ----------- | ---------- |
+| `/api/v1/events*`                     | `events`    | `1.0x`     |
+| `/api/v1/search*`, `/api/v1/nft/search*` | `search` | `0.5x`     |
+| `POST /api/v1/contracts*`             | `contracts` | `0.17x`    |
+| `/api/v1/simulate*`                   | `simulate`  | `0.08x`    |
+| `/ws*`                                | `websocket` | `0.05x`    |
+| All other endpoints                   | default     | `1.0x`     |
+
+### Per-Key & Admin Overrides
+
+- **API key override (`DevApiKey.rateLimitOverride`)** — Setting a positive integer on `DevApiKey.rateLimitOverride` overrides the key's base tier limit for all requests authenticated with that `X-Api-Key` (endpoint multipliers still apply on top of the custom limit). After updating a key record in PostgreSQL, call `invalidateKeyCache(keyHash)` so the updated limit takes effect immediately rather than after `KEY_CACHE_TTL_MS` (default `10000` ms).
+- **Admin endpoint override** — `POST /api/v1/admin/rate-limits` accepts `{ identifier, endpoint, max, windowMs }` to persist targeted overrides in `RateLimitOverride` for the fallback limiter (`X-RateLimit-Policy: user-override`).
+
+### Response Headers
+
+Standard rate-limit headers are returned on all rate-limited routes so clients can track remaining quota and back off cleanly:
+
+| Header                | Returned On     | Description                                                                 |
+| --------------------- | --------------- | --------------------------------------------------------------------------- |
+| `RateLimit-Limit`     | Every response  | Maximum requests permitted in the window for the active tier/override       |
+| `RateLimit-Remaining` | Every response  | Remaining requests available in the current window (`0` when throttled)     |
+| `RateLimit-Reset`     | Every response  | Seconds until the rate-limit bucket replenishes to full capacity            |
+| `Retry-After`         | `429` responses | Seconds (`>= 1`) the client should wait before retrying a throttled request |
+
+Legacy `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` (Unix epoch seconds), and `X-RateLimit-Tier` headers are also emitted for backward compatibility.
+
 ## Environment Variables
 
 | Variable                   | Default         | Description                   |
@@ -185,6 +234,9 @@ Because the server caches keys, a typical rotation involves:
 | `INDEXER_BATCH_SIZE`       | `100`           | Ledgers per batch             |
 | `ADMIN_SECRET`             | —               | Bearer token required by every `/api/admin/*` route (indexer). See [`docs/ADMIN_AUTH.md`](./docs/ADMIN_AUTH.md). |
 | `METRICS_TOKEN`            | —               | Bearer/`X-Metrics-Token` required to scrape the API service's `GET /metrics` from outside the host. Unset restricts it to loopback callers. See [Metrics](#metrics). |
+| `REDIS_URL`                | _(unset)_       | Shared Redis URL for distributed token-bucket rate limiting and caching (falls back to in-memory when unset). See [Rate Limiting](#rate-limiting). |
+| `RATE_LIMIT_TIER_<TIER>_LIMIT` | Tier default | Per-window request quota for `UNAUTHENTICATED`, `FREE`, `DEVELOPER`, `PRO`, or `ENTERPRISE`. See [Rate Limiting](#rate-limiting). |
+| `RATE_LIMIT_TIER_<TIER>_WINDOW_MS` | `60000`    | Window duration in milliseconds for `UNAUTHENTICATED`, `FREE`, `DEVELOPER`, `PRO`, or `ENTERPRISE`. See [Rate Limiting](#rate-limiting). |
 | `MOCK_DATA`                | `false`         | Gates experimental endpoints that fabricate demo data instead of a real integration. See [Experimental & Mock Data](#experimental--mock-data). `ENABLE_EXPERIMENTAL` is accepted as an alias. |
 
 ## Experimental & Mock Data
