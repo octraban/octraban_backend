@@ -24,11 +24,21 @@ function makeRes(): {
   status: ReturnType<typeof vi.fn>;
   json: ReturnType<typeof vi.fn>;
   setHeader: ReturnType<typeof vi.fn>;
+  headers: Record<string, string>;
 } {
+  const headers: Record<string, string> = {};
   const json = vi.fn();
   const status = vi.fn().mockReturnValue({ json });
-  const setHeader = vi.fn();
-  return { res: { status, json, setHeader } as unknown as Response, status, json, setHeader };
+  const setHeader = vi.fn((name: string, value: unknown) => {
+    headers[name.toLowerCase()] = String(value);
+  });
+  return {
+    res: { status, json, setHeader } as unknown as Response,
+    status,
+    json,
+    setHeader,
+    headers,
+  };
 }
 
 describe('rate limit configuration', () => {
@@ -60,35 +70,97 @@ describe('tieredRateLimit', () => {
 
   beforeEach(() => {
     next = vi.fn();
+    vi.clearAllMocks();
+    const nowSec = Math.floor(Date.now() / 1000);
     mockCheck.mockResolvedValue({
       allowed: true,
       limit: 100,
       remaining: 99,
-      resetAt: 9999999999,
+      resetAt: nowSec + 45,
       tier: 'free',
     });
   });
 
-  it('calls next() when the fallback limiter allows the request', async () => {
-    const { res } = makeRes();
+  it('calls next() and emits standard RateLimit-* headers when allowed', async () => {
+    const { res, headers } = makeRes();
     await tieredRateLimit(makeReq(), res, next);
-    expect(next).toHaveBeenCalled();
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(headers['ratelimit-limit']).toBe('100');
+    expect(headers['ratelimit-remaining']).toBe('99');
+    expect(Number(headers['ratelimit-reset'])).toBeGreaterThanOrEqual(0);
+    expect(headers['retry-after']).toBeUndefined();
   });
 
-  it('uses apiKey tier when present', async () => {
+  it('uses apiKey tier and forwards rateLimitOverride when present', async () => {
     const req = makeReq({
-      apiKey: { id: 'k', keyName: 'n', developerId: 'd', tier: 'pro' },
+      apiKey: {
+        id: 'key-pro-1',
+        keyName: 'prod-key',
+        developerId: 'dev-1',
+        tier: 'pro',
+        rateLimitOverride: 2500,
+      },
     } as any);
     const { res } = makeRes();
     await tieredRateLimit(req, res, next);
-    expect(next).toHaveBeenCalled();
+
+    expect(mockCheck).toHaveBeenCalledWith('key-pro-1', 'pro', 'GET', '/test', 2500);
+    expect(next).toHaveBeenCalledOnce();
   });
 
   it('falls back to unauthenticated tier when no apiKey header is present', async () => {
     const req = makeReq({ headers: {} });
     const { res } = makeRes();
     await tieredRateLimit(req, res, next);
-    expect(next).toHaveBeenCalled();
+
+    expect(mockCheck).toHaveBeenCalledWith(
+      '127.0.0.1',
+      'unauthenticated',
+      'GET',
+      '/test',
+      undefined,
+    );
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it('returns 429 with Retry-After and standard RateLimit-* headers when limit is exceeded', async () => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    mockCheck.mockResolvedValueOnce({
+      allowed: false,
+      limit: 60,
+      remaining: 0,
+      resetAt: nowSec + 20,
+      tier: 'unauthenticated',
+    });
+
+    const { res, status, json, headers } = makeRes();
+    await tieredRateLimit(makeReq(), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(status).toHaveBeenCalledWith(429);
+    expect(headers['ratelimit-limit']).toBe('60');
+    expect(headers['ratelimit-remaining']).toBe('0');
+    expect(Number(headers['ratelimit-reset'])).toBeGreaterThanOrEqual(1);
+    expect(Number(headers['retry-after'])).toBeGreaterThanOrEqual(1);
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: 'Rate limit exceeded',
+        tier: 'unauthenticated',
+      }),
+    );
+  });
+
+  it('falls back gracefully to local rate limiter if checkTokenBucket throws', async () => {
+    mockCheck.mockRejectedValueOnce(new Error('unexpected failure'));
+    const { res, headers } = makeRes();
+    await tieredRateLimit(makeReq(), res, next);
+
+    await vi.waitFor(() => {
+      expect(next).toHaveBeenCalledOnce();
+    });
+    expect(headers['ratelimit-limit']).toBeDefined();
+    expect(headers['ratelimit-remaining']).toBeDefined();
   });
 });
 

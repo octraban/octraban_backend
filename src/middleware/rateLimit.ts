@@ -5,9 +5,9 @@ import { prismaRead } from '../db';
 import { logger } from '../logger';
 import {
   checkTokenBucket,
-  RateLimitTier,
+  type RateLimitTier,
   setRateLimitRedisClient,
-  TokenBucketResult,
+  type TokenBucketResult,
 } from './tokenBucket';
 
 const developerKeys = new Set((process.env.API_KEYS_DEVELOPER ?? '').split(',').filter(Boolean));
@@ -102,13 +102,15 @@ function applyAdaptiveThrottle(
   const currentMax = Math.min(throttledMax, tierConfigValue.max);
   res.setHeader('X-RateLimit-Warn', 'true');
   res.setHeader('X-RateLimit-Predicted', `${currentMax}`);
-  req.app.locals.rateLimitPredictedMax = currentMax;
+  if (req.app?.locals) {
+    req.app.locals.rateLimitPredictedMax = currentMax;
+  }
   return { ...tierConfigValue, max: currentMax };
 }
 
 function getRequestBucketKey(req: Request, tier: TierName, userIdentifier?: string): string {
   const endpoint = req.path || req.originalUrl || '/';
-  const keySource = userIdentifier ?? req.ip ?? 'unknown';
+  const keySource = userIdentifier ?? req.apiKey?.id ?? req.ip ?? 'unknown';
   return `${tier}:${keySource}:${endpoint}`;
 }
 
@@ -159,7 +161,6 @@ function buildLimiters(store?: Store): Limiters {
 }
 
 let legacyLimiters: Limiters = buildLimiters();
-let useTokenBucket = false;
 
 export async function initRateLimitStore(): Promise<void> {
   const redisUrl = process.env.REDIS_URL;
@@ -174,7 +175,6 @@ export async function initRateLimitStore(): Promise<void> {
     await client.connect();
 
     setRateLimitRedisClient(client as any);
-    useTokenBucket = true;
 
     const store = new RedisStore({
       sendCommand: (...args: string[]) => (client as any).sendCommand(args),
@@ -188,6 +188,23 @@ export async function initRateLimitStore(): Promise<void> {
   }
 }
 
+function writeRateLimitHeaders(res: Response, result: TokenBucketResult): number {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const remaining = Math.max(0, result.remaining);
+  const resetSeconds = Math.max(0, result.resetAt - nowSec);
+
+  res.setHeader('RateLimit-Limit', String(result.limit));
+  res.setHeader('RateLimit-Remaining', String(remaining));
+  res.setHeader('RateLimit-Reset', String(resetSeconds));
+
+  res.setHeader('X-RateLimit-Limit', String(result.limit));
+  res.setHeader('X-RateLimit-Remaining', String(remaining));
+  res.setHeader('X-RateLimit-Reset', String(result.resetAt));
+  res.setHeader('X-RateLimit-Tier', result.tier);
+
+  return resetSeconds;
+}
+
 function runLocalRateLimit(req: Request, res: Response, next: NextFunction): void {
   void (async () => {
     const apiKey = req.headers['x-api-key'] as string | undefined;
@@ -195,7 +212,11 @@ function runLocalRateLimit(req: Request, res: Response, next: NextFunction): voi
     const userIdentifier = req.headers['x-user-id'] as string | undefined;
     const endpoint = req.path || req.originalUrl || '/';
     const configOverride = userIdentifier ? await getUserOverride(userIdentifier, endpoint) : null;
-    const baseConfig = configOverride ?? normalizeTierConfig()[tier];
+    const apiKeyOverride =
+      req.apiKey?.rateLimitOverride && req.apiKey.rateLimitOverride > 0
+        ? { windowMs: DEFAULT_TIERS.public.windowMs, max: req.apiKey.rateLimitOverride }
+        : null;
+    const baseConfig = apiKeyOverride ?? configOverride ?? normalizeTierConfig()[tier];
     const effectiveConfig = applyAdaptiveThrottle(req, res, baseConfig);
     const now = Date.now();
     const bucketKey = getRequestBucketKey(req, tier, userIdentifier);
@@ -212,15 +233,24 @@ function runLocalRateLimit(req: Request, res: Response, next: NextFunction): voi
       resetAt: now + effectiveConfig.windowMs,
     };
     const remaining = Math.max(0, effectiveConfig.max - bucket.count);
+    const resetEpochSeconds = Math.ceil(bucket.resetAt / 1000);
+    const resetSeconds = Math.max(0, resetEpochSeconds - Math.floor(now / 1000));
+
+    res.setHeader('RateLimit-Limit', `${effectiveConfig.max}`);
+    res.setHeader('RateLimit-Remaining', `${remaining}`);
+    res.setHeader('RateLimit-Reset', `${resetSeconds}`);
     res.setHeader('X-RateLimit-Limit', `${effectiveConfig.max}`);
     res.setHeader('X-RateLimit-Remaining', `${remaining}`);
-    res.setHeader('X-RateLimit-Reset', `${Math.ceil(bucket.resetAt / 1000)}`);
+    res.setHeader('X-RateLimit-Reset', `${resetEpochSeconds}`);
 
-    if (configOverride) res.setHeader('X-RateLimit-Policy', 'user-override');
+    if (configOverride || apiKeyOverride) res.setHeader('X-RateLimit-Policy', 'user-override');
 
     if (bucket.count > effectiveConfig.max) {
+      const retryAfter = Math.max(1, resetSeconds);
+      res.setHeader('RateLimit-Remaining', '0');
       res.setHeader('X-RateLimit-Remaining', '0');
-      res.status(429).json({ error: 'Too many requests' });
+      res.setHeader('Retry-After', `${retryAfter}`);
+      res.status(429).json({ error: 'Too many requests', retryAfter });
       return;
     }
 
@@ -238,42 +268,37 @@ export async function tieredRateLimit(
   const tier: RateLimitTier = keyCtx?.tier ?? getTierFromEnvKey(rawKey);
   const clientKey = keyCtx?.id ?? req.ip ?? 'anonymous';
 
-  if (useTokenBucket) {
-    try {
-      const result: TokenBucketResult = await checkTokenBucket(
-        clientKey,
-        tier,
-        req.method,
-        req.path,
-        keyCtx?.rateLimitOverride,
-      );
+  try {
+    const result: TokenBucketResult = await checkTokenBucket(
+      clientKey,
+      tier,
+      req.method,
+      req.path,
+      keyCtx?.rateLimitOverride,
+    );
 
-      res.setHeader('X-RateLimit-Limit', result.limit);
-      res.setHeader('X-RateLimit-Remaining', result.remaining);
-      res.setHeader('X-RateLimit-Reset', result.resetAt);
-      res.setHeader('X-RateLimit-Tier', result.tier);
-      (req as Request & { rateLimitResult?: TokenBucketResult }).rateLimitResult = result;
+    const resetSeconds = writeRateLimitHeaders(res, result);
+    (req as Request & { rateLimitResult?: TokenBucketResult }).rateLimitResult = result;
 
-      if (!result.allowed) {
-        const retryAfter = Math.max(1, result.resetAt - Math.floor(Date.now() / 1000));
-        res.setHeader('Retry-After', retryAfter);
-        res.status(429).json({
-          error: 'Rate limit exceeded',
-          tier: result.tier,
-          retryAfter,
-          resetAt: new Date(result.resetAt * 1000).toISOString(),
-        });
-        return;
-      }
-
-      next();
+    if (!result.allowed) {
+      const retryAfter = Math.max(1, resetSeconds);
+      res.setHeader('Retry-After', String(retryAfter));
+      res.status(429).json({
+        error: 'Rate limit exceeded',
+        tier: result.tier,
+        retryAfter,
+        resetAt: new Date(result.resetAt * 1000).toISOString(),
+      });
       return;
-    } catch (err) {
-      logger.warn(`[rate-limit] Token bucket error, falling through: ${String(err)}`);
     }
+
+    next();
+    return;
+  } catch (err) {
+    logger.warn(`[rate-limit] Token bucket error, falling through: ${String(err)}`);
   }
 
-  if (keyCtx?.rateLimitOverride) {
+  if (keyCtx?.rateLimitOverride || !req.app) {
     runLocalRateLimit(req, res, next);
     return;
   }

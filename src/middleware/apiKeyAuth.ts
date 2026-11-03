@@ -49,6 +49,30 @@ declare global {
   }
 }
 
+const VALID_RATE_LIMIT_TIERS = new Set<RateLimitTier>([
+  'unauthenticated',
+  'free',
+  'developer',
+  'pro',
+  'enterprise',
+]);
+
+export function normalizeRateLimitTier(
+  rawTier: string | null | undefined,
+  fallback: RateLimitTier = 'free',
+): RateLimitTier {
+  if (!rawTier) return fallback;
+  const candidate = rawTier.trim().toLowerCase() as RateLimitTier;
+  return VALID_RATE_LIMIT_TIERS.has(candidate) ? candidate : fallback;
+}
+
+function normalizeRateLimitOverride(rawOverride: number | null | undefined): number | undefined {
+  if (typeof rawOverride !== 'number' || !Number.isFinite(rawOverride) || rawOverride <= 0) {
+    return undefined;
+  }
+  return Math.floor(rawOverride);
+}
+
 function hashKey(raw: string): string {
   return crypto.createHash('sha256').update(raw).digest('hex');
 }
@@ -247,8 +271,8 @@ async function resolveApiKey(raw: string): Promise<ApiKeyContext | null> {
       id: record.id,
       keyName: record.name,
       developerId: record.developerId,
-      tier: (record.tier as RateLimitTier) ?? 'free',
-      rateLimitOverride: record.rateLimitOverride ?? undefined,
+      tier: normalizeRateLimitTier(record.tier, 'free'),
+      rateLimitOverride: normalizeRateLimitOverride(record.rateLimitOverride),
       allowedIps: Array.isArray(record.allowedIps) ? (record.allowedIps as string[]) : undefined,
       allowedEndpoints: Array.isArray(record.allowedEndpoints)
         ? (record.allowedEndpoints as string[])
